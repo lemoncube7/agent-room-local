@@ -4,7 +4,7 @@
 *{box-sizing:border-box}body{margin:0;display:grid;grid-template-columns:minmax(165px,270px) minmax(0,1fr);grid-template-rows:minmax(0,1fr);height:100vh;height:100dvh;overflow:hidden}
 aside{background:#181d31;border-right:1px solid #2e3651;padding:28px 20px;overflow:auto}
 h1{font-size:21px;margin:0 0 24px}button,input{font:inherit;border-radius:9px;border:1px solid #384362;background:#252d46;color:inherit;padding:9px 12px}button{cursor:pointer}button:hover,button[aria-current=true]{background:#344265}form{display:flex;gap:5px}form[hidden]{display:none}input{width:100%;min-width:0}nav{display:grid;gap:8px;margin-top:20px}nav button{text-align:left}
-main{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}header{flex:none;padding:16px 25px;border-bottom:1px solid #2e3651;background:#111526}#room-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}#room-actions button{margin:0}#compose{flex:none;border-top:1px solid #2e3651}header h2{margin:0;font-size:18px}header p{margin:8px 0 0;color:#b8c5e0}header code{color:#9ce6d2}header button{margin-top:10px}#people{display:flex;gap:8px;flex-wrap:wrap;max-height:24vh;overflow:auto;margin-top:12px}#people:empty{display:none}#people span{background:#202943;border-radius:9px;padding:6px 9px}#people button{margin-left:8px;font-size:12px}#messages{flex:1 1 0;min-height:0;overscroll-behavior:contain;padding:24px;display:flex;flex-direction:column;gap:16px;overflow:auto}article{flex-shrink:0;max-width:min(80%,720px);background:#222c43;border-radius:13px;padding:12px 16px;align-self:flex-start}article.own{align-self:flex-end;background:#203d40}article.own strong{color:#9ce6d2}article.working small{color:#ffcf90}article p{white-space:pre-wrap;overflow-wrap:anywhere;margin:7px 0;color:#f4f6ff}small{color:#b8c5e0}article strong{color:#ffbf9e}#error{color:#ffb9ad;padding-top:8px}
+main{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}header{flex:none;padding:16px 25px;border-bottom:1px solid #2e3651;background:#111526}#room-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}#room-actions button{margin:0}#compose{flex:none;border-top:1px solid #2e3651}header h2{margin:0;font-size:18px}header p{margin:8px 0 0;color:#b8c5e0}header code{color:#9ce6d2}header button{margin-top:10px}#people{display:flex;gap:8px;flex-wrap:wrap;max-height:24vh;overflow:auto;margin-top:12px}#people:empty{display:none}#people span{background:#202943;border-radius:9px;padding:6px 9px}#people button{margin-left:8px;font-size:12px}#messages{flex:1 1 0;min-height:0;overscroll-behavior:contain;padding:24px;display:flex;flex-direction:column;gap:16px;overflow:auto}article{flex-shrink:0;max-width:min(80%,720px);background:#222c43;border-radius:13px;padding:12px 16px;align-self:flex-start}article.own{align-self:flex-end;background:#203d40}article.own strong{color:#9ce6d2}article.codex{background:#202d48;border-inline-start:3px solid #8cb6ff}article.codex>strong{color:#a9c8ff}article.claude{background:#392b31;border-inline-start:3px solid #f3a880}article.claude>strong{color:#ffc2a2}.markdown{color:#f4f6ff;overflow-wrap:anywhere;margin:7px 0}.markdown>*{margin:0 0 7px}.markdown>*:last-child{margin-bottom:0}.markdown pre{overflow:auto;max-width:100%;padding:8px;background:#14192a;border-radius:6px}.markdown pre code{white-space:pre}.markdown blockquote{margin-left:0;padding-left:10px;border-left:2px solid #7784a5}.markdown a{color:#b7d5ff}.markdown ul,.markdown ol{padding-left:22px}.markdown h3,.markdown h4,.markdown h5,.markdown h6{font-size:1em}article.working small{color:#ffcf90}article p{white-space:pre-wrap;overflow-wrap:anywhere;margin:7px 0;color:#f4f6ff}small{color:#b8c5e0}article strong{color:#ffbf9e}#error{color:#ffb9ad;padding-top:8px}
 </style>
 <aside><h1>Agent Room <small id="current-version" aria-label="현재 버전">버전 확인 중</small></h1><button id="update">업데이트 확인</button><p id="update-result" role="status"></p><form id="new" autocomplete="off"><input name="name" autocomplete="off" aria-label="채팅방 이름" placeholder="새 채팅방 이름" required maxlength="70"><button aria-label="채팅방 만들기">+</button></form><div id="error" role="status"></div><nav id="rooms"></nav></aside>
 <main><header><h2 id="title">채팅방을 선택하세요</h2><div id="room-actions"><button id="pair" hidden>기존 대화 연결 코드 만들기</button><button id="new-codex" hidden>새 Codex 대화</button> <button id="new-claude" hidden>새 Claude Code 대화</button></div><p id="pair-guide" hidden></p><section id="people" aria-label="참가자"></section></header><section id="messages" aria-label="대화"></section><form id="compose" autocomplete="off" hidden style="padding: 12px 25px"><select id="recipient" aria-label="받는 대화"></select><input id="draft" autocomplete="off" aria-label="메시지" placeholder="메시지 쓰기" maxlength="8000" required><button type="submit">보내기</button></form></main>
@@ -12,6 +12,45 @@ main{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden
 let composeRoom,selected,previous='',snapshot,refreshing=false,lastRendered,pairRoom;
 const byId=id=>document.getElementById(id);
 function el(tag,text){const e=document.createElement(tag);e.textContent=text;return e;}
+function inlineMarkdown(target,text,allowLinks=true){
+ const pattern=/`([^`\n]+)`|\*\*([^*\n]+)\*\*|\*([^*\n]+)\*|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g;
+ let start=0;
+ for(const match of text.matchAll(pattern)){
+  target.append(document.createTextNode(text.slice(start,match.index)));
+  if(match[5]&&allowLinks){
+   try{const url=new URL(match[5]);const link=el('a',match[4]);link.href=url.href;link.target='_blank';link.rel='noopener noreferrer';target.append(link);}
+   catch{target.append(document.createTextNode(match[0]));}
+  }else if(match[5])target.append(document.createTextNode(match[0]));
+  else target.append(el(match[1]?'code':match[2]?'strong':'em',match[1]||match[2]||match[3]));
+  start=match.index+match[0].length;
+ }
+ target.append(document.createTextNode(text.slice(start)));
+}
+function markdown(text){
+ const root=el('div','');root.className='markdown';
+ let paragraph,list,code;
+ for(const line of text.split(/\r?\n/)){
+  if(code){
+   if(/^\s*```\s*$/.test(line))code=null;else code.append(document.createTextNode(line+"\n"));
+   continue;
+  }
+  const item=line.match(/^\s*([-+*]|\d+\.)\s+(.+)$/), heading=line.match(/^(#{1,6})\s+(.+)$/);
+  if(!item)list=null;
+  if(/^\s*```/.test(line)){const pre=el("pre","");code=el("code","");pre.append(code);root.append(pre);paragraph=null;continue;}
+  if(!line.trim()){paragraph=null;continue;}
+  if(item){
+   const tag=/^\d/.test(item[1])?'OL':'UL';
+   if(list?.tagName!==tag){list=el(tag,'');root.append(list);}
+   const entry=el('li','');inlineMarkdown(entry,item[2]);list.append(entry);paragraph=null;continue;
+  }
+  if(heading||line.startsWith('> ')){
+   const block=el(heading?'h'+Math.min(6,heading[1].length+2):'blockquote','');inlineMarkdown(block,heading?heading[2]:line.slice(2));root.append(block);paragraph=null;continue;
+  }
+  if(!paragraph){paragraph=el('p','');root.append(paragraph);}else paragraph.append(document.createElement('br'));
+  inlineMarkdown(paragraph,line);
+ }
+ return root;
+}
 function err(message){byId('error').textContent=message;}
 async function control(body){
  try{
@@ -55,10 +94,12 @@ function render(){
  view.replaceChildren(...messages.map(m=>{
  const a=document.createElement('article');a.dataset.seq=String(m.seq);
  if(m.author==='human:'+selected)a.classList.add('own');
+ else if(/^codex\b/i.test(m.name))a.classList.add('codex');
+ else if(/^claude\b/i.test(m.name))a.classList.add('claude');
  const states=snapshot.deliveries.filter(d=>d.seq===m.seq);
  const delivery=states.map(d=>d.name+' · '+status[d.state]).join(' / ');
  const recipient=snapshot.members.find(p=>p.id===m.recipient);
- a.append(el('strong',m.name+(recipient?' → '+recipient.name:m.recipient?' · 직접 대화':'')),el('p',m.body),el('small',new Date(m.created).toLocaleTimeString('ko-KR')+' · '+(delivery||'방에 저장됨')));if(states.some(d=>d.state==='working'))a.classList.add('working');return a;
+ a.append(el('strong',m.name+(recipient?' → '+recipient.name:m.recipient?' · 직접 대화':'')),markdown(m.body),el('small',new Date(m.created).toLocaleTimeString('ko-KR')+' · '+(delivery||'방에 저장됨')));if(states.some(d=>d.state==='working'))a.classList.add('working');return a;
  }));
  if(room&&!messages.length)view.append(el('small','참가자가 남긴 메시지가 여기에 표시됩니다.'));
  if(roomChanged||previousLatest!==view.lastElementChild?.dataset.seq)view.scrollTop=view.scrollHeight;
