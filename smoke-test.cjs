@@ -92,6 +92,12 @@ async function main(){
   await until(async()=>(await sync()).messages.find(m=>m.body==='Claude opened'));
   await rpc('/control',{action:'user_message',room:room.id,participant:managedClaude.id,text:'Follow up'});
   await until(async()=>(await sync()).messages.find(m=>m.body==='Claude resumed: Follow up'));
+  await rpc('/control',{action:'user_message',room:room.id,participant:'',text:'Everyone hello'});
+  await until(async()=>{
+    const messages=(await sync()).messages;
+    return messages.some(m=>m.body==='Resumed: Everyone hello')&&messages.some(m=>m.body==='Claude resumed: Everyone hello');
+  });
+  await until(()=>frames.find(f=>f.method==='notifications/claude/channel'&&f.params.content.includes('Everyone hello')));
   fs.writeFileSync(path.join(root,'fail-claude'),'');
   const failureStart=await rpc('/control',{action:'new_claude',room:room.id});
   const failed=failureStart.members.filter(m=>m.name==='Claude Code CLI').at(-1);

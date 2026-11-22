@@ -153,6 +153,15 @@ function deliver(args){
   run("UPDATE deliveries SET state=? WHERE seq=? AND member=? AND state='submitting'",args.state,args.seq,target.id);
   return {ok:true};
 }
+function dispatchQueuedTurns(){
+  if(draining)return;
+  const rows=all("SELECT deliveries.seq,deliveries.member,messages.body FROM deliveries JOIN messages USING(seq) JOIN members ON members.id=deliveries.member WHERE deliveries.state='queued' AND members.state='approved' ORDER BY deliveries.seq");
+  for(const row of rows){
+    if(cliBusy.has(row.member))continue;
+    run("UPDATE deliveries SET state='submitting' WHERE seq=? AND member=?",row.seq,row.member);
+    void cliTurn(row.member,row.body,row.seq);
+  }
+}
 function drainOutbox(){
   for(const name of fs.readdirSync(outbox).filter(name=>/^[a-f0-9-]{36}\.json$/.test(name))){
     const filename=path.join(outbox,name);
@@ -226,16 +235,18 @@ const server=http.createServer(async(req,res)=>{
       }
       else if(args.action==='user_message'){
         if(draining)throw Error('업데이트 중이에요. 잠시 후 다시 시도하세요.');
-        const target=member(args.participant,args.room);
-        const body=str(args.text,8000);
-        if(cliBusy.has(target.id))throw Error('선택한 대화가 답변 중이에요. 완료되면 다시 보내세요.');
-        const human='human:'+target.room;
-        run("INSERT OR IGNORE INTO members(id,room,name,state) VALUES(?,?,?,'human')",human,target.room,'나');
-        const seq=storeMessage(target.room,human,body,target.id);
-        if(one('SELECT member FROM cli_sessions WHERE member=?',target.id)){
-          run("INSERT INTO deliveries VALUES(?,?,'submitting')",seq,target.id);
-          void cliTurn(target.id,body,seq);
-        }
+        if(!one('SELECT id FROM rooms WHERE id=?',args.room))throw Error('Room not found.');
+        const target=args.participant?member(args.participant,args.room):null;
+        const body=str(args.text,8000), human='human:'+args.room;
+        const managed=all("SELECT members.id FROM members JOIN cli_sessions ON cli_sessions.member=members.id WHERE members.room=? AND members.state='approved' AND (? IS NULL OR members.id=?)",args.room,target?.id??null,target?.id??null);
+        db.exec('BEGIN');
+        try{
+          run("INSERT OR IGNORE INTO members(id,room,name,state) VALUES(?,?,?,'human')",human,args.room,'나');
+          const seq=storeMessage(args.room,human,body,target?.id??null);
+          for(const agent of managed)run("INSERT INTO deliveries VALUES(?,?,'queued')",seq,agent.id);
+          db.exec('COMMIT');
+        }catch(error){db.exec('ROLLBACK');throw error;}
+        dispatchQueuedTurns();
       }
       else if(args.action==='room_code'){
         if(!one('SELECT id FROM rooms WHERE id=?',args.room))throw Error('Room not found.');
@@ -265,6 +276,7 @@ server.listen(Number(process.env.ROOM_PORT||4317),'127.0.0.1',()=>{
   const url='http://127.0.0.1:'+server.address().port;
   fs.writeFileSync(path.join(local,'hub.json'),JSON.stringify({url,token}),{mode:0o600});
   drainOutbox();
-  setInterval(()=>{if(!draining)drainOutbox();},1000).unref();
+  dispatchQueuedTurns();
+  setInterval(()=>{if(!draining){drainOutbox();dispatchQueuedTurns();}},1000).unref();
   console.log(url);
 });

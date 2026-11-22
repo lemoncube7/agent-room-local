@@ -4,10 +4,10 @@
 *{box-sizing:border-box}body{margin:0;display:grid;grid-template-columns:minmax(165px,270px) minmax(0,1fr);grid-template-rows:minmax(0,1fr);height:100vh;height:100dvh;overflow:hidden}
 aside{background:#181d31;border-right:1px solid #2e3651;padding:28px 20px;overflow:auto}
 h1{font-size:21px;margin:0 0 24px}button,input{font:inherit;border-radius:9px;border:1px solid #384362;background:#252d46;color:inherit;padding:9px 12px}button{cursor:pointer}button:hover,button[aria-current=true]{background:#344265}form{display:flex;gap:5px}form[hidden]{display:none}input{width:100%;min-width:0}nav{display:grid;gap:8px;margin-top:20px}nav button{text-align:left}
-main{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}header{flex:none;padding:16px 25px;border-bottom:1px solid #2e3651;background:#111526}#room-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}#room-actions button{margin:0}#compose{flex:none;border-top:1px solid #2e3651}header h2{margin:0;font-size:18px}header p{margin:8px 0 0;color:#b8c5e0}header code{color:#9ce6d2}header button{margin-top:10px}#people{display:flex;gap:8px;flex-wrap:wrap;max-height:24vh;overflow:auto;margin-top:12px}#people:empty{display:none}#people span{background:#202943;border-radius:9px;padding:6px 9px}#people button{margin-left:8px;font-size:12px}#messages{flex:1 1 0;min-height:0;overscroll-behavior:contain;padding:24px;display:flex;flex-direction:column;gap:16px;overflow:auto}article{flex-shrink:0;max-width:min(80%,720px);background:#222c43;border-radius:13px;padding:12px 16px;align-self:flex-start}article.codex{align-self:flex-end;background:#203d40}article p{white-space:pre-wrap;overflow-wrap:anywhere;margin:7px 0;color:#f4f6ff}small{color:#b8c5e0}article strong{color:#ffbf9e}article.codex strong{color:#9ce6d2}#error{color:#ffb9ad;padding-top:8px}
+main{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}header{flex:none;padding:16px 25px;border-bottom:1px solid #2e3651;background:#111526}#room-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}#room-actions button{margin:0}#compose{flex:none;border-bottom:1px solid #2e3651}header h2{margin:0;font-size:18px}header p{margin:8px 0 0;color:#b8c5e0}header code{color:#9ce6d2}header button{margin-top:10px}#people{display:flex;gap:8px;flex-wrap:wrap;max-height:24vh;overflow:auto;margin-top:12px}#people:empty{display:none}#people span{background:#202943;border-radius:9px;padding:6px 9px}#people button{margin-left:8px;font-size:12px}#messages{flex:1 1 0;min-height:0;overscroll-behavior:contain;padding:24px;display:flex;flex-direction:column;gap:16px;overflow:auto}article{flex-shrink:0;max-width:min(80%,720px);background:#222c43;border-radius:13px;padding:12px 16px;align-self:flex-start}article p{white-space:pre-wrap;overflow-wrap:anywhere;margin:7px 0;color:#f4f6ff}small{color:#b8c5e0}article strong{color:#ffbf9e}#error{color:#ffb9ad;padding-top:8px}
 </style>
 <aside><h1>Agent Room <small id="current-version" aria-label="현재 버전">버전 확인 중</small></h1><button id="update">업데이트 확인</button><p id="update-result" role="status"></p><form id="new"><input name="name" aria-label="채팅방 이름" placeholder="새 채팅방 이름" required maxlength="70"><button aria-label="채팅방 만들기">+</button></form><div id="error" role="status"></div><nav id="rooms"></nav></aside>
-<main><header><h2 id="title">채팅방을 선택하세요</h2><div id="room-actions"><button id="pair" hidden>기존 대화 연결 코드 만들기</button><button id="new-codex" hidden>새 Codex 대화</button> <button id="new-claude" hidden>새 Claude Code 대화</button></div><p id="pair-guide" hidden></p><section id="people" aria-label="참가자"></section></header><section id="messages" aria-label="대화"></section><form id="compose" hidden style="padding: 12px 25px"><select id="recipient" aria-label="받는 대화"></select><input id="draft" aria-label="메시지" placeholder="메시지 쓰기" maxlength="8000" required><button type="submit">보내기</button></form></main>
+<main><header><h2 id="title">채팅방을 선택하세요</h2><div id="room-actions"><button id="pair" hidden>기존 대화 연결 코드 만들기</button><button id="new-codex" hidden>새 Codex 대화</button> <button id="new-claude" hidden>새 Claude Code 대화</button></div><p id="pair-guide" hidden></p><section id="people" aria-label="참가자"></section></header><form id="compose" hidden style="padding: 12px 25px"><select id="recipient" aria-label="받는 대화"></select><input id="draft" aria-label="메시지" placeholder="메시지 쓰기" maxlength="8000" required><button type="submit">보내기</button></form><section id="messages" aria-label="대화"></section></main>
 <script>
 let composeRoom,selected,previous='',snapshot,refreshing=false,lastRendered,pairRoom;
 const byId=id=>document.getElementById(id);
@@ -28,7 +28,8 @@ function update(next){
 }
 function render(){
  const view=byId('messages');
- const nearBottom=lastRendered!==selected||view.scrollHeight-view.clientHeight-view.scrollTop<80;
+ const nearTop=lastRendered!==selected||view.scrollTop<60;
+ const oldHeight=view.scrollHeight, oldTop=view.scrollTop, previousLatest=view.firstElementChild?.dataset.seq;
  const room=snapshot.rooms.find(r=>r.id===selected);
  lastRendered=selected;
  byId('title').textContent=room?.name||'채팅방을 선택하세요';
@@ -46,19 +47,20 @@ function render(){
  if(composeRoom!==selected)byId('draft').value='';
  composeRoom=selected;
  const people=snapshot.members.filter(m=>m.room===selected&&m.state==='approved');
- picker.replaceChildren(...people.map(m=>new Option(m.name,m.id)));
+ picker.replaceChildren(new Option('전체',''),...people.map(m=>new Option(m.name,m.id)));
  if(people.some(m=>m.id===wanted))picker.value=wanted;
  byId('compose').hidden=!people.length;
- const messages=snapshot.messages.filter(m=>m.room===selected);
- const status={accepted:'전달 접수',submitting:'전달 중',uncertain:'전달 불확실',failed:'전달 실패'};
+ const messages=snapshot.messages.filter(m=>m.room===selected).reverse();
+ const status={queued:'대기 중',accepted:'전달 접수',submitting:'전달 중',uncertain:'전달 불확실',failed:'전달 실패'};
  view.replaceChildren(...messages.map(m=>{
- const a=document.createElement('article');if(/codex/i.test(m.name))a.className='codex';
+ const a=document.createElement('article');a.dataset.seq=String(m.seq);
  const delivery=snapshot.deliveries.filter(d=>d.seq===m.seq).map(d=>d.name+' · '+status[d.state]).join(' / ');
  const recipient=snapshot.members.find(p=>p.id===m.recipient);
  a.append(el('strong',m.name+(recipient?' → '+recipient.name:m.recipient?' · 직접 대화':'')),el('p',m.body),el('small',new Date(m.created).toLocaleTimeString('ko-KR')+' · '+(delivery||'방에 저장됨')));return a;
  }));
  if(room&&!messages.length)view.append(el('small','참가자가 남긴 메시지가 여기에 표시됩니다.'));
- if(nearBottom)view.scrollTop=view.scrollHeight;
+ if(nearTop)view.scrollTop=0;
+ else if(previousLatest!==view.firstElementChild?.dataset.seq)view.scrollTop=oldTop+view.scrollHeight-oldHeight;
 }
 async function refresh(){
  if(refreshing)return;refreshing=true;
@@ -102,7 +104,7 @@ byId('compose').onsubmit=async event=>{
  const button=event.submitter, draft=byId('draft'), text=draft.value, room=selected;
  button.disabled=true;
  try{
-  if(await control({action:'user_message',room,participant:byId('recipient').value,text}) && selected===room && draft.value===text)draft.value='';
+  if(await control({action:'user_message',room,participant:byId('recipient').value,text}) && selected===room && draft.value===text){draft.value='';byId('messages').scrollTop=0;}
  }finally{button.disabled=false;}
 };
 byId('update').onclick=async()=>{
