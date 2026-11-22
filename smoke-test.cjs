@@ -32,6 +32,9 @@ async function main(){
   const {rooms:[room]}=await rpc('/control',{action:'create',name:'Test room'});
   const sender=await rpc('/tool',{action:'request_join',room:room.id,name:'Codex mock'});
   await rpc('/control',{action:'approve',participant:sender.participant});
+  const remote={action:'remote_user_message',room:room.id,request:'22ff9911-9429-404b-afaf-1ba5f73497ba',text:'Remote test'};
+  assert.deepEqual(await rpc('/tool',remote),await rpc('/tool',remote));
+  assert.equal((await sync()).messages.filter(m=>m.body==='Remote test').length,1);
   const writes={action:'send_message',room:room.id,participant:sender.participant};
   await rpc('/tool',{...writes,request:'history',text:'Previous history'});
   const client=start('bridge.cjs',['claude']);

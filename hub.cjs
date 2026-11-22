@@ -2,7 +2,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
-const {runCodex} = require('./managed-codex.cjs');
+const {runCodex,discoverModels} = require('./managed-codex.cjs');
 const {spawn}=require('node:child_process');
 const version=fs.readFileSync(path.join(__dirname,'VERSION'),'utf8').trim();
 const {randomUUID, randomBytes, timingSafeEqual} = require('node:crypto');
@@ -106,7 +106,28 @@ function member(id,room){
   if(result.parent&&!one("SELECT id FROM members WHERE id=? AND room=? AND state='approved'",result.parent,room)) throw Error('The parent participant is disconnected.');
   return result;
 }
+function recordUserMessage(room,text,request=randomUUID()){
+  if(!one('SELECT id FROM rooms WHERE id=?',room))throw Error('Room not found.');
+  if(draining)throw Error('Hub is restarting.');
+  const body=str(text,8000), human='human:'+room;
+  const existing=one('SELECT seq,body FROM messages WHERE author=? AND request=?',human,request);
+  if(existing){if(existing.body!==body)throw Error('Message request already used.');return existing.seq;}
+  db.exec('BEGIN');
+  try{
+    run("INSERT OR IGNORE INTO members(id,room,name,state) VALUES(?,?,?,'human')",human,room,'나');
+    const seq=Number(run('INSERT INTO messages(room,author,request,body,created) VALUES(?,?,?,?,?)',room,human,request,body,new Date().toISOString()).lastInsertRowid);
+    queueForRoom(room,human,seq);
+    db.exec('COMMIT');
+    return seq;
+  }catch(error){db.exec('ROLLBACK');throw error;}
+}
 function task({action,room,participant,name,text,request,replyTo,after=0}){
+  if(action==='remote_user_message'){
+    if(!/^[a-f0-9-]{36}$/i.test(request||''))throw Error('Invalid remote message identifier.');
+    const seq=recordUserMessage(room,text,'remote:'+request);
+    dispatchQueuedTurns();
+    return {seq};
+  }
   if(action==='list_rooms') return {rooms:all('SELECT * FROM rooms ORDER BY rowid')};
   if(action==='join_room_code'){
     const code=str(request,100).toUpperCase();
@@ -237,6 +258,12 @@ const server=http.createServer(async(req,res)=>{
     let result;
     if(browser){
       if(args.action==='create')run('INSERT INTO rooms VALUES(?,?)',randomUUID(),str(args.name,70));
+      else if(args.action==='list_models'){
+        if(!Object.hasOwn(providerNames,args.provider))throw Error('Unknown agent provider.');
+        const projectFile=path.join(local,'project.txt');
+        const project=process.env.AGENT_ROOM_PROJECT||(fs.existsSync(projectFile)?fs.readFileSync(projectFile,'utf8').trim():__dirname);
+        result={models:await discoverModels(project,args.provider)};
+      }
       else if(args.action==='check_update')result=await checkUpdate();
       else if(args.action==='apply_update'){
         if(process.platform!=='win32')throw Error('자동 설치는 Windows에서 사용할 수 있어요.');
@@ -288,14 +315,7 @@ const server=http.createServer(async(req,res)=>{
       else if(args.action==='user_message'){
         if(draining)throw Error('업데이트 중이에요. 잠시 후 다시 시도하세요.');
         if(!one('SELECT id FROM rooms WHERE id=?',args.room))throw Error('Room not found.');
-        const body=str(args.text,8000), human='human:'+args.room;
-        db.exec('BEGIN');
-        try{
-          run("INSERT OR IGNORE INTO members(id,room,name,state) VALUES(?,?,?,'human')",human,args.room,'나');
-          const seq=storeMessage(args.room,human,body);
-          queueForRoom(args.room,human,seq);
-          db.exec('COMMIT');
-        }catch(error){db.exec('ROLLBACK');throw error;}
+        recordUserMessage(args.room,args.text);
         dispatchQueuedTurns();
       }
       else if(args.action==='room_code'){

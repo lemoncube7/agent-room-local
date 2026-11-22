@@ -1,3 +1,4 @@
+param([switch]$Native)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -73,7 +74,10 @@ $install.add_Click({
             }
             if (-not (Test-RoomHub)) { throw 'Could not start Agent Room. Check whether port 4317 is in use.' }
         }
-        Start-Process 'http://127.0.0.1:4317'
+        if($Native){
+            $nativePath=Join-Path $PSScriptRoot 'native-chat.ps1'
+            Start-Process -FilePath 'powershell.exe' -ArgumentList ('-NoProfile -STA -ExecutionPolicy Bypass -File "'+$nativePath+'"') -WindowStyle Hidden
+        }else{Start-Process 'http://127.0.0.1:4317'}
         $form.Close()
     } catch {
         $status.Text = 'Setup needs attention.'

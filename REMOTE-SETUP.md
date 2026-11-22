@@ -1,0 +1,52 @@
+# Agent Room 원격 연결 안내
+
+## Codex에 붙여 넣을 요청
+
+> 내 Windows PC의 Agent Room을 원격에서 쓸 수 있게 설정해 줘. GitHub lemoncube7/agent-room-local의 원격 연결 안내와 인계 문서를 먼저 읽고, 설치 버전과 연결할 로컬 방을 확인해. 이미 열려 있는 Codex와 Claude Code 대화와 로컬 기록은 유지해. 비공개 ChatGPT Site와 테스트 방 하나로 먼저 Site → PC → 에이전트 → Site 왕복을 검증해. 기존 방의 메시지나 프로젝트 파일은 업로드하지 말고, 키는 채팅·로그·저장소에 쓰지 마. 결과로 원격 접속 링크, 실제로 확인한 단계, PC가 꺼질 때의 동작을 알려 줘.
+
+## 연결 흐름
+
+원격 사용자는 소유자 비공개 Site에서 메시지를 입력한다. Site는 해당 메시지를 대기열에 넣는다. Windows PC의 원격 연결 프로그램은 HTTPS로 그 대기열을 읽고 Agent Room의 한 방에 넣는다. Agent Room의 공개 메시지는 같은 연결을 통해 Site로 돌아온다. PC의 4317 포트는 로컬 전용이다.
+
+- 방 하나만 선택한다. 처음 켤 때 이미 있던 메시지는 건너뛰고 그 이후의 공개 메시지만 보내며 지정 수신자가 붙은 메시지는 보내지 않는다.
+- 사이트에는 채팅 본문과 표시 이름, 작성 시각만 전달한다. 프로젝트 파일·작업 폴더 경로·토큰은 업로드하지 않는다. 답변 본문 자체에 민감한 자료가 들어 있으면 해당 방을 원격으로 연결하지 않는다.
+- PC가 꺼졌거나 허브가 내려가면 Site의 새 메시지는 대기한다. PC에서 프로그램을 다시 실행하면 처리한다. 현재 프로토타입은 프로그램을 직접 실행해 두는 방식이다.
+- 원격 연결 전용 테스트 Site에는 하나의 PC와 하나의 방만 연결한다. 다른 방으로 바꿀 때는 기존 Site의 데이터가 섞이지 않도록 별도 테스트 Site를 사용한다.
+
+## 1. Site 준비
+
+1. ChatGPT Sites에서 서버 동작을 지원하는 Vinext 시작 프로젝트를 **소유자 비공개**로 만든다. 공개 URL로 전환하지 않는다.
+2. `remote-site/page.jsx`를 `app/page.jsx`에 복사한다. `remote-site/route.js`와 `handler.mjs`를 둘 다 `app/api/room/[...route]/`에 복사한다.
+3. Sites의 D1 바인딩 이름을 `DB`로 선언한다. `remote-site/schema.sql`의 테이블과 인덱스를 시작 프로젝트의 D1 마이그레이션에 반영한다. 시작 프로젝트에서 제공하는 Drizzle 마이그레이션 생성·검증 절차를 사용한다.
+4. Site의 비밀 설정에 무작위 32바이트 이상의 `REMOTE_DEVICE_KEY`를 등록한다. ChatGPT 로그인 상태로 비공개 Site의 `/api/room/whoami`에서 확인한 소유자 ID를 `REMOTE_OWNER_ID`에 등록한다. 비밀은 브라우저 코드나 Git에 넣지 않는다.
+5. 해당 비공개 Site가 Windows에서 호출을 받을 수 있도록 Sites의 서비스 액세스를 준비한다. `siwc_bypass_bearer_token`이 제공되면 대상 Site 호출에만 사용한다. 이 토큰은 브라우저 방문자 신원이 아니다. 제공 여부나 유효 기간을 추측하지 말고 실제 설정과 기기 호출로 확인한다.
+
+## 2. 홈 PC에 연결
+
+Agent Room을 먼저 실행하고 새로운 테스트 방을 만든다. 업데이트로 설치한 폴더에 `remote-sync.cjs`가 없다면 이 기능이 들어 있는 GitHub 릴리스의 Windows ZIP을 기존 설치 폴더에 덮어쓴다. `local` 폴더는 보존한다.
+
+Agent Room 설치 폴더에서 아래를 실행한다. 실제 키나 토큰을 명령 문자열, Codex 채팅, 스크린샷에 붙여 넣지 않는다. 로컬 PowerShell의 입력 프롬프트를 사용한다.
+
+```powershell
+$site = Read-Host '비공개 Site 주소'
+$room = Read-Host '테스트 방 이름 또는 ID'
+$key = Read-Host 'Site에 등록한 REMOTE_DEVICE_KEY' -AsSecureString
+$access = Read-Host 'Sites 서비스 액세스 토큰 (제공되지 않으면 Enter)' -AsSecureString
+try {
+  $env:AGENT_ROOM_DEVICE_KEY = [pscredential]::new('agent-room', $key).GetNetworkCredential().Password
+  $env:AGENT_ROOM_SITE_ACCESS = [pscredential]::new('agent-room', $access).GetNetworkCredential().Password
+  node .\remote-sync.cjs $site $room
+} finally {
+  Remove-Item Env:AGENT_ROOM_DEVICE_KEY,Env:AGENT_ROOM_SITE_ACCESS -ErrorAction SilentlyContinue
+}
+```
+
+## 3. 실제 왕복 확인
+
+- 소유자 계정이 아닌 요청의 조회·전송이 거절되는지 확인한다.
+- 원격 Site에서 테스트 문장을 보내고 로컬 방에 한 번만 들어오는지 확인한다.
+- 에이전트의 답변이 원격 Site에 표시되는지 확인한다.
+- 테스트 허브를 잠깐 다시 시작한 뒤 원격 대기열의 문장이 중복 없이 들어오는지 확인한다.
+- 첫 연결 전에 있던 기록, 지정 수신자 메시지, 다른 방의 메시지가 Site 목록에 없는지 확인한다.
+
+`node remote-site/smoke-test.mjs`는 D1과 호환되는 테스트 어댑터로 요청 권한, 양방향 대기열, 중복 방지를 검사한다. 실제 Sites 배포와 서비스 액세스는 따로 검증해야 한다.
