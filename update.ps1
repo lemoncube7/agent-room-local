@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory)][ValidatePattern('^v\d+\.\d+\.\d+$')][string]$Tag,
-    [Parameter(Mandatory)][int]$HubId
+    [Parameter(Mandatory)][int]$HubId,
+    [Parameter(Mandatory)][string]$NodePath
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
@@ -23,7 +24,10 @@ try {
         $current = Join-Path $PSScriptRoot $file
         if (Test-Path -LiteralPath $current) { Copy-Item -LiteralPath $current -Destination (Join-Path $backup $file) }
     }
-    if (-not $hub.HasExited) { $hub.Kill(); $hub.WaitForExit() }
+    $hubConfig = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'local/hub.json') -Raw | ConvertFrom-Json
+    if ($hubConfig.url -ne 'http://127.0.0.1:4317') { throw 'Unexpected Agent Room address.' }
+    Invoke-RestMethod -Method Post -Uri ($hubConfig.url + '/shutdown_for_update') -Headers @{Authorization='Bearer ' + $hubConfig.token} -ContentType 'application/json' -Body '{}' -TimeoutSec 10 | Out-Null
+    if (-not $hub.WaitForExit(15000)) { throw 'Agent Room is still closing. No files were replaced.' }
     $restart = $true
     foreach ($file in $files) {
         $applied.Add($file)
@@ -45,5 +49,5 @@ try {
     }
 }
 if ($restart) {
-    Start-Process -FilePath 'powershell.exe' -ArgumentList ('-NoProfile -STA -ExecutionPolicy Bypass -File "' + (Join-Path $PSScriptRoot 'start.ps1') + '"')
+    Start-Process -FilePath $NodePath -ArgumentList ('"' + (Join-Path $PSScriptRoot 'hub.cjs') + '"') -WorkingDirectory $PSScriptRoot -WindowStyle Hidden
 }

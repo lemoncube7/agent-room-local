@@ -17,8 +17,8 @@ function start(file,args=[]){
 async function main(){
   const hub=start('hub.cjs');
   const [line]=await once(hub.stdout,'data');
-  const url=String(line).trim();
-  const {token}=JSON.parse(fs.readFileSync(path.join(root,'local/hub.json')));
+  let url=String(line).trim();
+  let {token}=JSON.parse(fs.readFileSync(path.join(root,'local/hub.json')));
   async function post(route,body,auth=true){
     const response=await fetch(url+route,{method:'POST',headers:{
       'Content-Type':'application/json',...(route==='/control'?{Origin:url}:auth?{Authorization:'Bearer '+token}:{})
@@ -87,6 +87,20 @@ async function main(){
   await until(async()=>(await sync()).messages.find(m=>m.body==='Opened'));
   await rpc('/control',{action:'user_message',room:room.id,participant:managed.id,text:'Follow up'});
   await until(async()=>(await sync()).messages.find(m=>m.body==='Resumed: Follow up'));
-  console.log('Passed: room approval, one channel push, reply, receipt, one-use subagent invitation, separate authorship, inherited revocation, direct send and reply isolation, managed Codex creation and resume.');
+  const stopped=once(hub,'exit');
+  hub.kill();
+  await stopped;
+  emit('tools/call',{name:'send_message',arguments:{request:'during-restart',text:'Saved while offline.'}},11);
+  const queued=await until(()=>frames.find(f=>f.id===11));
+  assert.equal(JSON.parse(queued.result.content[0].text).queued,true);
+  const replacement=start('hub.cjs');
+  const [newLine]=await once(replacement.stdout,'data');
+  url=String(newLine).trim();
+  ({token}=JSON.parse(fs.readFileSync(path.join(root,'local/hub.json'))));
+  await until(async()=>(await sync()).messages.find(m=>m.body==='Saved while offline.'));
+  emit('tools/call',{name:'send_message',arguments:{request:'during-restart',text:'Saved while offline.'}},12);
+  await until(()=>frames.find(f=>f.id===12));
+  assert.equal((await sync()).messages.filter(m=>m.body==='Saved while offline.').length,1);
+  console.log('Passed: room approval, one channel push, reply, receipt, one-use subagent invitation, separate authorship, inherited revocation, direct send and reply isolation, managed Codex creation and resume, durable outbox across hub restart.');
 }
 main().catch(err=>{console.error(err);process.exitCode=1;}).finally(()=>procs.forEach(p=>p.kill()));

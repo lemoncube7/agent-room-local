@@ -26,6 +26,9 @@ if(!db.prepare('PRAGMA table_info(members)').all().some(column=>column.name==='p
 if(!db.prepare('PRAGMA table_info(messages)').all().some(column=>column.name==='recipient')) db.exec('ALTER TABLE messages ADD COLUMN recipient TEXT');
 db.exec('CREATE TABLE IF NOT EXISTS cli_sessions(member TEXT PRIMARY KEY, project TEXT NOT NULL, thread TEXT)');
 const cliBusy=new Set();
+let draining=false, updating=false;
+const outbox=path.join(local,'outbox');
+fs.mkdirSync(outbox,{recursive:true});
 function storeMessage(room, author, body, recipient=null){
   return Number(run('INSERT INTO messages(room,author,request,body,created,recipient) VALUES(?,?,?,?,?,?)',
     room,author,randomUUID(),body,new Date().toISOString(),recipient).lastInsertRowid);
@@ -124,7 +127,7 @@ function task({action,room,participant,name,text,request,replyTo,after=0}){
   return {seq:Number(result.lastInsertRowid)};
 }
 function state(){
-  return {rooms:all('SELECT * FROM rooms ORDER BY rowid'),
+  return {version,rooms:all('SELECT * FROM rooms ORDER BY rowid'),
     members:all("SELECT id,room,name,state,parent FROM members WHERE state<>'human'").map(row=>({...row,busy:cliBusy.has(row.id)})),
     messages:all('SELECT messages.*,members.name FROM messages JOIN members ON messages.author=members.id ORDER BY seq'),
     deliveries:all('SELECT deliveries.seq,members.name,deliveries.state FROM deliveries JOIN members ON deliveries.member=members.id')};
@@ -146,6 +149,19 @@ function deliver(args){
   run("UPDATE deliveries SET state=? WHERE seq=? AND member=? AND state='submitting'",args.state,args.seq,target.id);
   return {ok:true};
 }
+function drainOutbox(){
+  for(const name of fs.readdirSync(outbox).filter(name=>/^[a-f0-9-]{36}\.json$/.test(name))){
+    const filename=path.join(outbox,name);
+    try {
+      const data=JSON.parse(fs.readFileSync(filename,'utf8'));
+      if(!['send_message','reply_direct'].includes(data.action))continue;
+      task(data);
+      fs.rmSync(filename,{force:true});
+    } catch(error) {
+      if(error.code!=='ENOENT')console.error('Agent Room outbox entry retained:',name,error.message);
+    }
+  }
+}
 function authorized(req){
   const a=Buffer.from(req.headers.authorization||''), b=Buffer.from('Bearer '+token);
   return a.length===b.length&&timingSafeEqual(a,b);
@@ -160,27 +176,40 @@ const server=http.createServer(async(req,res)=>{
     return res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'}).end(JSON.stringify(state()));
   }
   const browser = req.url==='/control';
-  if(req.method!=='POST'||(!browser&&!['/tool','/delivery'].includes(req.url))) return res.writeHead(404).end();
+  if(req.method!=='POST'||(!browser&&!['/tool','/delivery','/shutdown_for_update'].includes(req.url))) return res.writeHead(404).end();
   if(browser?req.headers.origin!==origin:!authorized(req)) return res.writeHead(403).end();
   try{
     const chunks=[]; let size=0;
     for await(const chunk of req){size+=chunk.length;if(size>32768)return res.writeHead(413).end();chunks.push(chunk);}
     const args=JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    if(req.url==='/shutdown_for_update'){
+      if(!updating||cliBusy.size)return res.writeHead(409).end();
+      draining=true;
+      drainOutbox();
+      res.writeHead(200).end('Ready');
+      server.close(()=>db.close());
+      return;
+    }
     let result;
     if(browser){
       if(args.action==='create')run('INSERT INTO rooms VALUES(?,?)',randomUUID(),str(args.name,70));
       else if(args.action==='check_update')result=await checkUpdate();
       else if(args.action==='apply_update'){
         if(process.platform!=='win32')throw Error('자동 설치는 Windows에서 사용할 수 있어요.');
+        if(updating)throw Error('이미 업데이트를 준비하고 있어요.');
         if(cliBusy.size)throw Error('Codex 답변이 끝난 후 업데이트해 주세요.');
         const update=await checkUpdate();
         if(!update.download||update.latest!==args.tag)throw Error('업데이트를 다시 확인해 주세요.');
-        const worker=spawn('powershell.exe',['-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',path.join(__dirname,'update.ps1'),'-Tag',update.latest,'-HubId',String(process.pid)],{detached:true,stdio:'ignore',windowsHide:true});
-        await new Promise((resolve,reject)=>{worker.once('spawn',resolve);worker.once('error',reject);});
+        const worker=spawn('powershell.exe',['-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',path.join(__dirname,'update.ps1'),'-Tag',update.latest,'-HubId',String(process.pid),'-NodePath',process.execPath],{detached:true,stdio:'ignore',windowsHide:true});
+        updating=true;
+        worker.once('exit',()=>{updating=false;});
+        try{await new Promise((resolve,reject)=>{worker.once('spawn',resolve);worker.once('error',reject);});}
+        catch(error){updating=false;throw error;}
         worker.unref();
         result={started:true};
       }
       else if(args.action==='new_codex'){
+        if(draining)throw Error('업데이트 중이에요. 잠시 후 다시 시도하세요.');
         if(!one('SELECT id FROM rooms WHERE id=?',args.room))throw Error('Room not found.');
         const activeProject=path.join(local,'project.txt');
         const project=process.env.AGENT_ROOM_PROJECT||(fs.existsSync(activeProject)?fs.readFileSync(activeProject,'utf8').trim():null);
@@ -192,6 +221,7 @@ const server=http.createServer(async(req,res)=>{
         void cliTurn(id,'You are connected to Agent Room. Briefly say hello in Korean. Do not change any project files.');
       }
       else if(args.action==='user_message'){
+        if(draining)throw Error('업데이트 중이에요. 잠시 후 다시 시도하세요.');
         const target=member(args.participant,args.room);
         const body=str(args.text,8000);
         if(cliBusy.has(target.id))throw Error('Codex가 답변 중이에요. 완료되면 다시 보내세요.');
@@ -229,5 +259,7 @@ const server=http.createServer(async(req,res)=>{
 server.listen(Number(process.env.ROOM_PORT||4317),'127.0.0.1',()=>{
   const url='http://127.0.0.1:'+server.address().port;
   fs.writeFileSync(path.join(local,'hub.json'),JSON.stringify({url,token}),{mode:0o600});
+  drainOutbox();
+  setInterval(()=>{if(!draining)drainOutbox();},1000).unref();
   console.log(url);
 });

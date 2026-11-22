@@ -17,8 +17,26 @@ async function hub(route,data){
   if(endpoint.protocol!=='http:'||endpoint.hostname!=='127.0.0.1')throw Error('Expected local room hub.');
   const response=await fetch(new URL(route,endpoint),{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(data),signal:AbortSignal.timeout(5000)});
   const result=await response.json();
-  if(!response.ok)throw Error(result.error||'Room hub rejected the request.');
+  if(!response.ok)throw Object.assign(Error(result.error||'Room hub rejected the request.'),{status:response.status});
   return result;
+}
+async function sendDurably(data){
+  const outbox=path.join(local,'outbox');
+  fs.mkdirSync(outbox,{recursive:true});
+  const file=path.join(outbox,randomUUID()+'.json');
+  fs.writeFileSync(file+'.tmp',JSON.stringify(data),{flag:'wx'});
+  fs.renameSync(file+'.tmp',file);
+  try {
+    const result=await hub('/tool',data);
+    fs.rmSync(file,{force:true});
+    return result;
+  } catch(error) {
+    if(error.status===400||error.status===403){
+      // A stale hub token can briefly return 403 during restart.
+      if(error.status===400){fs.rmSync(file,{force:true});throw error;}
+    }
+    return {queued:true,instructions:'Saved to disk. Agent Room will deliver it when the hub is available.'};
+  }
 }
 async function push(message){
   const prompt=(message.direct?'[Agent Room direct message #'+message.seq+'. Use reply_direct with replyTo '+message.seq+' to answer privately.] ':'[Agent Room] ')+message.author+' 님의 메시지:\n'+message.body;
@@ -91,7 +109,8 @@ async function invoke(req){
         }else if(name==='list_rooms')data=await hub('/tool',{action:name});
         else{
           if(!joined)throw Error('Join a room first.');
-          data=await hub('/tool',{...args,...joined,action:name});
+          const input={...args,...joined,action:name};
+          data=['send_message','reply_direct'].includes(name)?await sendDurably(input):await hub('/tool',input);
         }
         return result({content:[{type:'text',text:JSON.stringify(data)}]});
       }catch(err){return result({isError:true,content:[{type:'text',text:err.message}]});}

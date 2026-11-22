@@ -33,13 +33,15 @@ $choose.add_Click({
     } finally { $picker.Dispose() }
 })
 
-function Test-RoomHub {
+$expectedVersion = (Get-Content -LiteralPath (Join-Path $PSScriptRoot 'VERSION') -Raw).Trim()
+function Get-RoomHub {
     try {
         $state = Invoke-RestMethod -Uri 'http://127.0.0.1:4317/state' -TimeoutSec 1
-        return $null -ne $state.PSObject.Properties['rooms'] -and
-            $null -ne $state.PSObject.Properties['members'] -and
-            $null -ne $state.PSObject.Properties['deliveries']
-    } catch { return $false }
+        if ($state.PSObject.Properties['rooms'] -and $state.PSObject.Properties['members'] -and $state.PSObject.Properties['deliveries']) { return $state }
+    } catch { }
+}
+function Test-RoomHub {
+    return (Get-RoomHub).version -eq $expectedVersion
 }
 
 $install.add_Click({
@@ -53,8 +55,20 @@ $install.add_Click({
         $roomLocal = Join-Path $PSScriptRoot 'local'
         [void][IO.Directory]::CreateDirectory($roomLocal)
         [IO.File]::WriteAllText((Join-Path $roomLocal 'project.txt'), (Resolve-Path -LiteralPath $project.Text.Trim()).Path)
+        $hubPath = Join-Path $PSScriptRoot 'hub.cjs'
+        $running = Get-RoomHub
+        if ($running -and $running.version -ne $expectedVersion) {
+            $escapedHub = [regex]::Escape($hubPath)
+            $matching = @(Get-CimInstance Win32_Process -Filter "Name='node.exe'" |
+                Where-Object CommandLine -Match ('\s+"' + $escapedHub + '"\s*\z'))
+            if ($matching.Count -ne 1) {
+                throw 'An older Agent Room hub is running. Close the old hub before opening this version.'
+            }
+            $oldHub = Get-Process -Id $matching[0].ProcessId
+            if (-not $oldHub.HasExited) { $oldHub.Kill() }
+            if (-not $oldHub.WaitForExit(5000)) { throw 'The older Agent Room hub did not exit.' }
+        }
         if (-not (Test-RoomHub)) {
-            $hubPath = Join-Path $PSScriptRoot 'hub.cjs'
             $hub = Start-Process -FilePath $node.Source -ArgumentList ('"' + $hubPath + '"') -WorkingDirectory $PSScriptRoot -WindowStyle Hidden -PassThru
             for ($attempt = 0; $attempt -lt 10 -and -not (Test-RoomHub); $attempt++) {
                 if ($hub.HasExited) { break }
@@ -63,7 +77,7 @@ $install.add_Click({
             if (-not (Test-RoomHub)) { throw 'Could not start Agent Room. Check whether port 4317 is in use.' }
         }
         Start-Process 'http://127.0.0.1:4317'
-        $status.Text = 'Ready. Create a room and choose which conversation to connect.'
+        $form.Close()
     } catch {
         $status.Text = 'Setup needs attention.'
         [void][Windows.Forms.MessageBox]::Show($form, $_.Exception.Message, 'Agent Room')
