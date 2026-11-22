@@ -32,24 +32,15 @@ function parseCodex(stdout, session) {
   };
 }
 
-function runCodex(project, prompt, session, provider='codex',scope=null) {
+function runCodex(project, prompt, session, provider='codex') {
   const claude=provider==='claude';
   const name=claude?'Claude Code':'Codex';
   const [file,...prefix]=cliCommand(provider);
   const codexArgs=session?['exec','resume','--json','--skip-git-repo-check',session,'-']:['exec','--json','--skip-git-repo-check','-'];
-  if(scope){
-    const bridge=JSON.stringify(path.join(__dirname,'bridge.cjs').replaceAll('\\','/'));
-    const config='mcp_servers.agent-room={command='+JSON.stringify(process.execPath.replaceAll('\\','/'))+',args=['+bridge+',"codex"],env={AGENT_ROOM_RELAY_SCOPE='+JSON.stringify(scope)+'},enabled_tools=["list_peers","send_to_peer"],tools={list_peers={approval_mode="approve"},send_to_peer={approval_mode="approve"}}}';
-    codexArgs.splice(1,0,'-c',config);
-  }
-  const claudeArgs=['--print','--output-format','json',...(session?['--resume',session]:[]),
-    ...(scope?['--allowedTools','mcp__agent-room__list_peers','mcp__agent-room__send_to_peer']:[])];
-  const env={...process.env};
-  delete env.AGENT_ROOM_RELAY_SCOPE;
-  if(scope)env.AGENT_ROOM_RELAY_SCOPE=scope;
+  const claudeArgs=['--print','--output-format','json',...(session?['--resume',session]:[])];
   return new Promise((resolve,reject)=>{
     const child=execFile(file,[...prefix,...(claude?claudeArgs:codexArgs)],{
-      cwd:project,env,windowsHide:true,timeout:300000,maxBuffer:8*1024*1024
+      cwd:project,windowsHide:true,timeout:300000,maxBuffer:8*1024*1024
     },(error,stdout)=>{
       let result;
       try {

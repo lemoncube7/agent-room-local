@@ -30,66 +30,49 @@ run("UPDATE members SET state='start_failed' WHERE state IN ('starting','approve
 run("UPDATE deliveries SET state='uncertain' WHERE state IN ('submitting','working') AND member IN (SELECT member FROM cli_sessions)");
 if(!all('PRAGMA table_info(messages)').some(column=>column.name==='relay_root'))db.exec('ALTER TABLE messages ADD COLUMN relay_root INTEGER');
 const cliBusy=new Set();
-const relayScopes=new Map();
-function managedRelay(action,scope,target,text,request){
-  const turn=relayScopes.get(scope);
-  if(!turn)throw Error('This managed turn is no longer active.');
-  member(turn.participant,turn.room);
-  const peers=all("SELECT members.id,members.name FROM members JOIN cli_sessions ON cli_sessions.member=members.id WHERE room=? AND state='approved' AND members.id<>?",turn.room,turn.participant);
-  if(action==='managed_peers')return {peers};
-  if(!peers.some(peer=>peer.id===target))throw Error('Select another connected CLI participant in this room.');
-  const key=str(request,100), body=str(text,8000);
-  const stored=one('SELECT seq,body,recipient,relay_root FROM messages WHERE author=? AND request=?',turn.participant,key);
-  if(stored){
-    if(stored.body!==body||stored.recipient!==target||stored.relay_root!==turn.root)throw Error('Request ID already used for different input.');
-    return {seq:stored.seq,state:'queued'};
-  }
-  if(turn.sent||one('SELECT COUNT(*) AS count FROM messages WHERE relay_root=?',turn.root).count>=4)throw Error('The relay limit for this user message has been reached.');
-  db.exec('BEGIN');
-  try{
-    const seq=Number(run('INSERT INTO messages(room,author,request,body,created,recipient,relay_root) VALUES(?,?,?,?,?,?,?)',
-      turn.room,turn.participant,key,body,new Date().toISOString(),target,turn.root).lastInsertRowid);
-    run("INSERT INTO deliveries VALUES(?,?,'queued')",seq,target);
-    db.exec('COMMIT');
-    turn.sent=true;
-    return {seq,state:'queued'};
-  }catch(error){db.exec('ROLLBACK');throw error;}
-}
 let draining=false, updating=false, updaterProcess;
 const outbox=path.join(local,'outbox');
 const updateLog=path.join(local,'update.log');
 fs.mkdirSync(outbox,{recursive:true});
-function storeMessage(room, author, body, recipient=null){
-  return Number(run('INSERT INTO messages(room,author,request,body,created,recipient) VALUES(?,?,?,?,?,?)',
-    room,author,randomUUID(),body,new Date().toISOString(),recipient).lastInsertRowid);
+function storeMessage(room,author,body,root=null){
+  return Number(run('INSERT INTO messages(room,author,request,body,created,relay_root) VALUES(?,?,?,?,?,?)',
+    room,author,randomUUID(),body,new Date().toISOString(),root).lastInsertRowid);
+}
+function queueForRoom(room,author,seq){
+  run("INSERT INTO deliveries(seq,member,state) SELECT ?,members.id,'queued' FROM members JOIN cli_sessions ON cli_sessions.member=members.id WHERE room=? AND state='approved' AND members.id<>?",seq,room,author);
 }
 async function cliTurn(participant, prompt, inputSeq){
   const session=one('SELECT * FROM cli_sessions WHERE member=?',participant);
   const row=one("SELECT room,state FROM members WHERE id=? AND state IN ('approved','starting')",participant);
   if(!session||!row||cliBusy.has(participant))return;
   cliBusy.add(participant);
-  const scope=inputSeq?randomBytes(32).toString('hex'):null;
-  const input=inputSeq?one('SELECT relay_root,recipient FROM messages WHERE seq=?',inputSeq):null;
-  if(scope)relayScopes.set(scope,{participant,room:row.room,root:input?.relay_root??inputSeq,sent:false});
+  const input=inputSeq?one('SELECT relay_root,author FROM messages WHERE seq=?',inputSeq):null;
   try{
     if(inputSeq)run("UPDATE deliveries SET state='working' WHERE seq=? AND member=?",inputSeq,participant);
-    const context='Agent Room displays your normal CLI reply to the user only. When asked to talk to another agent, use the agent-room list_peers tool, then send_to_peer with the listed ID. For an incoming peer message, reply to its sender using send_to_peer if a reply is useful. The tool queues delivery; it does not confirm a reply. Never invent a delivery or response. If the tool fails, report the actual error.';
-    const audience=!input?'This is the first turn.':input.relay_root?'This is a peer message.':input.recipient?'This user message was addressed to you specifically.':'This user message was broadcast to everyone; it may be for awareness or meant for another participant.';
-    const replyPolicy='Only reply when the message calls for a response from you or you have a useful result, question, or correction. For FYI, acknowledgments, or messages meant for someone else, return exactly [[AGENT_ROOM_NO_REPLY]]. Do not post a courtesy acknowledgment. If you handled a request by messaging the peer, you may stay silent here unless the user asked you to report the outcome.';
-    const result=await runCodex(session.project,context+' '+audience+' '+replyPolicy+'\n\n'+prompt,session.thread,session.provider,scope);
+    const context='You are in one shared Agent Room chat. Your normal response is posted to the whole room. Use your normal reply for messages to another agent; no separate send tool is needed. Never claim an agent replied unless a real message appears in the room history.';
+    const audience=!input?'This is the first turn.':input.author.startsWith('human:')?'The user posted to the whole room.':'Another agent posted to the whole room.';
+    const replyPolicy='Only reply when addressed, asked to do work, or when you can contribute a useful answer. If it is FYI, meant for someone else, or no useful reply is needed, respond exactly [[AGENT_ROOM_NO_REPLY]]. Avoid courtesy acknowledgments and unnecessary agent-to-agent chatter.';
+    const history=all("SELECT members.name,messages.body FROM messages JOIN members ON members.id=messages.author WHERE messages.room=? AND messages.recipient IS NULL AND messages.seq<? ORDER BY messages.seq DESC LIMIT 10",row.room,inputSeq??0).reverse();
+    const result=await runCodex(session.project,context+' '+audience+' '+replyPolicy+'\nRecent shared room messages (context only): '+JSON.stringify(history.map(message=>({name:message.name,body:message.body.slice(0,800)})))+'\n\n'+prompt,session.thread,session.provider);
     const silent=result.reply.trim()==='[[AGENT_ROOM_NO_REPLY]]';
     run('UPDATE cli_sessions SET thread=? WHERE member=?',result.id,participant);
     if(row.state==='starting')run("UPDATE members SET state='approved' WHERE id=? AND state='starting'",participant);
     if(!silent&&one("SELECT id FROM members WHERE id=? AND state='approved'",participant)){
-      const human='human:'+row.room;
-      storeMessage(row.room,participant,result.reply,one('SELECT id FROM members WHERE id=?',human)?human:null);
+      const root=input?.relay_root??inputSeq??null;
+      const count=root?one('SELECT COUNT(*) AS count FROM messages WHERE relay_root=?',root).count:0;
+      db.exec('BEGIN');
+      try{
+        const seq=storeMessage(row.room,participant,result.reply,root);
+        if(root&&count<4)queueForRoom(row.room,participant,seq);
+        db.exec('COMMIT');
+      }catch(error){db.exec('ROLLBACK');throw error;}
     }
     if(inputSeq)run('UPDATE deliveries SET state=? WHERE seq=? AND member=?',silent?'no_reply':'answered',inputSeq,participant);
   }catch(error){
     if(row.state==='starting')run("UPDATE members SET state='start_failed' WHERE id=? AND state='starting'",participant);
     if(inputSeq)run("UPDATE deliveries SET state='failed' WHERE seq=? AND member=?",inputSeq,participant);
-    storeMessage(row.room,participant,error.message,'human:'+row.room);
-  }finally{if(scope)relayScopes.delete(scope);cliBusy.delete(participant);}
+    storeMessage(row.room,participant,error.message);
+  }finally{cliBusy.delete(participant);}
 }
 async function checkUpdate(){
   const response=await fetch('https://api.github.com/repos/lemoncube7/agent-room-local/releases?per_page=20',{
@@ -117,8 +100,7 @@ function member(id,room){
   if(result.parent&&!one("SELECT id FROM members WHERE id=? AND room=? AND state='approved'",result.parent,room)) throw Error('The parent participant is disconnected.');
   return result;
 }
-function task({action,room,participant,name,text,request,replyTo,scope,target,after=0}){
-  if(['managed_peers','managed_send'].includes(action))return managedRelay(action,scope,target,text,request);
+function task({action,room,participant,name,text,request,replyTo,after=0}){
   if(action==='list_rooms') return {rooms:all('SELECT * FROM rooms ORDER BY rowid')};
   if(action==='join_room_code'){
     const code=str(request,100).toUpperCase();
@@ -157,15 +139,19 @@ function task({action,room,participant,name,text,request,replyTo,scope,target,af
   }
   if(!['send_message','reply_direct'].includes(action)) throw Error('Unknown tool.');
   const key=str(request,100), body=str(text,8000);
-  const recipient=action==='reply_direct'?one('SELECT author FROM messages WHERE seq=? AND room=? AND recipient=? AND author=?',replyTo,room,author.id,'human:'+room)?.author:null;
-  if(action==='reply_direct'&&!recipient)throw Error('Direct message not found.');
-  const existing=one('SELECT seq,room,body,recipient FROM messages WHERE author=? AND request=?',author.id,key);
+  const existing=one('SELECT seq,room,body FROM messages WHERE author=? AND request=?',author.id,key);
   if(existing){
-    if(existing.room!==room||existing.body!==body||existing.recipient!==recipient) throw Error('Request ID already used for different input.');
+    if(existing.room!==room||existing.body!==body)throw Error('Request ID already used for different input.');
     return {seq:existing.seq};
   }
-  const result=run('INSERT INTO messages(room,author,request,body,created,recipient) VALUES(?,?,?,?,?,?)',room,author.id,key,body,new Date().toISOString(),recipient);
-  return {seq:Number(result.lastInsertRowid)};
+  db.exec('BEGIN');
+  try{
+    const result=run('INSERT INTO messages(room,author,request,body,created) VALUES(?,?,?,?,?)',room,author.id,key,body,new Date().toISOString());
+    const seq=Number(result.lastInsertRowid);
+    queueForRoom(room,author.id,seq);
+    db.exec('COMMIT');
+    return {seq};
+  }catch(error){db.exec('ROLLBACK');throw error;}
 }
 function state(){
   return {version,updateStatus:fs.existsSync(updateLog)?fs.readFileSync(updateLog,'utf8').trim().split(/\r?\n/).at(-1):null,rooms:all('SELECT * FROM rooms ORDER BY rowid'),
@@ -196,7 +182,7 @@ function dispatchQueuedTurns(){
   for(const row of rows){
     if(cliBusy.has(row.member))continue;
     run("UPDATE deliveries SET state='submitting' WHERE seq=? AND member=?",row.seq,row.member);
-    const prompt=row.relay_root?'Agent Room peer message from '+row.sender+' (ID '+row.author+'):\n'+row.body:row.body;
+    const prompt='Message from '+row.sender+' in the room:\n'+row.body;
     void cliTurn(row.member,prompt,row.seq);
   }
 }
@@ -284,14 +270,12 @@ const server=http.createServer(async(req,res)=>{
       else if(args.action==='user_message'){
         if(draining)throw Error('업데이트 중이에요. 잠시 후 다시 시도하세요.');
         if(!one('SELECT id FROM rooms WHERE id=?',args.room))throw Error('Room not found.');
-        const target=args.participant?member(args.participant,args.room):null;
         const body=str(args.text,8000), human='human:'+args.room;
-        const managed=all("SELECT members.id FROM members JOIN cli_sessions ON cli_sessions.member=members.id WHERE members.room=? AND members.state='approved' AND (? IS NULL OR members.id=?)",args.room,target?.id??null,target?.id??null);
         db.exec('BEGIN');
         try{
           run("INSERT OR IGNORE INTO members(id,room,name,state) VALUES(?,?,?,'human')",human,args.room,'나');
-          const seq=storeMessage(args.room,human,body,target?.id??null);
-          for(const agent of managed)run("INSERT INTO deliveries VALUES(?,?,'queued')",seq,agent.id);
+          const seq=storeMessage(args.room,human,body);
+          queueForRoom(args.room,human,seq);
           db.exec('COMMIT');
         }catch(error){db.exec('ROLLBACK');throw error;}
         dispatchQueuedTurns();
