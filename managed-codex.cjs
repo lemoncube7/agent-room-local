@@ -2,6 +2,7 @@
 const {execFile} = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 
 function cliCommand(provider) {
   const env = process.env[provider === 'claude' ? 'AGENT_ROOM_CLAUDE' : 'AGENT_ROOM_CODEX'];
@@ -11,7 +12,11 @@ function cliCommand(provider) {
   } catch (error) {
     if(error.code!=='ENOENT')throw error;
   }
-  const executable = env || saved?.[provider];
+  const npm = process.env.APPDATA ? path.join(process.env.APPDATA,'npm','node_modules') : null;
+  const defaults = provider==='claude'
+    ? [path.join(os.homedir(),'.local','bin','claude.exe'), npm && path.join(npm,'@anthropic-ai','claude-code','cli.js')]
+    : [npm && path.join(npm,'@openai','codex','bin','codex.js')];
+  const executable = env || [saved?.[provider],...defaults].find(candidate=>candidate&&fs.existsSync(candidate));
   if(executable && /\.(?:cjs|mjs|js)$/i.test(executable))return [process.execPath, executable];
   return [executable || (provider === 'claude' ? 'claude' : 'codex')];
 }
