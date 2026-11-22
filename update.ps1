@@ -4,14 +4,13 @@ param(
     [Parameter(Mandatory)][string]$NodePath
 )
 $ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName System.Windows.Forms
 $stage = Join-Path ([IO.Path]::GetTempPath()) ('agent-room-update-' + [guid]::NewGuid())
-$hub = Get-Process -Id $HubId
 $files = @('hub.cjs','bridge.cjs','codex-ipc.cjs','managed-codex.cjs','index.html','setup.ps1','start.ps1','update.ps1','Start Agent Room.cmd','README.md','VERSION','smoke-test.cjs')
 $applied = [Collections.Generic.List[string]]::new()
 $restart = $false
 $failed = $false
 try {
+    $hub = Get-Process -Id $HubId
     $zip = Join-Path $stage 'update.zip'
     $unpacked = Join-Path $stage 'unpacked'
     $backup = Join-Path $stage 'backup'

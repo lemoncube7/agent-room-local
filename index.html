@@ -119,7 +119,6 @@ byId('update').onclick=async()=>{
    const link=el('a','Windows ZIP 받기');link.href=info.download;link.target='_blank';link.rel='noopener';
    const install=el('button','업데이트 설치');
    install.onclick=async()=>{
-    if(!confirm('설치하는 동안 채팅방 연결이 잠시 종료돼요. 업데이트할까요?'))return;
     install.disabled=true;
     try{
      const result=await fetch('/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'apply_update',tag:info.latest})});

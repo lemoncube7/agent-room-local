@@ -214,15 +214,19 @@ const server=http.createServer(async(req,res)=>{
         if(cliBusy.size)throw Error('CLI 답변이 끝난 후 업데이트해 주세요.');
         const update=await checkUpdate();
         if(!update.download||update.latest!==args.tag)throw Error('업데이트를 다시 확인해 주세요.');
-        const log=fs.openSync(updateLog,'w');
+        fs.writeFileSync(updateLog,'업데이트 프로그램을 시작하는 중…\n');
+        const log=fs.openSync(updateLog,'a');
+        const powershell=path.join(process.env.SystemRoot||'C:/Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
         let worker;
-        try{worker=spawn('powershell.exe',['-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',path.join(__dirname,'update.ps1'),'-Tag',update.latest,'-HubId',String(process.pid),'-NodePath',process.execPath],{detached:true,stdio:['ignore',log,log],windowsHide:true});}
+        try{worker=spawn(powershell,['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(__dirname,'update.ps1'),'-Tag',update.latest,'-HubId',String(process.pid),'-NodePath',process.execPath],{detached:true,stdio:['ignore',log,log],windowsHide:true});}
         finally{fs.closeSync(log);}
         updating=true;
-        worker.once('exit',code=>{updating=false;if(code&&fs.existsSync(updateLog))fs.appendFileSync(updateLog,'\n업데이트 실패 (종료 코드 '+code+'). Windows ZIP으로 다시 시도해 주세요.\n');});
+        worker.once('exit',(code,signal)=>{
+          updating=false;
+          if(code!==0)fs.appendFileSync(updateLog,'\n업데이트 실패 (종료 상태 '+(signal??code)+'). Windows ZIP으로 다시 시도해 주세요.\n');
+        });
         try{await new Promise((resolve,reject)=>{worker.once('spawn',resolve);worker.once('error',reject);});}
-        catch(error){updating=false;throw error;}
-        worker.unref();
+        catch(error){updating=false;fs.appendFileSync(updateLog,'업데이트 실패: '+error.message+'\n');throw error;}
         result={started:true};
       }
       else if(['new_codex','new_claude'].includes(args.action)){
