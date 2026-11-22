@@ -44,6 +44,21 @@ function Test-RoomHub {
     return (Get-RoomHub).version -eq $expectedVersion
 }
 
+function Find-AgentCli($provider) {
+    $app = Get-Command "$provider.exe" -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($app) { return $app.Source }
+    $candidates = if ($provider -eq 'codex') {
+        if (Get-Command Get-AppxPackage -ErrorAction SilentlyContinue) {
+            Get-AppxPackage -Name OpenAI.Codex | ForEach-Object { Join-Path $_.InstallLocation 'app/resources/codex.exe' }
+        }
+        Join-Path $env:APPDATA 'npm/node_modules/@openai/codex/bin/codex.js'
+    } else {
+        Join-Path $env:USERPROFILE '.local/bin/claude.exe'
+        Join-Path $env:APPDATA 'npm/node_modules/@anthropic-ai/claude-code/cli.js'
+    }
+    $candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+}
+
 $install.add_Click({
     $install.Enabled = $false
     $status.Text = 'Preparing project...'
@@ -54,6 +69,8 @@ $install.add_Click({
         & (Join-Path $PSScriptRoot 'setup.ps1') -Project $project.Text.Trim() -Apply | Out-Null
         $roomLocal = Join-Path $PSScriptRoot 'local'
         [void][IO.Directory]::CreateDirectory($roomLocal)
+        $cliSettings = @{ codex = (Find-AgentCli 'codex'); claude = (Find-AgentCli 'claude') }
+        [IO.File]::WriteAllText((Join-Path $roomLocal 'cli.json'), ($cliSettings | ConvertTo-Json -Compress))
         [IO.File]::WriteAllText((Join-Path $roomLocal 'project.txt'), (Resolve-Path -LiteralPath $project.Text.Trim()).Path)
         $hubPath = Join-Path $PSScriptRoot 'hub.cjs'
         $running = Get-RoomHub

@@ -9,7 +9,7 @@ const procs=[];
 for(const name of ['hub.cjs','bridge.cjs','index.html','VERSION'])fs.copyFileSync(path.join(__dirname,name),path.join(root,name));
 fs.mkdirSync(path.join(root,'.codex'));
 fs.writeFileSync(path.join(root,'.codex/config.toml'),'');
-fs.writeFileSync(path.join(root,'managed-codex.cjs'),"exports.runCodex=async(project,prompt,session)=>({id:'mock-session',reply:session?'Resumed: '+prompt:'Opened'})");
+fs.writeFileSync(path.join(root,'managed-codex.cjs'),"exports.runCodex=async(project,prompt,session,provider)=>({id:'mock-'+provider,reply:provider==='claude'?(session?'Claude resumed: '+prompt:'Claude opened'):(session?'Resumed: '+prompt:'Opened')})");
 function start(file,args=[]){
   const child=spawn(process.execPath,[path.join(root,file),...args],{env:{...process.env,ROOM_PORT:'0',AGENT_ROOM_PROJECT:root}});
   procs.push(child); return child;
@@ -87,6 +87,11 @@ async function main(){
   await until(async()=>(await sync()).messages.find(m=>m.body==='Opened'));
   await rpc('/control',{action:'user_message',room:room.id,participant:managed.id,text:'Follow up'});
   await until(async()=>(await sync()).messages.find(m=>m.body==='Resumed: Follow up'));
+  const claudeState=await rpc('/control',{action:'new_claude',room:room.id});
+  const managedClaude=claudeState.members.find(m=>m.name==='Claude Code CLI');
+  await until(async()=>(await sync()).messages.find(m=>m.body==='Claude opened'));
+  await rpc('/control',{action:'user_message',room:room.id,participant:managedClaude.id,text:'Follow up'});
+  await until(async()=>(await sync()).messages.find(m=>m.body==='Claude resumed: Follow up'));
   const stopped=once(hub,'exit');
   hub.kill();
   await stopped;
@@ -101,6 +106,6 @@ async function main(){
   emit('tools/call',{name:'send_message',arguments:{request:'during-restart',text:'Saved while offline.'}},12);
   await until(()=>frames.find(f=>f.id===12));
   assert.equal((await sync()).messages.filter(m=>m.body==='Saved while offline.').length,1);
-  console.log('Passed: room approval, one channel push, reply, receipt, one-use subagent invitation, separate authorship, inherited revocation, direct send and reply isolation, managed Codex creation and resume, durable outbox across hub restart.');
+  console.log('Passed: room approval, one channel push, reply, receipt, one-use subagent invitation, separate authorship, inherited revocation, direct send and reply isolation, managed Codex and Claude creation and resume, durable outbox across hub restart.');
 }
 main().catch(err=>{console.error(err);process.exitCode=1;}).finally(()=>procs.forEach(p=>p.kill()));

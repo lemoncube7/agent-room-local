@@ -25,6 +25,7 @@ const run = (sql,...args)=>db.prepare(sql).run(...args);
 if(!db.prepare('PRAGMA table_info(members)').all().some(column=>column.name==='parent')) db.exec('ALTER TABLE members ADD COLUMN parent TEXT');
 if(!db.prepare('PRAGMA table_info(messages)').all().some(column=>column.name==='recipient')) db.exec('ALTER TABLE messages ADD COLUMN recipient TEXT');
 db.exec('CREATE TABLE IF NOT EXISTS cli_sessions(member TEXT PRIMARY KEY, project TEXT NOT NULL, thread TEXT)');
+if(!all('PRAGMA table_info(cli_sessions)').some(column=>column.name==='provider')) db.exec("ALTER TABLE cli_sessions ADD COLUMN provider TEXT NOT NULL DEFAULT 'codex'");
 const cliBusy=new Set();
 let draining=false, updating=false;
 const outbox=path.join(local,'outbox');
@@ -39,7 +40,7 @@ async function cliTurn(participant, prompt, inputSeq){
   if(!session||!row||cliBusy.has(participant))return;
   cliBusy.add(participant);
   try{
-    const result=await runCodex(session.project,prompt,session.thread);
+    const result=await runCodex(session.project,prompt,session.thread,session.provider);
     run('UPDATE cli_sessions SET thread=? WHERE member=?',result.id,participant);
     if(one("SELECT id FROM members WHERE id=? AND state='approved'",participant)){
       const human='human:'+row.room;
@@ -197,7 +198,7 @@ const server=http.createServer(async(req,res)=>{
       else if(args.action==='apply_update'){
         if(process.platform!=='win32')throw Error('자동 설치는 Windows에서 사용할 수 있어요.');
         if(updating)throw Error('이미 업데이트를 준비하고 있어요.');
-        if(cliBusy.size)throw Error('Codex 답변이 끝난 후 업데이트해 주세요.');
+        if(cliBusy.size)throw Error('CLI 답변이 끝난 후 업데이트해 주세요.');
         const update=await checkUpdate();
         if(!update.download||update.latest!==args.tag)throw Error('업데이트를 다시 확인해 주세요.');
         const worker=spawn('powershell.exe',['-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',path.join(__dirname,'update.ps1'),'-Tag',update.latest,'-HubId',String(process.pid),'-NodePath',process.execPath],{detached:true,stdio:'ignore',windowsHide:true});
@@ -208,15 +209,15 @@ const server=http.createServer(async(req,res)=>{
         worker.unref();
         result={started:true};
       }
-      else if(args.action==='new_codex'){
+      else if(['new_codex','new_claude'].includes(args.action)){
         if(draining)throw Error('업데이트 중이에요. 잠시 후 다시 시도하세요.');
         if(!one('SELECT id FROM rooms WHERE id=?',args.room))throw Error('Room not found.');
         const activeProject=path.join(local,'project.txt');
         const project=process.env.AGENT_ROOM_PROJECT||(fs.existsSync(activeProject)?fs.readFileSync(activeProject,'utf8').trim():null);
         if(!project||!fs.existsSync(path.join(project,'.codex','config.toml')))throw Error('시작 파일에서 프로젝트를 선택하고 이 방을 다시 열어 주세요.');
-        const id=randomUUID();
-        run("INSERT INTO members(id,room,name,state) VALUES(?,?,?,'approved')",id,args.room,'Codex CLI');
-        run('INSERT INTO cli_sessions(member,project) VALUES(?,?)',id,project);
+        const id=randomUUID(), provider=args.action==='new_claude'?'claude':'codex';
+        run("INSERT INTO members(id,room,name,state) VALUES(?,?,?,'approved')",id,args.room,provider==='claude'?'Claude Code CLI':'Codex CLI');
+        run('INSERT INTO cli_sessions(member,project,provider) VALUES(?,?,?)',id,project,provider);
         run("INSERT OR IGNORE INTO members(id,room,name,state) VALUES(?,?,?,'human')",'human:'+args.room,args.room,'나');
         void cliTurn(id,'You are connected to Agent Room. Briefly say hello in Korean. Do not change any project files.');
       }
@@ -224,7 +225,7 @@ const server=http.createServer(async(req,res)=>{
         if(draining)throw Error('업데이트 중이에요. 잠시 후 다시 시도하세요.');
         const target=member(args.participant,args.room);
         const body=str(args.text,8000);
-        if(cliBusy.has(target.id))throw Error('Codex가 답변 중이에요. 완료되면 다시 보내세요.');
+        if(cliBusy.has(target.id))throw Error('선택한 대화가 답변 중이에요. 완료되면 다시 보내세요.');
         const human='human:'+target.room;
         run("INSERT OR IGNORE INTO members(id,room,name,state) VALUES(?,?,?,'human')",human,target.room,'나');
         const seq=storeMessage(target.room,human,body,target.id);

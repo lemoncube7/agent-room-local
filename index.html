@@ -87,10 +87,13 @@ async function makePair(instructions, launchCommand){
  }catch(e){err(e.message);}finally{for(const item of buttons)item.disabled=false;}
 }
 byId('pair').onclick=()=>makePair('기존 대화를 열고 아래 문장을 붙여 넣으세요.');
-byId('new-codex').onclick=async()=>{
- const button=byId('new-codex');button.disabled=true;
- try{await control({action:'new_codex',room:selected});}finally{button.disabled=false;}
-};
+for(const [id,action] of [['new-codex','new_codex'],['new-claude','new_claude']]){
+ const button=byId(id);
+ button.onclick=async()=>{
+  button.disabled=true;
+  try{await control({action,room:selected});}finally{button.disabled=false;}
+ };
+}
 byId('compose').onsubmit=async event=>{
  event.preventDefault();
  const button=event.submitter, draft=byId('draft'), text=draft.value, room=selected;
@@ -122,6 +125,5 @@ byId('update').onclick=async()=>{
   }
  }catch(error){status.textContent=error.message;}finally{button.disabled=false;}
 };
-byId('new-claude').onclick=()=>makePair('Agent Room을 설정한 프로젝트 폴더에서 위 명령으로 새 대화를 시작하고 아래 문장을 첫 메시지로 보내세요.', 'claude --dangerously-load-development-channels server:agent-room');
 refresh();setInterval(refresh,1500);
 </script></html>
