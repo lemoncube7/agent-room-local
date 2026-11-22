@@ -9,7 +9,7 @@ const procs=[];
 for(const name of ['hub.cjs','bridge.cjs','index.html','VERSION'])fs.copyFileSync(path.join(__dirname,name),path.join(root,name));
 fs.mkdirSync(path.join(root,'.codex'));
 fs.writeFileSync(path.join(root,'.codex/config.toml'),'');
-fs.writeFileSync(path.join(root,'managed-codex.cjs'),"exports.runCodex=async(project,prompt,session,provider)=>{if(provider==='claude' && require('node:fs').existsSync(require('node:path').join(project,'fail-claude')))throw Error('CLI missing');return {id:'mock-'+provider,reply:provider==='claude'?(session?'Claude resumed: '+prompt:'Claude opened'):(session?'Resumed: '+prompt:'Opened')};}");
+fs.writeFileSync(path.join(root,'managed-codex.cjs'),"exports.runCodex=async(project,prompt,session,provider)=>{prompt=prompt.split('\\n\\n').at(-1);if(prompt==='Hold reply')await new Promise(resolve=>setTimeout(resolve,650));if(provider==='claude' && require('node:fs').existsSync(require('node:path').join(project,'fail-claude')))throw Error('CLI missing');return {id:'mock-'+provider,reply:provider==='claude'?(session?'Claude resumed: '+prompt:'Claude opened'):(session?'Resumed: '+prompt:'Opened')};}");
 function start(file,args=[]){
   const child=spawn(process.execPath,[path.join(root,file),...args],{env:{...process.env,ROOM_PORT:'0',AGENT_ROOM_PROJECT:root}});
   procs.push(child); return child;
@@ -87,6 +87,9 @@ async function main(){
   await until(async()=>(await sync()).messages.find(m=>m.body==='Opened'));
   await rpc('/control',{action:'user_message',room:room.id,participant:managed.id,text:'Follow up'});
   await until(async()=>(await sync()).messages.find(m=>m.body==='Resumed: Follow up'));
+  await rpc('/control',{action:'user_message',room:room.id,participant:managed.id,text:'Hold reply'});
+  const working=await until(async()=>(await sync()).deliveries.find(d=>d.name==='Codex CLI'&&d.state==='working'));
+  await until(async()=>(await sync()).deliveries.find(d=>d.seq===working.seq&&d.state==='answered'));
   const claudeState=await rpc('/control',{action:'new_claude',room:room.id});
   const managedClaude=claudeState.members.find(m=>m.name==='Claude Code CLI');
   await until(async()=>(await sync()).messages.find(m=>m.body==='Claude opened'));

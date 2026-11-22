@@ -27,6 +27,7 @@ if(!db.prepare('PRAGMA table_info(messages)').all().some(column=>column.name==='
 db.exec('CREATE TABLE IF NOT EXISTS cli_sessions(member TEXT PRIMARY KEY, project TEXT NOT NULL, thread TEXT)');
 if(!all('PRAGMA table_info(cli_sessions)').some(column=>column.name==='provider')) db.exec("ALTER TABLE cli_sessions ADD COLUMN provider TEXT NOT NULL DEFAULT 'codex'");
 run("UPDATE members SET state='start_failed' WHERE state IN ('starting','approved') AND id IN (SELECT member FROM cli_sessions WHERE thread IS NULL)");
+run("UPDATE deliveries SET state='uncertain' WHERE state IN ('submitting','working') AND member IN (SELECT member FROM cli_sessions)");
 const cliBusy=new Set();
 let draining=false, updating=false, updaterProcess;
 const outbox=path.join(local,'outbox');
@@ -42,14 +43,16 @@ async function cliTurn(participant, prompt, inputSeq){
   if(!session||!row||cliBusy.has(participant))return;
   cliBusy.add(participant);
   try{
-    const result=await runCodex(session.project,prompt,session.thread,session.provider);
+    if(inputSeq)run("UPDATE deliveries SET state='working' WHERE seq=? AND member=?",inputSeq,participant);
+    const context='Agent Room displays your CLI reply to the user. Other participants do not receive it automatically. Do not claim an exchange with another agent unless you actually sent and received messages. If a tool fails, report the observed error and avoid guessing the cause.';
+    const result=await runCodex(session.project,context+'\n\n'+prompt,session.thread,session.provider);
     run('UPDATE cli_sessions SET thread=? WHERE member=?',result.id,participant);
     if(row.state==='starting')run("UPDATE members SET state='approved' WHERE id=? AND state='starting'",participant);
     if(one("SELECT id FROM members WHERE id=? AND state='approved'",participant)){
       const human='human:'+row.room;
       storeMessage(row.room,participant,result.reply,one('SELECT id FROM members WHERE id=?',human)?human:null);
     }
-    if(inputSeq)run("UPDATE deliveries SET state='accepted' WHERE seq=? AND member=?",inputSeq,participant);
+    if(inputSeq)run("UPDATE deliveries SET state='answered' WHERE seq=? AND member=?",inputSeq,participant);
   }catch(error){
     if(row.state==='starting')run("UPDATE members SET state='start_failed' WHERE id=? AND state='starting'",participant);
     if(inputSeq)run("UPDATE deliveries SET state='failed' WHERE seq=? AND member=?",inputSeq,participant);
