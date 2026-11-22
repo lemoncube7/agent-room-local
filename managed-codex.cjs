@@ -39,7 +39,7 @@ function runCodex(project, prompt, session, provider='codex',scope=null) {
   const codexArgs=session?['exec','resume','--json','--skip-git-repo-check',session,'-']:['exec','--json','--skip-git-repo-check','-'];
   if(scope){
     const bridge=JSON.stringify(path.join(__dirname,'bridge.cjs').replaceAll('\\','/'));
-    const config='mcp_servers.agent-room={command='+JSON.stringify(process.execPath.replaceAll('\\','/'))+',args=['+bridge+',"codex"],env={AGENT_ROOM_RELAY_SCOPE='+JSON.stringify(scope)+'}}';
+    const config='mcp_servers.agent-room={command='+JSON.stringify(process.execPath.replaceAll('\\','/'))+',args=['+bridge+',"codex"],env={AGENT_ROOM_RELAY_SCOPE='+JSON.stringify(scope)+'},enabled_tools=["list_peers","send_to_peer"],tools={list_peers={approval_mode="approve"},send_to_peer={approval_mode="approve"}}}';
     codexArgs.splice(1,0,'-c',config);
   }
   const claudeArgs=['--print','--output-format','json',...(session?['--resume',session]:[]),
