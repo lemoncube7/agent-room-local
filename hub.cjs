@@ -28,7 +28,7 @@ db.exec('CREATE TABLE IF NOT EXISTS cli_sessions(member TEXT PRIMARY KEY, projec
 if(!all('PRAGMA table_info(cli_sessions)').some(column=>column.name==='provider')) db.exec("ALTER TABLE cli_sessions ADD COLUMN provider TEXT NOT NULL DEFAULT 'codex'");
 run("UPDATE members SET state='start_failed' WHERE state IN ('starting','approved') AND id IN (SELECT member FROM cli_sessions WHERE thread IS NULL)");
 const cliBusy=new Set();
-let draining=false, updating=false;
+let draining=false, updating=false, updaterProcess;
 const outbox=path.join(local,'outbox');
 const updateLog=path.join(local,'update.log');
 fs.mkdirSync(outbox,{recursive:true});
@@ -201,6 +201,7 @@ const server=http.createServer(async(req,res)=>{
       draining=true;
       drainOutbox();
       res.writeHead(200).end('Ready');
+      updaterProcess?.unref();
       server.close(()=>db.close());
       return;
     }
@@ -221,8 +222,10 @@ const server=http.createServer(async(req,res)=>{
         try{worker=spawn(powershell,['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(__dirname,'update.ps1'),'-Tag',update.latest,'-HubId',String(process.pid),'-NodePath',process.execPath],{detached:true,stdio:['ignore',log,log],windowsHide:true});}
         finally{fs.closeSync(log);}
         updating=true;
+        updaterProcess=worker;
         worker.once('exit',(code,signal)=>{
           updating=false;
+          updaterProcess=undefined;
           if(code!==0)fs.appendFileSync(updateLog,'\n업데이트 실패 (종료 상태 '+(signal??code)+'). Windows ZIP으로 다시 시도해 주세요.\n');
         });
         try{await new Promise((resolve,reject)=>{worker.once('spawn',resolve);worker.once('error',reject);});}
