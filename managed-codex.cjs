@@ -32,7 +32,7 @@ function parseCodex(stdout, session) {
   };
 }
 
-function runCodex(project, prompt, session, provider='codex',model=null) {
+function runCodex(project, prompt, session, provider='codex',model=null,effort=null) {
   const claude=provider==='claude';
   const agy=provider==='agy';
   const name=agy?'Antigravity':claude?'Claude Code':'Codex';
@@ -41,6 +41,11 @@ function runCodex(project, prompt, session, provider='codex',model=null) {
   const claudeArgs=['--print','--output-format','json',...(session?['--resume',session]:[])];
   const agyArgs=['-p',prompt,'--output-format','json',...(session?['--conversation',session]:[]),'--print-timeout','285s'];
   if(model){codexArgs.splice(-1,0,'--model',model);claudeArgs.push('--model',model);agyArgs.push('--model',model);}
+  if(effort){
+    codexArgs.splice(-1,0,'-c','model_reasoning_effort='+JSON.stringify(effort));
+    claudeArgs.push('--effort',effort);
+    agyArgs.push('--effort',effort);
+  }
   return new Promise((resolve,reject)=>{
     const child=execFile(file,[...prefix,...(agy?agyArgs:claude?claudeArgs:codexArgs)],{
       cwd:project,windowsHide:true,timeout:300000,maxBuffer:8*1024*1024

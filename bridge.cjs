@@ -73,7 +73,17 @@ async function receive(){
 }
 const str={type:'string',minLength:1};
 const setup=(name,description,properties)=>({name,description,inputSchema:{type:'object',properties,required:Object.keys(properties),additionalProperties:false}});
+const pos={type:'integer',minimum:1};
+const optional=(name,description,properties,required)=>({name,description,inputSchema:{type:'object',properties,required,additionalProperties:false}});
 const tools=[
+  setup('handoff_list','List tasks in your approved Agent Room.',{}),
+  setup('handoff_history','Read the handoff history of a task in your room.',{id:pos}),
+  optional('handoff_create','Create and own a task in the room.',{title:str,summary:{type:'string'},next:str},['title','next']),
+  optional('handoff_update','Update a task you own.',{id:pos,revision:pos,title:str,summary:{type:'string'},next:str,note:{type:'string'}},['id','revision']),
+  optional('handoff_offer','Offer your task to an approved participant ID. The recipient must accept it.',{id:pos,revision:pos,target:str,next:str,note:{type:'string'}},['id','revision','target']),
+  setup('handoff_accept','Accept a pending handoff addressed to you.',{id:pos,revision:pos}),
+  setup('handoff_decline','Decline a pending handoff addressed to you.',{id:pos,revision:pos}),
+  optional('handoff_complete','Complete a task you own.',{id:pos,revision:pos,note:{type:'string'}},['id','revision']),
   setup('list_rooms','List local collaboration rooms.',{}),
   setup('request_join','Connect this session to a room after the user approves in the room UI.',{room:str}),
   setup('join_room_code','Connect this existing session using a one-use code from the room UI.',{request:str}),

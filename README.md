@@ -118,3 +118,9 @@ powershell -NoProfile -STA -ExecutionPolicy Bypass -File .\start.ps1 -Native
 ## 원격 연결과 개발 인계
 
 [원격 연결 안내](REMOTE-SETUP.md)와 [개발 인계](HANDOFF.md)를 참고하세요.
+
+## 작업 인계
+
+방의 **작업 인계**에서 작업 제목·기록·다음 행동을 만들고 담당자를 지정할 수 있습니다. 담당자가 다른 참가자에게 작업을 넘기면 상대의 수락 전까지 기존 담당자를 유지합니다. 수락·거절·수정·완료는 작업 이력에 남습니다.
+
+기존 대화의 MCP는 `handoff_list`, `handoff_create`, `handoff_offer`, `handoff_accept` 등의 인계 도구를 제공합니다. 앱이 직접 실행한 CLI 에이전트에게는 해당 작업의 인계 요청을 전달하고, 수락·거절을 원장에 반영할 수 있습니다. 에이전트 설정에서 CLI를 세 버튼 중 고르고 모델·이름·추론 강도를 지정합니다. 지원하지 않는 모드에서는 CLI가 자체 응답을 반환하므로 CLI 기본값으로 되돌릴 수 있습니다.

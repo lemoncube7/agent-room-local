@@ -2,6 +2,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
+const {createHandoff}=require('./handoff.cjs');
 const {runCodex,discoverModels} = require('./managed-codex.cjs');
 const {spawn,execFile}=require('node:child_process');
 const version=fs.readFileSync(path.join(__dirname,'VERSION'),'utf8').trim();
@@ -27,6 +28,8 @@ if(!db.prepare('PRAGMA table_info(messages)').all().some(column=>column.name==='
 db.exec('CREATE TABLE IF NOT EXISTS cli_sessions(member TEXT PRIMARY KEY, project TEXT NOT NULL, thread TEXT)');
 if(!all('PRAGMA table_info(cli_sessions)').some(column=>column.name==='provider')) db.exec("ALTER TABLE cli_sessions ADD COLUMN provider TEXT NOT NULL DEFAULT 'codex'");
 if(!all('PRAGMA table_info(cli_sessions)').some(column=>column.name==='model'))db.exec('ALTER TABLE cli_sessions ADD COLUMN model TEXT');
+if(!all('PRAGMA table_info(cli_sessions)').some(column=>column.name==='effort'))db.exec('ALTER TABLE cli_sessions ADD COLUMN effort TEXT');
+const normalizeEffort=value=>{if(!value)return null;if(!['low','medium','high'].includes(value))throw Error('Unsupported reasoning effort.');return value;};
 const providerNames={codex:'Codex CLI',claude:'Claude Code CLI',agy:'Antigravity'};
 run("UPDATE members SET state='start_failed' WHERE state IN ('starting','approved') AND id IN (SELECT member FROM cli_sessions WHERE thread IS NULL)");
 run("UPDATE deliveries SET state='uncertain' WHERE state IN ('submitting','working') AND member IN (SELECT member FROM cli_sessions)");
@@ -103,7 +106,18 @@ async function cliTurn(participant, prompt, inputSeq){
     const audience=!input?'This is the first turn.':input.author.startsWith('human:')?'The user posted to the whole room.':'Another agent posted to the whole room.';
     const replyPolicy='Only reply when addressed, asked to do work, or when you can contribute a useful answer. If it is FYI, meant for someone else, or no useful reply is needed, respond exactly [[AGENT_ROOM_NO_REPLY]]. Avoid courtesy acknowledgments and unnecessary agent-to-agent chatter.';
     const history=all("SELECT members.name,messages.body FROM messages JOIN members ON members.id=messages.author WHERE messages.room=? AND (messages.recipient IS NULL OR messages.recipient=? OR messages.author=?) AND messages.seq<? ORDER BY messages.seq DESC LIMIT 10",row.room,participant,participant,inputSeq??0).reverse();
-    const result=await runCodex(session.project,context+' '+audience+' '+replyPolicy+'\nRecent shared room messages (context only): '+JSON.stringify(history.map(message=>({name:message.name,body:message.body.slice(0,800)})))+'\n\n'+prompt,session.thread,session.provider,session.model);
+    const alert=inputSeq?one('SELECT task,revision FROM handoff_alerts WHERE seq=?',inputSeq):null;
+    const handoffPolicy=alert?' This turn is a task handoff notification. Before doing work, reply exactly [[HANDOFF_ACCEPT]] to accept, or [[HANDOFF_DECLINE]] to decline. Use only that control line.':'';
+    const result=await runCodex(session.project,context+' '+audience+' '+replyPolicy+handoffPolicy+'\nRecent shared room messages (context only): '+JSON.stringify(history.map(message=>({name:message.name,body:message.body.slice(0,800)})))+'\n\n'+prompt,session.thread,session.provider,session.model,session.effort);
+    const decision=result.reply.trim().match(/^\[\[HANDOFF_(ACCEPT|DECLINE)\]\]$/);
+    if(alert&&decision){
+      const action=decision[1]==='ACCEPT'?'handoff_accept':'handoff_decline';
+      try{handoff.change({action,id:alert.task,revision:alert.revision},participant,row.room);}
+      catch(error){storeMessage(row.room,participant,'작업 #'+alert.task+' 인계 상태를 변경하지 못했어요: '+error.message);}
+      run('UPDATE cli_sessions SET thread=? WHERE member=?',result.id,participant);
+      run("UPDATE deliveries SET state='answered' WHERE seq=? AND member=?",inputSeq,participant);
+      return;
+    }
     const match=result.reply.trim().match(/^\[\[TO:([^\]\r\n]+)\]\]\s*\r?\n([\s\S]*)$/);
     const recipient=match&&peers.some(peer=>peer.id===match[1])?match[1]:null;
     const body=recipient?match[2].trim():result.reply.trim();
@@ -168,7 +182,16 @@ function recordUserMessage(room,text,request=randomUUID()){
     return seq;
   }catch(error){db.exec('ROLLBACK');throw error;}
 }
+db.exec('CREATE TABLE IF NOT EXISTS handoff_alerts (seq INTEGER PRIMARY KEY, task INTEGER NOT NULL, revision INTEGER NOT NULL)');
+const handoff=createHandoff({db,all,one,run,member,notify(room,target,id,title,next,revision){
+  const system='system:'+room;
+  run("INSERT OR IGNORE INTO members(id,room,name,state) VALUES(?,?,?,'human')",system,room,'작업 인계');
+  const seq=storeMessage(room,system,'작업 #'+id+' 인계 요청: '+title+'\n다음 행동: '+next+'\n작업 인계 메뉴 또는 handoff_accept 도구에서 수락할 수 있어요.',null,target);
+  run('INSERT INTO handoff_alerts VALUES(?,?,?)',seq,id,revision);
+  queueForRoom(room,system,seq,target);
+}});
 function task({action,room,participant,name,text,request,replyTo,after=0,...extra}){
+  if(typeof action==='string'&&action.startsWith('handoff_'))return handoff.change({action,name,text,request,...extra},participant,room);
   if(['bind_codex_desktop','test_codex_desktop'].includes(action))return desktopCommands({action,room,participant,...extra});
   if(action==='remote_user_message'){
     if(!/^[a-f0-9-]{36}$/i.test(request||''))throw Error('Invalid remote message identifier.');
@@ -229,8 +252,8 @@ function task({action,room,participant,name,text,request,replyTo,after=0,...extr
   }catch(error){db.exec('ROLLBACK');throw error;}
 }
 function state(){
-  return {version,updateStatus:fs.existsSync(updateLog)?fs.readFileSync(updateLog,'utf8').trim().split(/\r?\n/).at(-1):null,rooms:all('SELECT * FROM rooms ORDER BY rowid'),
-    members:all("SELECT members.id,room,name,state,parent,cli_sessions.provider,cli_sessions.model FROM members LEFT JOIN cli_sessions ON cli_sessions.member=members.id WHERE state<>'human'").map(row=>({...row,busy:cliBusy.has(row.id)})),
+  return {version,tasks:handoff.list(),updateStatus:fs.existsSync(updateLog)?fs.readFileSync(updateLog,'utf8').trim().split(/\r?\n/).at(-1):null,rooms:all('SELECT * FROM rooms ORDER BY rowid'),
+    members:all("SELECT members.id,room,name,state,parent,cli_sessions.provider,cli_sessions.model,cli_sessions.effort FROM members LEFT JOIN cli_sessions ON cli_sessions.member=members.id WHERE state<>'human'").map(row=>({...row,busy:cliBusy.has(row.id)})),
     messages:all('SELECT messages.*,members.name FROM messages JOIN members ON messages.author=members.id ORDER BY seq'),
     deliveries:all('SELECT deliveries.seq,deliveries.member,members.name,deliveries.state FROM deliveries JOIN members ON deliveries.member=members.id')};
 }
@@ -306,7 +329,11 @@ const server=http.createServer(async(req,res)=>{
     }
     let result;
     if(browser){
-      if(args.action==='create')run('INSERT INTO rooms VALUES(?,?)',randomUUID(),str(args.name,70));
+      if(typeof args.action==='string'&&args.action.startsWith('handoff_')){
+        const update=handoff.change(args,'human:'+args.room,args.room);
+        if(args.action==='handoff_history')result=update;
+      }
+      else if(args.action==='create')run('INSERT INTO rooms VALUES(?,?)',randomUUID(),str(args.name,70));
       else if(args.action==='list_models'){
         if(!Object.hasOwn(providerNames,args.provider))throw Error('Unknown agent provider.');
         const projectFile=path.join(local,'project.txt');
@@ -347,8 +374,9 @@ const server=http.createServer(async(req,res)=>{
         if(!Object.hasOwn(providerNames,provider))throw Error('Unknown agent provider.');
         const model=args.model?.trim()?str(args.model,120):null;
         const name=args.name?.trim()?str(args.name,120):model||providerNames[provider];
+        const effort=normalizeEffort(args.effort);
         run("INSERT INTO members(id,room,name,state) VALUES(?,?,?,'starting')",id,args.room,name);
-        run('INSERT INTO cli_sessions(member,project,provider,model) VALUES(?,?,?,?)',id,project,provider,model);
+        run('INSERT INTO cli_sessions(member,project,provider,model,effort) VALUES(?,?,?,?,?)',id,project,provider,model,effort);
         run("INSERT OR IGNORE INTO members(id,room,name,state) VALUES(?,?,?,'human')",'human:'+args.room,args.room,'나');
         void cliTurn(id,'You are connected to Agent Room. Briefly say hello in Korean. Do not change any project files.');
       }
@@ -358,7 +386,7 @@ const server=http.createServer(async(req,res)=>{
         if(!agent)throw Error('Connected CLI agent not found.');
         const model=args.model?.trim()?str(args.model,120):null;
         const name=args.name?.trim()?str(args.name,120):model||providerNames[agent.provider];
-        run('UPDATE cli_sessions SET model=? WHERE member=?',model,args.participant);
+        run('UPDATE cli_sessions SET model=?,effort=? WHERE member=?',model,normalizeEffort(args.effort),args.participant);
         run('UPDATE members SET name=? WHERE id=?',name,args.participant);
       }
       else if(args.action==='user_message'){
