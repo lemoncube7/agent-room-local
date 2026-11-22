@@ -8,6 +8,7 @@ const local=path.join(__dirname,'local');
 const provider=process.argv[2];
 const thread=process.argv[3];
 const claude=provider==='claude';
+const relayScope=process.env.AGENT_ROOM_RELAY_SCOPE;
 if(!['claude','codex','work'].includes(provider))throw Error('Specify claude, codex, or work.');
 let joined, timer, busy=false, joining=false;
 const emit=payload=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',...payload})+'\n');
@@ -73,7 +74,10 @@ async function receive(){
 }
 const str={type:'string',minLength:1};
 const setup=(name,description,properties)=>({name,description,inputSchema:{type:'object',properties,required:Object.keys(properties),additionalProperties:false}});
-const tools=[
+const tools=relayScope?[
+  setup('list_peers','List connected CLI peers in your current room.',{}),
+  setup('send_to_peer','Queue a real message for a connected CLI peer. This does not confirm the peer replied.',{target:str,request:str,text:str})
+]:[
   setup('list_rooms','List local collaboration rooms.',{}),
   setup('request_join','Connect this session to a room after the user approves in the room UI.',{room:str}),
   setup('join_room_code','Connect this existing session using a one-use code from the room UI.',{request:str}),
@@ -85,7 +89,7 @@ const tools=[
 ];
 async function invoke(req){
   if(req.method==='notifications/initialized'){
-    timer??=setInterval(receive,1600);
+    if(!relayScope)timer??=setInterval(receive,1600);
     return;
   }
   if(req.id===undefined)return;
@@ -99,7 +103,10 @@ async function invoke(req){
       const {name,arguments:args={}}=req.params;
       try{
         let data;
-        if(['request_join','join_room_code','join_subagent'].includes(name)){
+        if(relayScope){
+          if(!['list_peers','send_to_peer'].includes(name))throw Error('This managed turn can only use the scoped peer tools.');
+          data=await hub('/tool',{...args,action:name==='list_peers'?'managed_peers':'managed_send',scope:relayScope});
+        }else if(['request_join','join_room_code','join_subagent'].includes(name)){
           if(joined||joining)throw Error('This MCP process is already pairing or paired. Restart this client connection to change rooms.');
           joining=true;
           try{data=await hub('/tool',{action:name,room:args.room,request:args.request,name:claude?'Claude Code':provider==='work'?'ChatGPT Work':'Codex'});}

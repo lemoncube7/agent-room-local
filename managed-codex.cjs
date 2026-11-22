@@ -32,15 +32,20 @@ function parseCodex(stdout, session) {
   };
 }
 
-function runCodex(project, prompt, session, provider='codex') {
+function runCodex(project, prompt, session, provider='codex',scope=null) {
   const claude=provider==='claude';
   const name=claude?'Claude Code':'Codex';
   const [file,...prefix]=cliCommand(provider);
   const codexArgs=session?['exec','resume','--json','--skip-git-repo-check',session,'-']:['exec','--json','--skip-git-repo-check','-'];
-  const claudeArgs=['--print','--output-format','json',...(session?['--resume',session]:[])];
+  if(scope)codexArgs.splice(1,0,'-c','mcp_servers.agent-room.env.AGENT_ROOM_RELAY_SCOPE='+JSON.stringify(scope));
+  const claudeArgs=['--print','--output-format','json',...(session?['--resume',session]:[]),
+    ...(scope?['--allowedTools','mcp__agent-room__list_peers','mcp__agent-room__send_to_peer']:[])];
+  const env={...process.env};
+  delete env.AGENT_ROOM_RELAY_SCOPE;
+  if(scope)env.AGENT_ROOM_RELAY_SCOPE=scope;
   return new Promise((resolve,reject)=>{
     const child=execFile(file,[...prefix,...(claude?claudeArgs:codexArgs)],{
-      cwd:project,windowsHide:true,timeout:300000,maxBuffer:8*1024*1024
+      cwd:project,env,windowsHide:true,timeout:300000,maxBuffer:8*1024*1024
     },(error,stdout)=>{
       let result;
       try {

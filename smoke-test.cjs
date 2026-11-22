@@ -9,7 +9,7 @@ const procs=[];
 for(const name of ['hub.cjs','bridge.cjs','index.html','VERSION'])fs.copyFileSync(path.join(__dirname,name),path.join(root,name));
 fs.mkdirSync(path.join(root,'.codex'));
 fs.writeFileSync(path.join(root,'.codex/config.toml'),'');
-fs.writeFileSync(path.join(root,'managed-codex.cjs'),"exports.runCodex=async(project,prompt,session,provider)=>{prompt=prompt.split('\\n\\n').at(-1);if(prompt==='Hold reply')await new Promise(resolve=>setTimeout(resolve,650));if(provider==='claude' && require('node:fs').existsSync(require('node:path').join(project,'fail-claude')))throw Error('CLI missing');return {id:'mock-'+provider,reply:provider==='claude'?(session?'Claude resumed: '+prompt:'Claude opened'):(session?'Resumed: '+prompt:'Opened')};}");
+fs.writeFileSync(path.join(root,'managed-codex.cjs'),"const fs=require('node:fs');\nconst path=require('node:path');\nconst {spawn}=require('node:child_process');\nconst {once}=require('node:events');\nasync function tool(provider,scope,name,args){\n const child=spawn(process.execPath,[path.join(__dirname,'bridge.cjs'),provider],{env:{...process.env,AGENT_ROOM_RELAY_SCOPE:scope}});\n const reader=require('node:readline').createInterface({input:child.stdout});\n try{const response=once(reader,'line');child.stdin.write(JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name,arguments:args}})+'\\n');\n const result=JSON.parse((await response)[0]).result;if(result.isError)throw Error(result.content[0].text);return JSON.parse(result.content[0].text);\n }finally{child.kill();reader.close();}\n}\nexports.runCodex=async(project,prompt,session,provider,scope)=>{\n prompt=prompt.split('\\n\\n').at(-1);\n if(prompt==='Hold reply')await new Promise(resolve=>setTimeout(resolve,650));\n if(provider==='claude'&&fs.existsSync(path.join(project,'fail-claude')))throw Error('CLI missing');\n if(prompt==='Relay once'){const {peers}=await tool(provider,scope,'list_peers',{});await tool(provider,scope,'send_to_peer',{target:peers.find(p=>p.name==='Claude Code CLI').id,request:'relay-1',text:'Actual peer hello'});}\n if(prompt.endsWith('Actual peer hello')){const {peers}=await tool(provider,scope,'list_peers',{});await tool(provider,scope,'send_to_peer',{target:peers.find(p=>p.name==='Codex CLI').id,request:'relay-2',text:'Actual peer reply'});}\n return {id:'mock-'+provider,reply:provider==='claude'?(session?'Claude resumed: '+prompt:'Claude opened'):(session?'Resumed: '+prompt:'Opened')};\n};");
 function start(file,args=[]){
   const child=spawn(process.execPath,[path.join(root,file),...args],{env:{...process.env,ROOM_PORT:'0',AGENT_ROOM_PROJECT:root}});
   procs.push(child); return child;
@@ -101,6 +101,11 @@ async function main(){
     return messages.some(m=>m.body==='Resumed: Everyone hello')&&messages.some(m=>m.body==='Claude resumed: Everyone hello');
   });
   await until(()=>frames.find(f=>f.method==='notifications/claude/channel'&&f.params.content.includes('Everyone hello')));
+  await rpc('/control',{action:'user_message',room:room.id,participant:managed.id,text:'Relay once'});
+  const relayed=await until(async()=>(await sync()).messages.find(m=>m.body==='Actual peer reply'));
+  assert.equal(relayed.author,managedClaude.id);
+  assert.equal(relayed.recipient,managed.id);
+  await until(async()=>(await sync()).deliveries.find(d=>d.seq===relayed.seq&&d.state==='answered'));
   fs.writeFileSync(path.join(root,'fail-claude'),'');
   const failureStart=await rpc('/control',{action:'new_claude',room:room.id});
   const failed=failureStart.members.filter(m=>m.name==='Claude Code CLI').at(-1);
@@ -120,6 +125,6 @@ async function main(){
   emit('tools/call',{name:'send_message',arguments:{request:'during-restart',text:'Saved while offline.'}},12);
   await until(()=>frames.find(f=>f.id===12));
   assert.equal((await sync()).messages.filter(m=>m.body==='Saved while offline.').length,1);
-  console.log('Passed: room approval, one channel push, reply, receipt, one-use subagent invitation, separate authorship, inherited revocation, direct send and reply isolation, managed Codex and Claude creation and resume, durable outbox across hub restart.');
+  console.log('Passed: room approval, one channel push, reply, receipt, one-use subagent invitation, separate authorship, inherited revocation, direct send and reply isolation, managed Codex and Claude creation and resume, durable outbox across hub restart, scoped peer relay and reply.');
 }
 main().catch(err=>{console.error(err);process.exitCode=1;}).finally(()=>procs.forEach(p=>p.kill()));
