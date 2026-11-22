@@ -37,7 +37,11 @@ function runCodex(project, prompt, session, provider='codex',scope=null) {
   const name=claude?'Claude Code':'Codex';
   const [file,...prefix]=cliCommand(provider);
   const codexArgs=session?['exec','resume','--json','--skip-git-repo-check',session,'-']:['exec','--json','--skip-git-repo-check','-'];
-  if(scope)codexArgs.splice(1,0,'-c','mcp_servers.agent-room.env.AGENT_ROOM_RELAY_SCOPE='+JSON.stringify(scope));
+  if(scope){
+    const bridge=JSON.stringify(path.join(__dirname,'bridge.cjs').replaceAll('\\','/'));
+    const config='mcp_servers.agent-room={command='+JSON.stringify(process.execPath.replaceAll('\\','/'))+',args=['+bridge+',"codex"],env={AGENT_ROOM_RELAY_SCOPE='+JSON.stringify(scope)+'}}';
+    codexArgs.splice(1,0,'-c',config);
+  }
   const claudeArgs=['--print','--output-format','json',...(session?['--resume',session]:[]),
     ...(scope?['--allowedTools','mcp__agent-room__list_peers','mcp__agent-room__send_to_peer']:[])];
   const env={...process.env};
