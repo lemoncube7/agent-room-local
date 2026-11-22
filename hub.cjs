@@ -184,7 +184,7 @@ const server=http.createServer(async(req,res)=>{
     for await(const chunk of req){size+=chunk.length;if(size>32768)return res.writeHead(413).end();chunks.push(chunk);}
     const args=JSON.parse(Buffer.concat(chunks).toString('utf8'));
     if(req.url==='/shutdown_for_update'){
-      if(!updating||cliBusy.size)return res.writeHead(409).end();
+      if(draining||cliBusy.size)return res.writeHead(409,{'Content-Type':'application/json'}).end(JSON.stringify({error:'Agent Room is busy. Wait for the active reply before updating.'}));
       draining=true;
       drainOutbox();
       res.writeHead(200).end('Ready');
