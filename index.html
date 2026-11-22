@@ -1,13 +1,13 @@
 <!doctype html><html lang="ko"><meta charset="utf-8"><title>Agent Room</title>
 <style>
 :root{color-scheme:dark;font-family:Inter,"Segoe UI",sans-serif;background:#111526;color:#edf0fa}
-*{box-sizing:border-box}body{margin:0;display:grid;grid-template-columns:minmax(165px,270px) minmax(0,1fr);grid-template-rows:minmax(0,1fr);height:100vh;height:100dvh;overflow:hidden}
+*{box-sizing:border-box}body{margin:0;display:grid;grid-template-columns:clamp(150px,17vw,230px) minmax(0,1fr);grid-template-rows:minmax(0,1fr);height:100vh;height:100dvh;overflow:hidden}
 aside{background:#181d31;border-right:1px solid #2e3651;padding:28px 20px;overflow:auto}
 h1{font-size:21px;margin:0 0 24px}button,input{font:inherit;border-radius:9px;border:1px solid #384362;background:#252d46;color:inherit;padding:9px 12px}button{cursor:pointer}button:hover,button[aria-current=true]{background:#344265}form{display:flex;gap:5px}form[hidden]{display:none}input{width:100%;min-width:0}nav{display:grid;gap:8px;margin-top:20px}nav button{text-align:left}
-main{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}header{flex:none;padding:16px 25px;border-bottom:1px solid #2e3651;background:#111526}#room-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}#room-actions button{margin:0}#compose{flex:none;border-top:1px solid #2e3651}header h2{margin:0;font-size:18px}header p{margin:8px 0 0;color:#b8c5e0}header code{color:#9ce6d2}header button{margin-top:10px}#people{display:flex;gap:8px;flex-wrap:wrap;max-height:24vh;overflow:auto;margin-top:12px}#people:empty{display:none}#people span{background:#202943;border-radius:9px;padding:6px 9px}#people button{margin-left:8px;font-size:12px}#messages{flex:1 1 0;min-height:0;overscroll-behavior:contain;padding:24px;display:flex;flex-direction:column;gap:16px;overflow:auto}article{flex-shrink:0;max-width:min(80%,720px);background:#222c43;border-radius:13px;padding:12px 16px;align-self:flex-start}article.own{align-self:flex-end;background:#203d40}article.own strong{color:#9ce6d2}article.codex{background:#202d48;border-inline-start:3px solid #8cb6ff}article.codex>strong{color:#a9c8ff}article.claude{background:#392b31;border-inline-start:3px solid #f3a880}article.claude>strong{color:#ffc2a2}.markdown{color:#f4f6ff;overflow-wrap:anywhere;margin:7px 0}.markdown>*{margin:0 0 7px}.markdown>*:last-child{margin-bottom:0}.markdown pre{overflow:auto;max-width:100%;padding:8px;background:#14192a;border-radius:6px}.markdown pre code{white-space:pre}.markdown blockquote{margin-left:0;padding-left:10px;border-left:2px solid #7784a5}.markdown a{color:#b7d5ff}.markdown ul,.markdown ol{padding-left:22px}.markdown h3,.markdown h4,.markdown h5,.markdown h6{font-size:1em}article.typing small{display:block;margin-top:5px;color:#ffcf90}article p{white-space:pre-wrap;overflow-wrap:anywhere;margin:7px 0;color:#f4f6ff}small{color:#b8c5e0}article strong{color:#ffbf9e}#error{color:#ffb9ad;padding-top:8px}
+main{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}header{flex:none;padding:16px 25px;border-bottom:1px solid #2e3651;background:#111526}#room-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}#room-actions button{margin:0}#compose{flex:none;border-top:1px solid #2e3651}header h2{margin:0;font-size:18px}header p{margin:8px 0 0;color:#b8c5e0}header code{color:#9ce6d2}header button{margin-top:10px}#people{display:flex;gap:8px;flex-wrap:wrap;max-height:24vh;overflow:auto;margin-top:12px}#people:empty{display:none}#people span{background:#202943;border-radius:9px;padding:6px 9px}#people button{margin-left:8px;font-size:12px}#chat-panes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));flex:1 1 0;min-height:0;min-width:0;overflow:auto}.chat-pane{display:flex;flex-direction:column;min-height:0;min-width:0;border-inline-end:1px solid #2e3651}.chat-pane:last-child{border-inline-end:0}.chat-pane h3{flex:none;margin:0;padding:12px 16px;font-size:14px;background:#181d31;border-bottom:1px solid #2e3651}.history{flex:1 1 0;min-height:0;overscroll-behavior:contain;padding:14px;display:flex;flex-direction:column;gap:12px;overflow:auto}@media(max-width:820px){#chat-panes{grid-template-columns:repeat(3,minmax(205px,1fr))}}article{flex-shrink:0;max-width:96%;min-width:0;background:#222c43;border-radius:13px;padding:12px 16px;align-self:flex-start}article.own{align-self:flex-end;background:#203d40}article.own strong{color:#9ce6d2}article.codex{background:#202d48;border-inline-start:3px solid #8cb6ff}article.codex>strong{color:#a9c8ff}article.claude{background:#392b31;border-inline-start:3px solid #f3a880}article.claude>strong{color:#ffc2a2}.markdown{color:#f4f6ff;overflow-wrap:anywhere;margin:7px 0}.markdown>*{margin:0 0 7px}.markdown>*:last-child{margin-bottom:0}.markdown pre{overflow:auto;max-width:100%;padding:8px;background:#14192a;border-radius:6px}.markdown pre code{white-space:pre}.markdown blockquote{margin-left:0;padding-left:10px;border-left:2px solid #7784a5}.markdown a{color:#b7d5ff}.markdown ul,.markdown ol{padding-left:22px}.markdown h3,.markdown h4,.markdown h5,.markdown h6{font-size:1em}article.typing small{display:block;margin-top:5px;color:#ffcf90}article p{white-space:pre-wrap;overflow-wrap:anywhere;margin:7px 0;color:#f4f6ff}small{color:#b8c5e0}article strong{color:#ffbf9e}#error{color:#ffb9ad;padding-top:8px}
 </style>
 <aside><h1>Agent Room <small id="current-version" aria-label="현재 버전">버전 확인 중</small></h1><button id="update">업데이트 확인</button><p id="update-result" role="status"></p><form id="new" autocomplete="off"><input name="name" autocomplete="off" aria-label="채팅방 이름" placeholder="새 채팅방 이름" required maxlength="70"><button aria-label="채팅방 만들기">+</button></form><div id="error" role="status"></div><nav id="rooms"></nav></aside>
-<main><header><h2 id="title">채팅방을 선택하세요</h2><div id="room-actions"><button id="pair" hidden>기존 대화 연결 코드 만들기</button><button id="new-codex" hidden>새 Codex 대화</button> <button id="new-claude" hidden>새 Claude Code 대화</button></div><p id="pair-guide" hidden></p><section id="people" aria-label="참가자"></section></header><section id="messages" aria-label="대화"></section><form id="compose" autocomplete="off" hidden style="padding: 12px 25px"><select id="recipient" aria-label="받는 대화"></select><input id="draft" autocomplete="off" aria-label="메시지" placeholder="메시지 쓰기" maxlength="8000" required><button type="submit">보내기</button></form></main>
+<main><header><h2 id="title">채팅방을 선택하세요</h2><div id="room-actions"><button id="pair" hidden>기존 대화 연결 코드 만들기</button><button id="new-codex" hidden>새 Codex 대화</button> <button id="new-claude" hidden>새 Claude Code 대화</button></div><p id="pair-guide" hidden></p><section id="people" aria-label="참가자"></section></header><div id="chat-panes"><section class="chat-pane" aria-labelledby="gpt-title"><h3 id="gpt-title">GPT</h3><div class="history" id="messages-gpt"></div></section><section class="chat-pane" aria-labelledby="claude-title"><h3 id="claude-title">Claude</h3><div class="history" id="messages-claude"></div></section><section class="chat-pane" aria-labelledby="shared-title"><h3 id="shared-title">GPT ↔ Claude</h3><div class="history" id="messages-shared"></div></section></div><form id="compose" autocomplete="off" hidden style="padding: 12px 25px"><select id="recipient" aria-label="받는 대화"></select><input id="draft" autocomplete="off" aria-label="메시지" placeholder="메시지 쓰기" maxlength="8000" required><button type="submit">보내기</button></form></main>
 <script>
 let composeRoom,selected,previous='',snapshot,refreshing=false,lastRendered,pairRoom;
 const byId=id=>document.getElementById(id);
@@ -68,14 +68,24 @@ function update(next){
 function agentCard(name,own=false){
  const card=document.createElement('article');
  if(own)card.classList.add('own');
- else if(/^codex\b/i.test(name))card.classList.add('codex');
- else if(/^claude\b/i.test(name))card.classList.add('claude');
+ else if(agentPane(name)==='gpt')card.classList.add('codex');
+ else if(agentPane(name)==='claude')card.classList.add('claude');
  return card;
 }
+function agentPane(name){
+ if(/^(codex|gpt|chatgpt)\b/i.test(name||''))return 'gpt';
+ if(/^claude\b/i.test(name||''))return 'claude';
+}
+function messagePanes(message,recipientName){
+ if(message.relay_root)return ['shared'];
+ const sender=agentPane(message.name), recipient=agentPane(recipientName);
+ if(sender&&recipient&&sender!==recipient)return ['shared'];
+ if(sender||recipient)return [sender||recipient];
+ if(message.author==='human:'+message.room&&!message.recipient)return ['gpt','claude'];
+ return ['shared'];
+}
 function render(){
- const view=byId('messages');
  const roomChanged=lastRendered!==selected;
- const oldTop=view.scrollTop, previousTail=view.lastElementChild?.dataset.key, previousMessage=view.dataset.latest;
  const room=snapshot.rooms.find(r=>r.id===selected);
  lastRendered=selected;
  byId('title').textContent=room?.name||'채팅방을 선택하세요';
@@ -97,20 +107,36 @@ function render(){
  if(people.some(m=>m.id===wanted))picker.value=wanted;
  byId('compose').hidden=!people.length;
  const messages=snapshot.messages.filter(m=>m.room===selected);
+ const recipients=new Map(snapshot.members.map(member=>[member.id,member.name]));
+ const lists={gpt:[],claude:[],shared:[]};
+ for(const message of messages){
+  for(const pane of messagePanes(message,recipients.get(message.recipient)))lists[pane].push(message);
+ }
+ const typing={gpt:[],claude:[],shared:[]};
+ for(const agent of people.filter(person=>person.busy)){
+  const pending=snapshot.deliveries.find(delivery=>delivery.member===agent.id&&delivery.state==='working');
+  const input=messages.find(message=>message.seq===pending?.seq);
+  const pane=input?.relay_root?'shared':agentPane(agent.name)||'shared';
+  typing[pane].push(agent);
+ }
+ for(const pane of Object.keys(lists))renderHistory(byId('messages-'+pane),lists[pane],typing[pane],recipients,roomChanged);
+}
+function renderHistory(view,messages,typing,recipients,roomChanged){
+ const oldTop=view.scrollTop, previousTail=view.lastElementChild?.dataset.key, previousMessage=view.dataset.latest;
  const status={queued:'대기 중',accepted:'전달 접수',submitting:'전달 중',working:'전달 접수',answered:'응답 완료',uncertain:'전달 불확실',failed:'응답 실패'};
  view.replaceChildren(...messages.map(m=>{
- const a=agentCard(m.name,m.author==='human:'+selected);a.dataset.key='message:'+m.seq;
- const states=snapshot.deliveries.filter(d=>d.seq===m.seq);
- const delivery=states.map(d=>d.name+' · '+status[d.state]).join(' / ');
- const recipient=snapshot.members.find(p=>p.id===m.recipient);
- a.append(el('strong',m.name+(recipient?' → '+recipient.name:m.recipient?' · 직접 대화':'')),markdown(m.body),el('small',new Date(m.created).toLocaleTimeString('ko-KR')+' · '+(delivery||'방에 저장됨')));return a;
+  const card=agentCard(m.name,m.author==='human:'+selected);card.dataset.key='message:'+m.seq;
+  const delivery=snapshot.deliveries.filter(d=>d.seq===m.seq).map(d=>d.name+' · '+status[d.state]).join(' / ');
+  const recipient=recipients.get(m.recipient);
+  card.append(el('strong',m.name+(recipient?' → '+recipient:m.recipient?' · 직접 대화':'')),markdown(m.body),el('small',new Date(m.created).toLocaleTimeString('ko-KR')+' · '+(delivery||'방에 저장됨')));
+  return card;
  }));
- for(const agent of people.filter(person=>person.busy)){
+ for(const agent of typing){
   const card=agentCard(agent.name);card.classList.add('typing');card.dataset.key='typing:'+agent.id;
   card.setAttribute('role','status');card.append(el('strong',agent.name),el('small','응답 생성 중…'));
   view.append(card);
  }
- if(room&&!view.children.length)view.append(el('small','참가자가 남긴 메시지가 여기에 표시됩니다.'));
+ if(!view.children.length)view.append(el('small','아직 메시지가 없어요.'));
  view.dataset.latest=String(messages.at(-1)?.seq??'');
  if(roomChanged||previousTail!==view.lastElementChild?.dataset.key||previousMessage!==view.dataset.latest)view.scrollTop=view.scrollHeight;
  else view.scrollTop=oldTop;

@@ -168,7 +168,7 @@ function state(){
   return {version,updateStatus:fs.existsSync(updateLog)?fs.readFileSync(updateLog,'utf8').trim().split(/\r?\n/).at(-1):null,rooms:all('SELECT * FROM rooms ORDER BY rowid'),
     members:all("SELECT id,room,name,state,parent FROM members WHERE state<>'human'").map(row=>({...row,busy:cliBusy.has(row.id)})),
     messages:all('SELECT messages.*,members.name FROM messages JOIN members ON messages.author=members.id ORDER BY seq'),
-    deliveries:all('SELECT deliveries.seq,members.name,deliveries.state FROM deliveries JOIN members ON deliveries.member=members.id')};
+    deliveries:all('SELECT deliveries.seq,deliveries.member,members.name,deliveries.state FROM deliveries JOIN members ON deliveries.member=members.id')};
 }
 function deliver(args){
   const target=member(args.participant,args.room);
