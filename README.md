@@ -1,5 +1,26 @@
 # Agent Room 로컬 프로토타입
 
+## LLM 설치 지시서
+
+이 저장소 링크와 함께 이렇게 요청하세요.
+
+> 이 README대로 Agent Room을 현재 작업 프로젝트에 설치해 줘. 내 기존 Codex·Claude 대화는 유지해. CLI 실행과 프로젝트 MCP 등록, 테스트 결과를 각각 알려 줘.
+
+LLM은 다음 순서로 진행합니다.
+
+1. GitHub 릴리스 ZIP을 고정된 설치 폴더에 풀고 실제 작업 프로젝트의 절대 경로를 확인합니다. 새 대화나 프로젝트 폴더를 임의로 만들지 않습니다. Node.js 24 이상이 필요합니다.
+2. 설치 폴더에서 아래 첫 명령을 실행해 미리보기와 CLI 실행 결과를 확인합니다. CLI가 없거나 실행이 실패하면 그 부분을 보고합니다. 계정 로그인과 프로젝트 신뢰 확인은 해당 CLI의 기본 흐름을 사용합니다.
+3. 아래 두 번째 명령으로 프로젝트 MCP 설정을 등록하고 프로젝트를 선택한 뒤 허브 연결을 검증합니다. 기존 설정 충돌이 보고되면 해당 파일을 덮어쓰지 않습니다.
+4. JSON의 claude_registered, codex_registered, connected_hub 및 tests를 확인합니다. isolated_mcp_test는 계정 없이 실행하며 실제 답변을 검증하지 않습니다.
+5. 사용자가 기존 대화를 다시 열어 MCP를 불러오도록 안내합니다. 방에서 기존 대화 연결 코드를 만들고 원래 Codex와 Claude Code 대화에 한 개씩 보내 참가 요청을 승인합니다. 실제 모델 응답 검증은 사용자가 테스트 메시지를 보낼 때 확인합니다.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1 -Project 'E:\my-project' -Test
+powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1 -Project 'E:\my-project' -Apply -Connect -Test
+```
+
+같은 프로젝트에서 다시 실행해도 MCP 등록이 중복되지 않습니다. Agent Room 방·메시지 DB는 앱 설치 폴더의 local에 보관하며, 프로젝트에는 MCP 설정만 추가합니다.
+
 ## Windows에서 처음 시작하기
 
 Node.js 24 이상을 준비하고 이 폴더의 **Start Agent Room.cmd**를 두 번 클릭합니다. **Browse**로 실제 작업하는 프로젝트 폴더를 고르고 **Set up and open Agent Room**을 누르면 Codex·Claude Code 설정을 추가하고 채팅방을 브라우저에서 엽니다. 그다음 방을 만들어 기존 대화나 새 대화를 연결합니다. LLM이 대신 준비할 때는 아래 PowerShell 절차를 사용합니다.

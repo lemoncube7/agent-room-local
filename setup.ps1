@@ -1,7 +1,10 @@
 [CmdletBinding()]
 param(
   [string]$Project = (Get-Location).Path,
-  [switch]$Apply
+  [switch]$Apply,
+  [switch]$SelectProject,
+  [switch]$Connect,
+  [switch]$Test
 )
 $ErrorActionPreference = 'Stop'
 $projectPath = (Resolve-Path -LiteralPath $Project).Path
@@ -54,6 +57,22 @@ function Save-Config($file,$contents) {
     Move-Item -LiteralPath $temp -Destination $file -Force
   } finally { Remove-Item -LiteralPath $temp -ErrorAction SilentlyContinue }
 }
+if (($Connect -or $SelectProject) -and -not $Apply) { throw 'Use -Apply with -Connect or -SelectProject.' }
+function Find-AgentCli($provider) {
+    $app = Get-Command "$provider.exe" -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($app) { return $app.Source }
+    $candidates = if ($provider -eq 'codex') {
+        if (Get-Command Get-AppxPackage -ErrorAction SilentlyContinue) {
+            Get-AppxPackage -Name OpenAI.Codex | ForEach-Object { Join-Path $_.InstallLocation 'app/resources/codex.exe' }
+        }
+        Join-Path $env:APPDATA 'npm/node_modules/@openai/codex/bin/codex.js'
+    } else {
+        Join-Path $env:USERPROFILE '.local/bin/claude.exe'
+        Join-Path $env:APPDATA 'npm/node_modules/@anthropic-ai/claude-code/cli.js'
+    }
+    $candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+}
+
 if ($Apply) {
   if (-not $existingClaude) {
     $claudeConfig.mcpServers | Add-Member -NotePropertyName 'agent-room' -NotePropertyValue $wantedClaude
@@ -61,14 +80,61 @@ if ($Apply) {
   }
   if (-not $existingCodex) { Save-Config $codexPath ($codex.TrimEnd()+"`n`n"+$managedBlock+"`n") }
 }
+$cliSettings = @{codex=(Find-AgentCli 'codex');claude=(Find-AgentCli 'claude')}
+if ($Connect -or $SelectProject) {
+  $roomLocal = Join-Path $PSScriptRoot 'local'
+  [void][IO.Directory]::CreateDirectory($roomLocal)
+  [IO.File]::WriteAllText((Join-Path $roomLocal 'cli.json'), ($cliSettings | ConvertTo-Json -Compress))
+  [IO.File]::WriteAllText((Join-Path $roomLocal 'project.txt'), $projectPath)
+}
+function Get-VerifiedHub {
+  try {
+    $connection = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'local/hub.json') -Raw | ConvertFrom-Json
+    if ($connection.url -ne 'http://127.0.0.1:4317') { return $false }
+    $null = Invoke-RestMethod -Uri ($connection.url+'/tool') -Method Post -Headers @{Authorization='Bearer '+$connection.token} -ContentType 'application/json' -Body '{"action":"list_rooms"}' -TimeoutSec 2
+    return $true
+  } catch { return $false }
+}
+if ($Connect -and -not (Get-VerifiedHub)) {
+  $hub = Start-Process -FilePath $node.Source -ArgumentList ('"' + (Join-Path $PSScriptRoot 'hub.cjs') + '"') -WorkingDirectory $PSScriptRoot -WindowStyle Hidden -PassThru
+  for($attempt=0;$attempt -lt 12 -and -not (Get-VerifiedHub);$attempt++){
+    if($hub.HasExited){break}
+    Start-Sleep -Milliseconds 250
+  }
+  if(-not (Get-VerifiedHub)){throw 'The selected installation did not start its hub on port 4317. Check for another Agent Room installation.'}
+}
+$results = $null
+if ($Test) {
+  $results=@{}
+  foreach ($provider in 'codex','claude') {
+    $cliPath=$cliSettings[$provider]
+    if(-not $cliPath){$results[$provider]=@{status='not_found'}; continue}
+    Push-Location -LiteralPath $projectPath
+    $previousErrorAction=$ErrorActionPreference
+    try {
+      $ErrorActionPreference='Continue'
+      $output = if($cliPath -match '\.(?:js|mjs|cjs)$'){ & $node.Source $cliPath --version 2>$null }else{ & $cliPath --version 2>$null }
+      $results[$provider]=@{status=if($LASTEXITCODE -eq 0){'verified'}else{'execution_failed'}; version=($output -join ' ').Trim()}
+    } catch { $results[$provider]=@{status='execution_failed'} }
+    finally { $ErrorActionPreference=$previousErrorAction; Pop-Location }
+  }
+  $smokeOutput = & $node.Source (Join-Path $PSScriptRoot 'smoke-test.cjs') 2>&1
+  if($LASTEXITCODE){throw ('Agent Room isolated connection test failed: '+($smokeOutput -join ' '))}
+  $results['isolated_mcp_test']='passed'
+}
+$claudeRegistered = $null -ne $existingClaude -or $Apply
+$codexRegistered = $existingCodex -or $Apply
 [pscustomobject]@{
   mode = if($Apply){'applied'}else{'preview'}
   project = $projectPath
   node_major = $major
   claude_config = $claudePath
   codex_config = $codexPath
-  claude_cli_on_path = [bool](Get-Command claude -ErrorAction SilentlyContinue)
-  codex_cli_on_path = [bool](Get-Command codex -ErrorAction SilentlyContinue)
+  claude_registered = [bool]$claudeRegistered
+  codex_registered = [bool]$codexRegistered
+  cli_paths = $cliSettings
+  tests = $results
+  connected_hub = if($Connect){Get-VerifiedHub}else{$null}
   hub_command = "node `"$(Join-Path $PSScriptRoot 'hub.cjs')`""
   existing_claude_session = 'From the project folder: claude --resume <session-id> --dangerously-load-development-channels server:agent-room'
   existing_codex_session = 'Reopen the original project conversation after MCP reload and check /mcp.'
