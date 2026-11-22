@@ -30,6 +30,7 @@ run("UPDATE members SET state='start_failed' WHERE state IN ('starting','approve
 const cliBusy=new Set();
 let draining=false, updating=false;
 const outbox=path.join(local,'outbox');
+const updateLog=path.join(local,'update.log');
 fs.mkdirSync(outbox,{recursive:true});
 function storeMessage(room, author, body, recipient=null){
   return Number(run('INSERT INTO messages(room,author,request,body,created,recipient) VALUES(?,?,?,?,?,?)',
@@ -131,7 +132,7 @@ function task({action,room,participant,name,text,request,replyTo,after=0}){
   return {seq:Number(result.lastInsertRowid)};
 }
 function state(){
-  return {version,rooms:all('SELECT * FROM rooms ORDER BY rowid'),
+  return {version,updateStatus:fs.existsSync(updateLog)?fs.readFileSync(updateLog,'utf8').trim().split(/\r?\n/).at(-1):null,rooms:all('SELECT * FROM rooms ORDER BY rowid'),
     members:all("SELECT id,room,name,state,parent FROM members WHERE state<>'human'").map(row=>({...row,busy:cliBusy.has(row.id)})),
     messages:all('SELECT messages.*,members.name FROM messages JOIN members ON messages.author=members.id ORDER BY seq'),
     deliveries:all('SELECT deliveries.seq,members.name,deliveries.state FROM deliveries JOIN members ON deliveries.member=members.id')};
@@ -213,9 +214,12 @@ const server=http.createServer(async(req,res)=>{
         if(cliBusy.size)throw Error('CLI 답변이 끝난 후 업데이트해 주세요.');
         const update=await checkUpdate();
         if(!update.download||update.latest!==args.tag)throw Error('업데이트를 다시 확인해 주세요.');
-        const worker=spawn('powershell.exe',['-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',path.join(__dirname,'update.ps1'),'-Tag',update.latest,'-HubId',String(process.pid),'-NodePath',process.execPath],{detached:true,stdio:'ignore',windowsHide:true});
+        const log=fs.openSync(updateLog,'w');
+        let worker;
+        try{worker=spawn('powershell.exe',['-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',path.join(__dirname,'update.ps1'),'-Tag',update.latest,'-HubId',String(process.pid),'-NodePath',process.execPath],{detached:true,stdio:['ignore',log,log],windowsHide:true});}
+        finally{fs.closeSync(log);}
         updating=true;
-        worker.once('exit',()=>{updating=false;});
+        worker.once('exit',code=>{updating=false;if(code&&fs.existsSync(updateLog))fs.appendFileSync(updateLog,'\n업데이트 실패 (종료 코드 '+code+'). Windows ZIP으로 다시 시도해 주세요.\n');});
         try{await new Promise((resolve,reject)=>{worker.once('spawn',resolve);worker.once('error',reject);});}
         catch(error){updating=false;throw error;}
         worker.unref();

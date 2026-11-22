@@ -127,6 +127,10 @@ byId('update').onclick=async()=>{
     for(let attempt=0;attempt<40;attempt++){
      await new Promise(resolve=>setTimeout(resolve,2000));
      if('v'+snapshot?.version===info.latest){location.reload();return;}
+     if(snapshot?.updateStatus){
+      status.textContent=snapshot.updateStatus;
+      if(/failed|실패/i.test(snapshot.updateStatus)){status.append(document.createTextNode(' '),link);return;}
+     }
     }
     status.textContent='아직 '+info.latest+' 실행을 확인하지 못했어요. 현재 버전을 확인하거나 ZIP으로 설치하세요.';
     status.append(document.createTextNode(' '),link);
