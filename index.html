@@ -4,10 +4,10 @@
 *{box-sizing:border-box}body{margin:0;display:grid;grid-template-columns:clamp(150px,17vw,230px) minmax(0,1fr);grid-template-rows:minmax(0,1fr);height:100vh;height:100dvh;overflow:hidden}
 aside{background:#181d31;border-right:1px solid #2e3651;padding:28px 20px;overflow:auto}
 h1{font-size:21px;margin:0 0 24px}button,input{font:inherit;border-radius:9px;border:1px solid #384362;background:#252d46;color:inherit;padding:9px 12px}button{cursor:pointer}button:hover,button[aria-current=true]{background:#344265}form{display:flex;gap:5px}form[hidden]{display:none}input{width:100%;min-width:0}nav{display:grid;gap:8px;margin-top:20px}nav button{text-align:left}
-main{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}header{flex:none;padding:16px 25px;border-bottom:1px solid #2e3651;background:#111526}#room-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}#room-actions button{margin:0}#compose{flex:none;border-top:1px solid #2e3651}header h2{margin:0;font-size:18px}header p{margin:8px 0 0;color:#b8c5e0}header code{color:#9ce6d2}header button{margin-top:10px}#people{display:flex;gap:8px;flex-wrap:wrap;max-height:24vh;overflow:auto;margin-top:12px}#people:empty{display:none}#people span{background:#202943;border-radius:9px;padding:6px 9px}#people button{margin-left:8px;font-size:12px}.history{flex:1 1 0;min-height:0;overscroll-behavior:contain;padding:14px;display:flex;flex-direction:column;gap:12px;overflow:auto}article{flex-shrink:0;max-width:96%;min-width:0;background:#222c43;border-radius:13px;padding:12px 16px;align-self:flex-start}article.own{align-self:flex-end;background:#203d40}article.own strong{color:#9ce6d2}article.codex{background:#202d48;border-inline-start:3px solid #8cb6ff}article.codex>strong{color:#a9c8ff}article.claude{background:#392b31;border-inline-start:3px solid #f3a880}article.claude>strong{color:#ffc2a2}.markdown{color:#f4f6ff;overflow-wrap:anywhere;margin:7px 0}.markdown>*{margin:0 0 7px}.markdown>*:last-child{margin-bottom:0}.markdown pre{overflow:auto;max-width:100%;padding:8px;background:#14192a;border-radius:6px}.markdown pre code{white-space:pre}.markdown blockquote{margin-left:0;padding-left:10px;border-left:2px solid #7784a5}.markdown a{color:#b7d5ff}.markdown ul,.markdown ol{padding-left:22px}.markdown h3,.markdown h4,.markdown h5,.markdown h6{font-size:1em}article.typing small{display:block;margin-top:5px;color:#ffcf90}article p{white-space:pre-wrap;overflow-wrap:anywhere;margin:7px 0;color:#f4f6ff}small{color:#b8c5e0}article strong{color:#ffbf9e}#error{color:#ffb9ad;padding-top:8px}
+main{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}header{flex:none;padding:16px 25px;border-bottom:1px solid #2e3651;background:#111526}#room-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}#room-actions button{margin:0}#compose{flex:none;border-top:1px solid #2e3651}header h2{margin:0;font-size:18px}header p{margin:8px 0 0;color:#b8c5e0}header code{color:#9ce6d2}header button{margin-top:10px}#people{display:flex;gap:8px;flex-wrap:wrap;max-height:24vh;overflow:auto;margin-top:12px}#people:empty{display:none}#people span{background:#202943;border-radius:9px;padding:6px 9px}#people button{margin-left:8px;font-size:12px}.history{flex:1 1 0;min-height:0;overscroll-behavior:contain;padding:14px;display:flex;flex-direction:column;gap:12px;overflow:auto}article{flex-shrink:0;max-width:96%;min-width:0;background:#222c43;border-radius:13px;padding:12px 16px;align-self:flex-start}article.own{align-self:flex-end;background:#203d40}article.own strong{color:#9ce6d2}article.codex{background:#202d48;border-inline-start:3px solid #8cb6ff}article.codex>strong{color:#a9c8ff}article.claude{background:#392b31;border-inline-start:3px solid #f3a880}article.claude>strong{color:#ffc2a2}article.agy{background:#293627;border-inline-start:3px solid #9fd87f}article.agy>strong{color:#bdeca2}dialog{width:min(420px,92vw);background:#202943;color:#edf0fa;border:1px solid #384362;border-radius:12px;padding:20px}dialog::backdrop{background:#0a0e1bb8}#agent-form{display:grid;gap:12px}#agent-form label{display:grid;gap:6px}#agent-form select{font:inherit;padding:8px}#agent-form footer{display:flex;gap:8px;justify-content:flex-end}.markdown{color:#f4f6ff;overflow-wrap:anywhere;margin:7px 0}.markdown>*{margin:0 0 7px}.markdown>*:last-child{margin-bottom:0}.markdown pre{overflow:auto;max-width:100%;padding:8px;background:#14192a;border-radius:6px}.markdown pre code{white-space:pre}.markdown blockquote{margin-left:0;padding-left:10px;border-left:2px solid #7784a5}.markdown a{color:#b7d5ff}.markdown ul,.markdown ol{padding-left:22px}.markdown h3,.markdown h4,.markdown h5,.markdown h6{font-size:1em}article.typing small{display:block;margin-top:5px;color:#ffcf90}article p{white-space:pre-wrap;overflow-wrap:anywhere;margin:7px 0;color:#f4f6ff}small{color:#b8c5e0}article strong{color:#ffbf9e}#error{color:#ffb9ad;padding-top:8px}
 </style>
 <aside><h1>Agent Room <small id="current-version" aria-label="현재 버전">버전 확인 중</small></h1><button id="update">업데이트 확인</button><p id="update-result" role="status"></p><form id="new" autocomplete="off"><input name="name" autocomplete="off" aria-label="채팅방 이름" placeholder="새 채팅방 이름" required maxlength="70"><button aria-label="채팅방 만들기">+</button></form><div id="error" role="status"></div><nav id="rooms"></nav></aside>
-<main><header><h2 id="title">채팅방을 선택하세요</h2><div id="room-actions"><button id="pair" hidden>기존 대화 연결 코드 만들기</button><button id="new-codex" hidden>새 Codex 대화</button> <button id="new-claude" hidden>새 Claude Code 대화</button></div><p id="pair-guide" hidden></p><section id="people" aria-label="참가자"></section></header><section class="history" id="messages" aria-label="공용 대화"></section><form id="compose" autocomplete="off" hidden style="padding: 12px 25px"><input id="draft" autocomplete="off" aria-label="메시지" placeholder="방 전체에 메시지 보내기" maxlength="8000" required><button type="submit">보내기</button></form></main>
+<main><header><h2 id="title">채팅방을 선택하세요</h2><div id="room-actions"><button id="pair" hidden>기존 대화 연결 코드 만들기</button><button id="add-agent" hidden>에이전트 추가</button></div><p id="pair-guide" hidden></p><section id="people" aria-label="참가자"></section></header><section class="history" id="messages" aria-label="공용 대화"></section><form id="compose" autocomplete="off" hidden style="padding: 12px 25px"><input id="draft" autocomplete="off" aria-label="메시지" placeholder="방 전체에 메시지 보내기" maxlength="8000" required><button type="submit">보내기</button></form></main><dialog id="agent-dialog"><form id="agent-form" autocomplete="off"><h2 id="agent-title">에이전트 추가</h2><label>CLI<select name="provider"><option value="codex">Codex</option><option value="claude">Claude Code</option><option value="agy">Antigravity</option></select></label><label>모델<input name="model" autocomplete="off" placeholder="비워 두면 CLI 기본 모델" maxlength="120"></label><label>이름<input name="name" autocomplete="off" placeholder="비워 두면 모델명 사용" maxlength="120"></label><small id="agent-error" role="status"></small><footer><button type="button" id="agent-cancel">취소</button><button type="submit">저장</button></footer></form></dialog>
 <script>
 let composeRoom,selected,previous='',snapshot,refreshing=false,lastRendered,pairRoom;
 const byId=id=>document.getElementById(id);
@@ -65,11 +65,12 @@ function update(next){
  if(!next.rooms.some(r=>r.id===selected))selected=next.rooms[0]?.id;
  render();
 }
-function agentCard(name,own=false){
+function agentCard(name,own=false,provider){
  const card=document.createElement('article');
  if(own)card.classList.add('own');
- else if(agentPane(name)==='gpt')card.classList.add('codex');
- else if(agentPane(name)==='claude')card.classList.add('claude');
+ else if(provider==='agy')card.classList.add('agy');
+ else if(provider==='codex'||agentPane(name)==='gpt')card.classList.add('codex');
+ else if(provider==='claude'||agentPane(name)==='claude')card.classList.add('claude');
  return card;
 }
 function agentPane(name){
@@ -81,7 +82,7 @@ function render(){
  const room=snapshot.rooms.find(r=>r.id===selected);
  lastRendered=selected;
  byId('title').textContent=room?.name||'채팅방을 선택하세요';
- for(const id of ['pair','new-codex','new-claude'])byId(id).hidden=!room; byId('pair-guide').hidden=pairRoom!==selected;
+ for(const id of ['pair','add-agent'])byId(id).hidden=!room; byId('pair-guide').hidden=pairRoom!==selected;
  byId('rooms').replaceChildren(...snapshot.rooms.map(r=>{const b=el('button',r.name);b.setAttribute('aria-current',String(r.id===selected));b.onclick=()=>{selected=r.id;render();};return b;}));
  byId('people').replaceChildren(...snapshot.members.filter(m=>m.room===selected&&m.state!=='disconnected').map(m=>{
  const parent=snapshot.members.find(p=>p.id===m.parent);
@@ -89,7 +90,11 @@ function render(){
  const badge=el('span',m.name+(parent?' · '+parent.name+'의 서브에이전트':'')+' · '+labels[m.state]);
  if(m.state==='starting')return badge;
  const b=el('button',m.state==='pending'?'승인':m.state==='start_failed'?'목록에서 제거':'연결 해제');
- b.onclick=()=>control({action:m.state==='pending'?'approve':'disconnect',participant:m.id});badge.append(b);return badge;
+ b.onclick=()=>control({action:m.state==='pending'?'approve':'disconnect',participant:m.id});
+ if(m.provider&&m.state==='approved'){
+  const settings=el('button','설정');settings.onclick=()=>openAgentDialog(m);badge.append(settings);
+ }
+ badge.append(b);return badge;
  }));
  if(composeRoom!==selected)byId('draft').value='';
  composeRoom=selected;
@@ -102,13 +107,15 @@ function renderHistory(view,messages,typing,roomChanged){
  const oldTop=view.scrollTop, previousTail=view.lastElementChild?.dataset.key, previousMessage=view.dataset.latest;
  const status={queued:'대기 중',accepted:'전달 접수',submitting:'전달 중',working:'전달 접수',answered:'응답 완료',no_reply:'답장 없음',uncertain:'전달 불확실',failed:'응답 실패'};
  view.replaceChildren(...messages.map(m=>{
-  const card=agentCard(m.name,m.author==='human:'+selected);card.dataset.key='message:'+m.seq;
+  const author=snapshot.members.find(member=>member.id===m.author);
+  const target=m.recipient?snapshot.members.find(member=>member.id===m.recipient):null;
+  const card=agentCard(m.name,m.author==='human:'+selected,author?.provider);card.dataset.key='message:'+m.seq;
   const delivery=snapshot.deliveries.filter(d=>d.seq===m.seq).map(d=>d.name+' · '+status[d.state]).join(' / ');
-  card.append(el('strong',m.name),markdown(m.body),el('small',new Date(m.created).toLocaleTimeString('ko-KR')+' · '+(delivery||'방에 저장됨')));
+  card.append(el('strong',m.name+(target?' → '+target.name:'')),markdown(m.body),el('small',new Date(m.created).toLocaleTimeString('ko-KR')+' · '+(delivery||'방에 저장됨')));
   return card;
  }));
  for(const agent of typing){
-  const card=agentCard(agent.name);card.classList.add('typing');card.dataset.key='typing:'+agent.id;
+  const card=agentCard(agent.name,false,agent.provider);card.classList.add('typing');card.dataset.key='typing:'+agent.id;
   card.setAttribute('role','status');card.append(el('strong',agent.name),el('small','응답 생성 중…'));
   view.append(card);
  }
@@ -124,7 +131,7 @@ async function refresh(){
 byId('new').onsubmit=async e=>{e.preventDefault();if(await control({action:'create',name:e.target.elements.name.value})){selected=snapshot.rooms.at(-1).id;render();e.target.reset();}};
 async function makePair(instructions, launchCommand){
  const room=selected;
- const buttons=['pair','new-codex','new-claude'].map(byId);
+ const buttons=['pair','add-agent'].map(byId);
  for(const item of buttons)item.disabled=true;
  try{
   const response=await fetch('/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'room_code',room})});
@@ -147,13 +154,33 @@ async function makePair(instructions, launchCommand){
  }catch(e){err(e.message);}finally{for(const item of buttons)item.disabled=false;}
 }
 byId('pair').onclick=()=>makePair('기존 대화를 열고 아래 문장을 붙여 넣으세요.');
-for(const [id,action] of [['new-codex','new_codex'],['new-claude','new_claude']]){
- const button=byId(id);
- button.onclick=async()=>{
-  button.disabled=true;
-  try{await control({action,room:selected});}finally{button.disabled=false;}
- };
+let editingAgent,agentRoom;
+function openAgentDialog(agent){
+ const form=byId('agent-form');
+ form.reset();editingAgent=agent;agentRoom=selected;
+ form.elements.provider.disabled=Boolean(agent);
+ if(agent){
+  form.elements.provider.value=agent.provider;
+  form.elements.model.value=agent.model||'';
+  form.elements.name.value=agent.name===agent.model?'':agent.name;
+ }
+ byId('agent-title').textContent=agent?'에이전트 설정':'에이전트 추가';
+ byId('agent-error').textContent='';
+ byId('agent-dialog').showModal();
 }
+byId('add-agent').onclick=()=>openAgentDialog();
+byId('agent-cancel').onclick=()=>byId('agent-dialog').close();
+byId('agent-form').onsubmit=async event=>{
+ event.preventDefault();
+ const fields=event.target.elements, button=event.submitter;
+ button.disabled=true;
+ try{
+  const payload={action:editingAgent?'edit_agent':'new_agent',room:agentRoom,participant:editingAgent?.id,
+   provider:fields.provider.value,model:fields.model.value,name:fields.name.value};
+  if(await control(payload))byId('agent-dialog').close();
+  else byId('agent-error').textContent=byId('error').textContent;
+ }finally{button.disabled=false;}
+};
 byId('compose').onsubmit=async event=>{
  event.preventDefault();
  const button=event.submitter, draft=byId('draft'), text=draft.value, room=selected;

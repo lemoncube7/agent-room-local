@@ -66,6 +66,8 @@ function Find-AgentCli($provider) {
             Get-AppxPackage -Name OpenAI.Codex | ForEach-Object { Join-Path $_.InstallLocation 'app/resources/codex.exe' }
         }
         Join-Path $env:APPDATA 'npm/node_modules/@openai/codex/bin/codex.js'
+    } elseif ($provider -eq 'agy') {
+        Join-Path $env:LOCALAPPDATA 'agy/bin/agy.exe'
     } else {
         Join-Path $env:USERPROFILE '.local/bin/claude.exe'
         Join-Path $env:APPDATA 'npm/node_modules/@anthropic-ai/claude-code/cli.js'
@@ -80,7 +82,7 @@ if ($Apply) {
   }
   if (-not $existingCodex) { Save-Config $codexPath ($codex.TrimEnd()+"`n`n"+$managedBlock+"`n") }
 }
-$cliSettings = @{codex=(Find-AgentCli 'codex');claude=(Find-AgentCli 'claude')}
+$cliSettings = @{codex=(Find-AgentCli 'codex');claude=(Find-AgentCli 'claude');agy=(Find-AgentCli 'agy')}
 if ($Connect -or $SelectProject) {
   $roomLocal = Join-Path $PSScriptRoot 'local'
   [void][IO.Directory]::CreateDirectory($roomLocal)
@@ -106,15 +108,16 @@ if ($Connect -and -not (Get-VerifiedHub)) {
 $results = $null
 if ($Test) {
   $results=@{}
-  foreach ($provider in 'codex','claude') {
+  foreach ($provider in 'codex','claude','agy') {
     $cliPath=$cliSettings[$provider]
     if(-not $cliPath){$results[$provider]=@{status='not_found'}; continue}
     Push-Location -LiteralPath $projectPath
     $previousErrorAction=$ErrorActionPreference
     try {
       $ErrorActionPreference='Continue'
-      $output = if($cliPath -match '\.(?:js|mjs|cjs)$'){ & $node.Source $cliPath --version 2>$null }else{ & $cliPath --version 2>$null }
-      $results[$provider]=@{status=if($LASTEXITCODE -eq 0){'verified'}else{'execution_failed'}; version=($output -join ' ').Trim()}
+      $cliFlag=if($provider -eq 'agy'){'--help'}else{'--version'}
+      $output = if($cliPath -match '\.(?:js|mjs|cjs)$'){ & $node.Source $cliPath $cliFlag 2>$null }else{ & $cliPath $cliFlag 2>$null }
+      $results[$provider]=@{status=if($LASTEXITCODE -eq 0){'verified'}else{'execution_failed'}; version=if($provider -eq 'agy'){$null}else{($output -join ' ').Trim()}}
     } catch { $results[$provider]=@{status='execution_failed'} }
     finally { $ErrorActionPreference=$previousErrorAction; Pop-Location }
   }

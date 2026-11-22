@@ -26,6 +26,8 @@ if(!db.prepare('PRAGMA table_info(members)').all().some(column=>column.name==='p
 if(!db.prepare('PRAGMA table_info(messages)').all().some(column=>column.name==='recipient')) db.exec('ALTER TABLE messages ADD COLUMN recipient TEXT');
 db.exec('CREATE TABLE IF NOT EXISTS cli_sessions(member TEXT PRIMARY KEY, project TEXT NOT NULL, thread TEXT)');
 if(!all('PRAGMA table_info(cli_sessions)').some(column=>column.name==='provider')) db.exec("ALTER TABLE cli_sessions ADD COLUMN provider TEXT NOT NULL DEFAULT 'codex'");
+if(!all('PRAGMA table_info(cli_sessions)').some(column=>column.name==='model'))db.exec('ALTER TABLE cli_sessions ADD COLUMN model TEXT');
+const providerNames={codex:'Codex CLI',claude:'Claude Code CLI',agy:'Antigravity'};
 run("UPDATE members SET state='start_failed' WHERE state IN ('starting','approved') AND id IN (SELECT member FROM cli_sessions WHERE thread IS NULL)");
 run("UPDATE deliveries SET state='uncertain' WHERE state IN ('submitting','working') AND member IN (SELECT member FROM cli_sessions)");
 if(!all('PRAGMA table_info(messages)').some(column=>column.name==='relay_root'))db.exec('ALTER TABLE messages ADD COLUMN relay_root INTEGER');
@@ -34,27 +36,31 @@ let draining=false, updating=false, updaterProcess;
 const outbox=path.join(local,'outbox');
 const updateLog=path.join(local,'update.log');
 fs.mkdirSync(outbox,{recursive:true});
-function storeMessage(room,author,body,root=null){
-  return Number(run('INSERT INTO messages(room,author,request,body,created,relay_root) VALUES(?,?,?,?,?,?)',
-    room,author,randomUUID(),body,new Date().toISOString(),root).lastInsertRowid);
+function storeMessage(room,author,body,root=null,recipient=null){
+  return Number(run('INSERT INTO messages(room,author,request,body,created,relay_root,recipient) VALUES(?,?,?,?,?,?,?)',
+    room,author,randomUUID(),body,new Date().toISOString(),root,recipient).lastInsertRowid);
 }
-function queueForRoom(room,author,seq){
-  run("INSERT INTO deliveries(seq,member,state) SELECT ?,members.id,'queued' FROM members JOIN cli_sessions ON cli_sessions.member=members.id WHERE room=? AND state='approved' AND members.id<>?",seq,room,author);
+function queueForRoom(room,author,seq,recipient=null){
+  run("INSERT INTO deliveries(seq,member,state) SELECT ?,members.id,'queued' FROM members JOIN cli_sessions ON cli_sessions.member=members.id WHERE room=? AND state='approved' AND members.id<>? AND (? IS NULL OR members.id=?)",seq,room,author,recipient,recipient);
 }
 async function cliTurn(participant, prompt, inputSeq){
   const session=one('SELECT * FROM cli_sessions WHERE member=?',participant);
   const row=one("SELECT room,state FROM members WHERE id=? AND state IN ('approved','starting')",participant);
   if(!session||!row||cliBusy.has(participant))return;
   cliBusy.add(participant);
-  const input=inputSeq?one('SELECT relay_root,author FROM messages WHERE seq=?',inputSeq):null;
+  const input=inputSeq?one('SELECT relay_root,author,recipient FROM messages WHERE seq=?',inputSeq):null;
   try{
     if(inputSeq)run("UPDATE deliveries SET state='working' WHERE seq=? AND member=?",inputSeq,participant);
-    const context='You are in one shared Agent Room chat. Your normal response is posted to the whole room. Use your normal reply for messages to another agent; no separate send tool is needed. Never claim an agent replied unless a real message appears in the room history.';
+    const peers=all("SELECT id,name FROM members WHERE room=? AND state='approved' AND id<>?",row.room,participant);
+    const context='You are in a shared Agent Room chat. Your normal response goes to the whole room. Keep the default so other agents can follow progress. Only when a specific reply really needs a single recipient, put [[TO:participant-id]] on its own first line, using an exact ID from this room roster: '+JSON.stringify(peers)+'. Never invent a reply from another agent.';
     const audience=!input?'This is the first turn.':input.author.startsWith('human:')?'The user posted to the whole room.':'Another agent posted to the whole room.';
     const replyPolicy='Only reply when addressed, asked to do work, or when you can contribute a useful answer. If it is FYI, meant for someone else, or no useful reply is needed, respond exactly [[AGENT_ROOM_NO_REPLY]]. Avoid courtesy acknowledgments and unnecessary agent-to-agent chatter.';
-    const history=all("SELECT members.name,messages.body FROM messages JOIN members ON members.id=messages.author WHERE messages.room=? AND messages.recipient IS NULL AND messages.seq<? ORDER BY messages.seq DESC LIMIT 10",row.room,inputSeq??0).reverse();
-    const result=await runCodex(session.project,context+' '+audience+' '+replyPolicy+'\nRecent shared room messages (context only): '+JSON.stringify(history.map(message=>({name:message.name,body:message.body.slice(0,800)})))+'\n\n'+prompt,session.thread,session.provider);
-    const silent=result.reply.trim()==='[[AGENT_ROOM_NO_REPLY]]';
+    const history=all("SELECT members.name,messages.body FROM messages JOIN members ON members.id=messages.author WHERE messages.room=? AND (messages.recipient IS NULL OR messages.recipient=? OR messages.author=?) AND messages.seq<? ORDER BY messages.seq DESC LIMIT 10",row.room,participant,participant,inputSeq??0).reverse();
+    const result=await runCodex(session.project,context+' '+audience+' '+replyPolicy+'\nRecent shared room messages (context only): '+JSON.stringify(history.map(message=>({name:message.name,body:message.body.slice(0,800)})))+'\n\n'+prompt,session.thread,session.provider,session.model);
+    const match=result.reply.trim().match(/^\[\[TO:([^\]\r\n]+)\]\]\s*\r?\n([\s\S]*)$/);
+    const recipient=match&&peers.some(peer=>peer.id===match[1])?match[1]:null;
+    const body=recipient?match[2].trim():result.reply.trim();
+    const silent=!body||body==='[[AGENT_ROOM_NO_REPLY]]';
     run('UPDATE cli_sessions SET thread=? WHERE member=?',result.id,participant);
     if(row.state==='starting')run("UPDATE members SET state='approved' WHERE id=? AND state='starting'",participant);
     if(!silent&&one("SELECT id FROM members WHERE id=? AND state='approved'",participant)){
@@ -62,8 +68,8 @@ async function cliTurn(participant, prompt, inputSeq){
       const count=root?one('SELECT COUNT(*) AS count FROM messages WHERE relay_root=?',root).count:0;
       db.exec('BEGIN');
       try{
-        const seq=storeMessage(row.room,participant,result.reply,root);
-        if(root&&count<4)queueForRoom(row.room,participant,seq);
+        const seq=storeMessage(row.room,participant,body,root,recipient);
+        if(root&&count<4)queueForRoom(row.room,participant,seq,recipient);
         db.exec('COMMIT');
       }catch(error){db.exec('ROLLBACK');throw error;}
     }
@@ -155,7 +161,7 @@ function task({action,room,participant,name,text,request,replyTo,after=0}){
 }
 function state(){
   return {version,updateStatus:fs.existsSync(updateLog)?fs.readFileSync(updateLog,'utf8').trim().split(/\r?\n/).at(-1):null,rooms:all('SELECT * FROM rooms ORDER BY rowid'),
-    members:all("SELECT id,room,name,state,parent FROM members WHERE state<>'human'").map(row=>({...row,busy:cliBusy.has(row.id)})),
+    members:all("SELECT members.id,room,name,state,parent,cli_sessions.provider,cli_sessions.model FROM members LEFT JOIN cli_sessions ON cli_sessions.member=members.id WHERE state<>'human'").map(row=>({...row,busy:cliBusy.has(row.id)})),
     messages:all('SELECT messages.*,members.name FROM messages JOIN members ON messages.author=members.id ORDER BY seq'),
     deliveries:all('SELECT deliveries.seq,deliveries.member,members.name,deliveries.state FROM deliveries JOIN members ON deliveries.member=members.id')};
 }
@@ -255,17 +261,29 @@ const server=http.createServer(async(req,res)=>{
         catch(error){updating=false;fs.appendFileSync(updateLog,'업데이트 실패: '+error.message+'\n');throw error;}
         result={started:true};
       }
-      else if(['new_codex','new_claude'].includes(args.action)){
+      else if(['new_agent','new_codex','new_claude'].includes(args.action)){
         if(draining)throw Error('업데이트 중이에요. 잠시 후 다시 시도하세요.');
         if(!one('SELECT id FROM rooms WHERE id=?',args.room))throw Error('Room not found.');
         const activeProject=path.join(local,'project.txt');
         const project=process.env.AGENT_ROOM_PROJECT||(fs.existsSync(activeProject)?fs.readFileSync(activeProject,'utf8').trim():null);
         if(!project||!fs.existsSync(path.join(project,'.codex','config.toml')))throw Error('시작 파일에서 프로젝트를 선택하고 이 방을 다시 열어 주세요.');
-        const id=randomUUID(), provider=args.action==='new_claude'?'claude':'codex';
-        run("INSERT INTO members(id,room,name,state) VALUES(?,?,?,'starting')",id,args.room,provider==='claude'?'Claude Code CLI':'Codex CLI');
-        run('INSERT INTO cli_sessions(member,project,provider) VALUES(?,?,?)',id,project,provider);
+        const id=randomUUID(), provider=args.action==='new_agent'?args.provider:args.action==='new_claude'?'claude':'codex';
+        if(!Object.hasOwn(providerNames,provider))throw Error('Unknown agent provider.');
+        const model=args.model?.trim()?str(args.model,120):null;
+        const name=args.name?.trim()?str(args.name,120):model||providerNames[provider];
+        run("INSERT INTO members(id,room,name,state) VALUES(?,?,?,'starting')",id,args.room,name);
+        run('INSERT INTO cli_sessions(member,project,provider,model) VALUES(?,?,?,?)',id,project,provider,model);
         run("INSERT OR IGNORE INTO members(id,room,name,state) VALUES(?,?,?,'human')",'human:'+args.room,args.room,'나');
         void cliTurn(id,'You are connected to Agent Room. Briefly say hello in Korean. Do not change any project files.');
+      }
+      else if(args.action==='edit_agent'){
+        if(cliBusy.has(args.participant))throw Error('답변이 끝난 뒤 에이전트 설정을 변경하세요.');
+        const agent=one("SELECT provider FROM cli_sessions JOIN members ON members.id=cli_sessions.member WHERE member=? AND room=? AND state='approved'",args.participant,args.room);
+        if(!agent)throw Error('Connected CLI agent not found.');
+        const model=args.model?.trim()?str(args.model,120):null;
+        const name=args.name?.trim()?str(args.name,120):model||providerNames[agent.provider];
+        run('UPDATE cli_sessions SET model=? WHERE member=?',model,args.participant);
+        run('UPDATE members SET name=? WHERE id=?',name,args.participant);
       }
       else if(args.action==='user_message'){
         if(draining)throw Error('업데이트 중이에요. 잠시 후 다시 시도하세요.');

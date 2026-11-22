@@ -5,7 +5,7 @@ const path = require('node:path');
 const os = require('node:os');
 
 function cliCommand(provider) {
-  const env = process.env[provider === 'claude' ? 'AGENT_ROOM_CLAUDE' : 'AGENT_ROOM_CODEX'];
+  const env=process.env['AGENT_ROOM_'+provider.toUpperCase()];
   let saved;
   try {
     saved = JSON.parse(fs.readFileSync(path.join(__dirname,'local','cli.json'),'utf8').replace(/^\uFEFF/,''));
@@ -15,10 +15,10 @@ function cliCommand(provider) {
   const npm = process.env.APPDATA ? path.join(process.env.APPDATA,'npm','node_modules') : null;
   const defaults = provider==='claude'
     ? [path.join(os.homedir(),'.local','bin','claude.exe'), npm && path.join(npm,'@anthropic-ai','claude-code','cli.js')]
-    : [npm && path.join(npm,'@openai','codex','bin','codex.js')];
+    : provider==='agy'?[process.env.LOCALAPPDATA&&path.join(process.env.LOCALAPPDATA,'agy','bin','agy.exe')]:[npm && path.join(npm,'@openai','codex','bin','codex.js')];
   const executable = env || [saved?.[provider],...defaults].find(candidate=>candidate&&fs.existsSync(candidate));
   if(executable && /\.(?:cjs|mjs|js)$/i.test(executable))return [process.execPath, executable];
-  return [executable || (provider === 'claude' ? 'claude' : 'codex')];
+  return [executable || provider];
 }
 
 function parseCodex(stdout, session) {
@@ -32,19 +32,25 @@ function parseCodex(stdout, session) {
   };
 }
 
-function runCodex(project, prompt, session, provider='codex') {
+function runCodex(project, prompt, session, provider='codex',model=null) {
   const claude=provider==='claude';
-  const name=claude?'Claude Code':'Codex';
+  const agy=provider==='agy';
+  const name=agy?'Antigravity':claude?'Claude Code':'Codex';
   const [file,...prefix]=cliCommand(provider);
   const codexArgs=session?['exec','resume','--json','--skip-git-repo-check',session,'-']:['exec','--json','--skip-git-repo-check','-'];
   const claudeArgs=['--print','--output-format','json',...(session?['--resume',session]:[])];
+  const agyArgs=['-p',prompt,'--output-format','json',...(session?['--conversation',session]:[]),'--print-timeout','285s'];
+  if(model){codexArgs.splice(-1,0,'--model',model);claudeArgs.push('--model',model);agyArgs.push('--model',model);}
   return new Promise((resolve,reject)=>{
-    const child=execFile(file,[...prefix,...(claude?claudeArgs:codexArgs)],{
+    const child=execFile(file,[...prefix,...(agy?agyArgs:claude?claudeArgs:codexArgs)],{
       cwd:project,windowsHide:true,timeout:300000,maxBuffer:8*1024*1024
     },(error,stdout)=>{
       let result;
       try {
-        if(claude){
+        if(agy){
+          const response=JSON.parse(stdout);
+          if(response.status==='SUCCESS'||response.status==='success')result={id:response.conversation_id,reply:response.response};
+        }else if(claude){
           const response=JSON.parse(stdout);
           if(!response.is_error)result={id:response.session_id,reply:response.result};
         }else result=parseCodex(stdout,session);
@@ -57,7 +63,7 @@ function runCodex(project, prompt, session, provider='codex') {
       resolve(result);
     });
     child.stdin.on('error',()=>{});
-    child.stdin.end(prompt);
+    child.stdin.end(agy?undefined:prompt);
   });
 }
 
