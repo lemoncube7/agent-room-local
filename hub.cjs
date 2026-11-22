@@ -26,6 +26,7 @@ if(!db.prepare('PRAGMA table_info(members)').all().some(column=>column.name==='p
 if(!db.prepare('PRAGMA table_info(messages)').all().some(column=>column.name==='recipient')) db.exec('ALTER TABLE messages ADD COLUMN recipient TEXT');
 db.exec('CREATE TABLE IF NOT EXISTS cli_sessions(member TEXT PRIMARY KEY, project TEXT NOT NULL, thread TEXT)');
 if(!all('PRAGMA table_info(cli_sessions)').some(column=>column.name==='provider')) db.exec("ALTER TABLE cli_sessions ADD COLUMN provider TEXT NOT NULL DEFAULT 'codex'");
+run("UPDATE members SET state='start_failed' WHERE state IN ('starting','approved') AND id IN (SELECT member FROM cli_sessions WHERE thread IS NULL)");
 const cliBusy=new Set();
 let draining=false, updating=false;
 const outbox=path.join(local,'outbox');
@@ -36,18 +37,20 @@ function storeMessage(room, author, body, recipient=null){
 }
 async function cliTurn(participant, prompt, inputSeq){
   const session=one('SELECT * FROM cli_sessions WHERE member=?',participant);
-  const row=one("SELECT room FROM members WHERE id=? AND state='approved'",participant);
+  const row=one("SELECT room,state FROM members WHERE id=? AND state IN ('approved','starting')",participant);
   if(!session||!row||cliBusy.has(participant))return;
   cliBusy.add(participant);
   try{
     const result=await runCodex(session.project,prompt,session.thread,session.provider);
     run('UPDATE cli_sessions SET thread=? WHERE member=?',result.id,participant);
+    if(row.state==='starting')run("UPDATE members SET state='approved' WHERE id=? AND state='starting'",participant);
     if(one("SELECT id FROM members WHERE id=? AND state='approved'",participant)){
       const human='human:'+row.room;
       storeMessage(row.room,participant,result.reply,one('SELECT id FROM members WHERE id=?',human)?human:null);
     }
     if(inputSeq)run("UPDATE deliveries SET state='accepted' WHERE seq=? AND member=?",inputSeq,participant);
   }catch(error){
+    if(row.state==='starting')run("UPDATE members SET state='start_failed' WHERE id=? AND state='starting'",participant);
     if(inputSeq)run("UPDATE deliveries SET state='failed' WHERE seq=? AND member=?",inputSeq,participant);
     storeMessage(row.room,participant,error.message,'human:'+row.room);
   }finally{cliBusy.delete(participant);}
@@ -216,7 +219,7 @@ const server=http.createServer(async(req,res)=>{
         const project=process.env.AGENT_ROOM_PROJECT||(fs.existsSync(activeProject)?fs.readFileSync(activeProject,'utf8').trim():null);
         if(!project||!fs.existsSync(path.join(project,'.codex','config.toml')))throw Error('시작 파일에서 프로젝트를 선택하고 이 방을 다시 열어 주세요.');
         const id=randomUUID(), provider=args.action==='new_claude'?'claude':'codex';
-        run("INSERT INTO members(id,room,name,state) VALUES(?,?,?,'approved')",id,args.room,provider==='claude'?'Claude Code CLI':'Codex CLI');
+        run("INSERT INTO members(id,room,name,state) VALUES(?,?,?,'starting')",id,args.room,provider==='claude'?'Claude Code CLI':'Codex CLI');
         run('INSERT INTO cli_sessions(member,project,provider) VALUES(?,?,?)',id,project,provider);
         run("INSERT OR IGNORE INTO members(id,room,name,state) VALUES(?,?,?,'human')",'human:'+args.room,args.room,'나');
         void cliTurn(id,'You are connected to Agent Room. Briefly say hello in Korean. Do not change any project files.');
@@ -243,8 +246,9 @@ const server=http.createServer(async(req,res)=>{
         return res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'}).end(JSON.stringify({code,expires}));
       }
       else if(args.action==='approve'||args.action==='disconnect'){
-        const old=args.action==='approve'?'pending':'approved';
+        const old=args.action==='approve'?'pending':one('SELECT state FROM members WHERE id=?',args.participant)?.state;
         const target=one('SELECT room,parent FROM members WHERE id=?',args.participant);
+        if(args.action==='disconnect'&&!['approved','start_failed'].includes(old))throw Error('Disconnect is unavailable for this participant.');
         if(args.action==='approve'&&target?.parent)member(target.parent,target.room);
         run('UPDATE members SET state=?, since=(SELECT COALESCE(MAX(seq),0) FROM messages WHERE messages.room=members.room) WHERE id=? AND state=?',args.action==='approve'?'approved':'disconnected',args.participant,old);
         if(args.action==='disconnect'){

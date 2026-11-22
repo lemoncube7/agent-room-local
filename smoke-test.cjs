@@ -9,14 +9,14 @@ const procs=[];
 for(const name of ['hub.cjs','bridge.cjs','index.html','VERSION'])fs.copyFileSync(path.join(__dirname,name),path.join(root,name));
 fs.mkdirSync(path.join(root,'.codex'));
 fs.writeFileSync(path.join(root,'.codex/config.toml'),'');
-fs.writeFileSync(path.join(root,'managed-codex.cjs'),"exports.runCodex=async(project,prompt,session,provider)=>({id:'mock-'+provider,reply:provider==='claude'?(session?'Claude resumed: '+prompt:'Claude opened'):(session?'Resumed: '+prompt:'Opened')})");
+fs.writeFileSync(path.join(root,'managed-codex.cjs'),"exports.runCodex=async(project,prompt,session,provider)=>{if(provider==='claude' && require('node:fs').existsSync(require('node:path').join(project,'fail-claude')))throw Error('CLI missing');return {id:'mock-'+provider,reply:provider==='claude'?(session?'Claude resumed: '+prompt:'Claude opened'):(session?'Resumed: '+prompt:'Opened')};}");
 function start(file,args=[]){
   const child=spawn(process.execPath,[path.join(root,file),...args],{env:{...process.env,ROOM_PORT:'0',AGENT_ROOM_PROJECT:root}});
   procs.push(child); return child;
 }
 async function main(){
   const hub=start('hub.cjs');
-  const [line]=await once(hub.stdout,'data');
+  const [line]=await Promise.race([once(hub.stdout,'data'),once(hub,'exit').then(([code])=>{throw Error('Test hub exited before startup: '+code);})]);
   let url=String(line).trim();
   let {token}=JSON.parse(fs.readFileSync(path.join(root,'local/hub.json')));
   async function post(route,body,auth=true){
@@ -92,6 +92,11 @@ async function main(){
   await until(async()=>(await sync()).messages.find(m=>m.body==='Claude opened'));
   await rpc('/control',{action:'user_message',room:room.id,participant:managedClaude.id,text:'Follow up'});
   await until(async()=>(await sync()).messages.find(m=>m.body==='Claude resumed: Follow up'));
+  fs.writeFileSync(path.join(root,'fail-claude'),'');
+  const failureStart=await rpc('/control',{action:'new_claude',room:room.id});
+  const failed=failureStart.members.filter(m=>m.name==='Claude Code CLI').at(-1);
+  await until(async()=>(await sync()).members.find(m=>m.id===failed.id&&m.state==='start_failed'));
+  assert.equal((await post('/control',{action:'user_message',room:room.id,participant:failed.id,text:'Must not send'})).status,400);
   const stopped=once(hub,'exit');
   hub.kill();
   await stopped;

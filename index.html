@@ -36,8 +36,10 @@ function render(){
  byId('rooms').replaceChildren(...snapshot.rooms.map(r=>{const b=el('button',r.name);b.setAttribute('aria-current',String(r.id===selected));b.onclick=()=>{selected=r.id;render();};return b;}));
  byId('people').replaceChildren(...snapshot.members.filter(m=>m.room===selected&&m.state!=='disconnected').map(m=>{
  const parent=snapshot.members.find(p=>p.id===m.parent);
- const badge=el('span',m.name+(parent?' · '+parent.name+'의 서브에이전트':'')+(m.state==='pending'?' · 승인 대기':m.busy?' · 답변 중':' · 연결 승인'));
- const b=el('button',m.state==='pending'?'승인':'연결 해제');
+ const labels={pending:'승인 대기',starting:'CLI 실행 확인 중',start_failed:'실행 실패',approved:m.busy?'답변 중':'연결됨'};
+ const badge=el('span',m.name+(parent?' · '+parent.name+'의 서브에이전트':'')+' · '+labels[m.state]);
+ if(m.state==='starting')return badge;
+ const b=el('button',m.state==='pending'?'승인':m.state==='start_failed'?'목록에서 제거':'연결 해제');
  b.onclick=()=>control({action:m.state==='pending'?'approve':'disconnect',participant:m.id});badge.append(b);return badge;
  }));
  const picker=byId('recipient'), wanted=composeRoom===selected?picker.value:'';
