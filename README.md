@@ -46,7 +46,7 @@ Claude 프로젝트의 기존 `.mcp.json`에 다음 서버 항목을 병합합�
 
 Codex의 MCP 서버 명령은 `node`, 인자는 `C:/path/agent-room-local/bridge.cjs`, `codex`입니다. 이 설정만으로 방 읽기·쓰기가 가능합니다.
 
-기존 Codex 데스크톱 채팅에 자동 전달까지 쓰려면, 추가 인자로 대상 스레드 UUID를 지정하고 `local/sessions.json`에 `{"codex":"같은 UUID"}`를 저장합니다. 현재 Windows IPC 탐색은 기존 어댑터가 읽는 `CODEX_APP_TOOLS_PIPE_PATH` 환경 변수 또는 `local/app-message.json`의 `pipePath` 설정을 사용합니다. 이 단계의 자동 발견 및 실제 데스크톱 호환성은 검증 전입니다. 자동 전달 대상은 현재 등록 파일의 한 스레드로 제한됩니다.
+기존 Codex 데스크톱 대화가 방에서 승인되면, **그 Codex 대화의 작업 환경**에서 설치 폴더에 있는 `node bind-desktop.cjs "<방 이름>" "$env:CODEX_THREAD_ID" --test`를 실행해 현재 대화에 연결합니다. 같은 이름의 참가자가 여러 명이면 참가자 ID를 지정합니다. 허브가 승인 이후 새 메시지를 앱으로 전달하며, 실제 도착은 해당 대화에서 검증 메시지를 확인합니다. 기존 메시지는 다시 보내지 않습니다.
 
 ## 4. 왕복
 

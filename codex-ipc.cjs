@@ -1,4 +1,4 @@
-// Local desktop IPC adapter. Only the registered Codex recipient is supported.
+// Local desktop IPC adapter. Only approved, registered Codex recipients are supported.
 // No HTTP listener, API key, transcript injection, or app installation changes.
 'use strict';
 const net = require('node:net');
@@ -48,11 +48,25 @@ function rpc(socket, method, params, timeout = 12000) {
 }
 async function main() {
   const input = JSON.parse(fs.readFileSync(process.argv[2], 'utf8').replace(/^\uFEFF/, ''));
-  const sessions = JSON.parse(fs.readFileSync(path.join(base, 'local', 'sessions.json'), 'utf8').replace(/^\uFEFF/, ''));
-  if (!sessions.codex || input.threadId !== sessions.codex) throw new Error('Recipient is not the registered Codex session');
+  if(input.participant){
+    const {DatabaseSync}=require('node:sqlite');
+    const db=new DatabaseSync(path.join(base,'local','rooms.db'),{readOnly:true});
+    try{
+      const registration=db.prepare("SELECT thread FROM desktop_bindings JOIN members ON members.id=desktop_bindings.member WHERE member=? AND members.state='approved'").get(input.participant);
+      if(registration?.thread!==input.threadId)throw new Error('Recipient is not an approved Codex desktop binding.');
+    }finally{db.close();}
+  }else{
+    const sessions=JSON.parse(fs.readFileSync(path.join(base,'local','sessions.json'),'utf8').replace(/^\uFEFF/,''));
+    if(!sessions.codex||input.threadId!==sessions.codex)throw new Error('Recipient is not the registered Codex session');
+  }
   const configFile = path.join(base, 'local', 'app-message.json');
   const config = fs.existsSync(configFile) ? JSON.parse(fs.readFileSync(configFile, 'utf8').replace(/^\uFEFF/, '')) : {};
-  const candidates = [...new Set([process.env.CODEX_APP_TOOLS_PIPE_PATH, config.pipePath, ...(input.pipes || [])])]
+  const slash=String.fromCharCode(92), pipeDir=slash+slash+'.'+slash+'pipe'+slash;
+  let discovered=[];
+  if(process.platform==='win32'){
+    try{discovered=fs.readdirSync(pipeDir).filter(name=>name.startsWith('codex-app-tools-')).map(name=>pipeDir+name);}catch{}
+  }
+  const candidates = [...new Set([process.env.CODEX_APP_TOOLS_PIPE_PATH, config.pipePath, ...(input.pipes || []), ...discovered])]
     .filter(p => typeof p === 'string' && p.startsWith('\\\\.\\pipe\\codex-app-tools-'));
   let socket, catalog, failure;
   for (const pipe of candidates) {

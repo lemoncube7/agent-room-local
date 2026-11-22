@@ -5,7 +5,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $stage = Join-Path ([IO.Path]::GetTempPath()) ('agent-room-update-' + [guid]::NewGuid())
-$files = @('hub.cjs','bridge.cjs','codex-ipc.cjs','managed-codex.cjs','index.html','setup.ps1','start.ps1','update.ps1','Start Agent Room.cmd','README.md','VERSION','smoke-test.cjs','native-chat.ps1','remote-sync.cjs','REMOTE-SETUP.md','HANDOFF.md')
+$files = @('hub.cjs','bridge.cjs','codex-ipc.cjs','managed-codex.cjs','index.html','setup.ps1','start.ps1','update.ps1','Start Agent Room.cmd','README.md','VERSION','smoke-test.cjs','native-chat.ps1','remote-sync.cjs','REMOTE-SETUP.md','HANDOFF.md','bind-desktop.cjs')
 $applied = [Collections.Generic.List[string]]::new()
 $restart = $false
 $failed = $false
