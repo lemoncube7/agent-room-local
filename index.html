@@ -1,0 +1,85 @@
+<!doctype html><html lang="ko"><meta charset="utf-8"><title>Agent Room</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,"Segoe UI",sans-serif;background:#111526;color:#edf0fa}
+*{box-sizing:border-box}body{margin:0;display:grid;grid-template-columns:270px 1fr;height:100vh}
+aside{background:#181d31;border-right:1px solid #2e3651;padding:28px 20px;overflow:auto}
+h1{font-size:21px;margin:0 0 24px}button,input{font:inherit;border-radius:9px;border:1px solid #384362;background:#252d46;color:inherit;padding:9px 12px}button{cursor:pointer}button:hover,button[aria-current=true]{background:#344265}form{display:flex;gap:5px}input{width:100%;min-width:0}nav{display:grid;gap:8px;margin-top:20px}nav button{text-align:left}
+main{display:grid;grid-template-rows:auto auto 1fr;min-width:0}header,#people{padding:18px 25px;border-bottom:1px solid #2e3651}header h2{margin:0;font-size:18px}header p{margin:8px 0 0;color:#b8c5e0}header code{color:#9ce6d2}header button{margin-top:10px}#people{display:flex;gap:12px;flex-wrap:wrap}#people span{background:#202943;border-radius:9px;padding:6px 9px}#people button{margin-left:8px;font-size:12px}#messages{padding:24px;display:flex;flex-direction:column;gap:16px;overflow:auto}article{max-width:min(80%,720px);background:#222c43;border-radius:13px;padding:12px 16px;align-self:flex-start}article.codex{align-self:flex-end;background:#203d40}article p{white-space:pre-wrap;overflow-wrap:anywhere;margin:7px 0;color:#f4f6ff}small{color:#b8c5e0}article strong{color:#ffbf9e}article.codex strong{color:#9ce6d2}#error{color:#ffb9ad;padding-top:8px}
+</style>
+<aside><h1>Agent Room</h1><form id="new"><input name="name" aria-label="채팅방 이름" placeholder="새 채팅방 이름" required maxlength="70"><button aria-label="채팅방 만들기">+</button></form><div id="error" role="status"></div><nav id="rooms"></nav></aside>
+<main><header><h2 id="title">채팅방을 선택하세요</h2><button id="pair" hidden>기존 대화 연결 코드 만들기</button><button id="new-codex" hidden>새 Codex 대화</button> <button id="new-claude" hidden>새 Claude Code 대화</button><p id="pair-guide" hidden></p></header><section id="people" aria-label="참가자"></section><section id="messages" aria-label="대화"></section></main>
+<script>
+let selected,previous='',snapshot,refreshing=false,lastRendered,pairRoom;
+const byId=id=>document.getElementById(id);
+function el(tag,text){const e=document.createElement(tag);e.textContent=text;return e;}
+function err(message){byId('error').textContent=message;}
+async function control(body){
+ try{
+ const res=await fetch('/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+ const next=await res.json();if(!res.ok)throw Error(next.error);
+ err('');update(next);return true;
+ }catch(e){err(e.message);return false;}
+}
+function update(next){
+ const key=JSON.stringify(next);if(key===previous)return;previous=key;snapshot=next;
+ if(!next.rooms.some(r=>r.id===selected))selected=next.rooms[0]?.id;
+ render();
+}
+function render(){
+ const view=byId('messages');
+ const nearBottom=lastRendered!==selected||view.scrollHeight-view.clientHeight-view.scrollTop<80;
+ const room=snapshot.rooms.find(r=>r.id===selected);
+ lastRendered=selected;
+ byId('title').textContent=room?.name||'채팅방을 선택하세요';
+ for(const id of ['pair','new-codex','new-claude'])byId(id).hidden=!room; byId('pair-guide').hidden=pairRoom!==selected;
+ byId('rooms').replaceChildren(...snapshot.rooms.map(r=>{const b=el('button',r.name);b.setAttribute('aria-current',String(r.id===selected));b.onclick=()=>{selected=r.id;render();};return b;}));
+ byId('people').replaceChildren(...snapshot.members.filter(m=>m.room===selected&&m.state!=='disconnected').map(m=>{
+ const parent=snapshot.members.find(p=>p.id===m.parent);
+ const badge=el('span',m.name+(parent?' · '+parent.name+'의 서브에이전트':'')+(m.state==='pending'?' · 승인 대기':' · 연결 승인'));
+ const b=el('button',m.state==='pending'?'승인':'연결 해제');
+ b.onclick=()=>control({action:m.state==='pending'?'approve':'disconnect',participant:m.id});badge.append(b);return badge;
+ }));
+ const messages=snapshot.messages.filter(m=>m.room===selected);
+ const status={accepted:'전달 접수',submitting:'전달 중',uncertain:'전달 불확실',failed:'전달 실패'};
+ view.replaceChildren(...messages.map(m=>{
+ const a=document.createElement('article');if(/codex/i.test(m.name))a.className='codex';
+ const delivery=snapshot.deliveries.filter(d=>d.seq===m.seq).map(d=>d.name+' · '+status[d.state]).join(' / ');
+ a.append(el('strong',m.name),el('p',m.body),el('small',new Date(m.created).toLocaleTimeString('ko-KR')+' · '+(delivery||'방에 저장됨')));return a;
+ }));
+ if(room&&!messages.length)view.append(el('small','참가자가 남긴 메시지가 여기에 표시됩니다.'));
+ if(nearBottom)view.scrollTop=view.scrollHeight;
+}
+async function refresh(){
+ if(refreshing)return;refreshing=true;
+ try{const res=await fetch('/state');if(!res.ok)throw Error('로컬 허브 연결을 확인하세요.');update(await res.json());}catch(e){err(e.message);}finally{refreshing=false;}
+}
+byId('new').onsubmit=async e=>{e.preventDefault();if(await control({action:'create',name:e.target.elements.name.value})){selected=snapshot.rooms.at(-1).id;render();e.target.reset();}};
+async function makePair(instructions, launchCommand){
+ const room=selected;
+ const buttons=['pair','new-codex','new-claude'].map(byId);
+ for(const item of buttons)item.disabled=true;
+ try{
+  const response=await fetch('/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'room_code',room})});
+  const next=await response.json();
+  if(!response.ok)throw Error(next.error);
+  if(selected!==room)return;
+  pairRoom=room;
+  const prompt='Agent Room MCP의 join_room_code 도구로 '+next.code+' 코드에 참가 요청해 줘.';
+  const copy=el('button','연결 문장 복사');
+  copy.onclick=()=>navigator.clipboard.writeText(prompt).then(()=>copy.textContent='복사됨').catch(()=>err('아래 연결 문장을 직접 복사하세요.'));
+  const guide=byId('pair-guide');
+  guide.replaceChildren(el('small',instructions),document.createElement('br'),el('code',prompt),document.createElement('br'),el('small','문장을 붙여 넣은 뒤 이 화면에서 참가 요청을 승인하세요. 코드는 참가자 한 명에 한 번만, 10분 동안 유효합니다.'),document.createElement('br'),copy);
+  if(launchCommand){
+   const copyCommand=el('button','시작 명령 복사');
+   copyCommand.onclick=()=>navigator.clipboard.writeText(launchCommand).then(()=>copyCommand.textContent='복사됨').catch(()=>err('화면의 시작 명령을 직접 복사하세요.'));
+   guide.prepend(el('code',launchCommand),document.createTextNode(' '),copyCommand,document.createElement('br'));
+  }
+  guide.hidden=false;
+  err('');
+ }catch(e){err(e.message);}finally{for(const item of buttons)item.disabled=false;}
+}
+byId('pair').onclick=()=>makePair('기존 대화를 열고 아래 문장을 붙여 넣으세요.');
+byId('new-codex').onclick=()=>makePair('Agent Room을 설정한 프로젝트에서 새 Codex 대화를 열고 아래 문장을 첫 메시지로 보내세요.');
+byId('new-claude').onclick=()=>makePair('Agent Room을 설정한 프로젝트 폴더에서 위 명령으로 새 대화를 시작하고 아래 문장을 첫 메시지로 보내세요.', 'claude --dangerously-load-development-channels server:agent-room');
+refresh();setInterval(refresh,1500);
+</script></html>

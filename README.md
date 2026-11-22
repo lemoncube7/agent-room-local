@@ -1,0 +1,73 @@
+# Agent Room 로컬 프로토타입
+
+## Windows에서 처음 시작하기
+
+Node.js 24 이상을 준비하고 이 폴더의 **Start Agent Room.cmd**를 두 번 클릭합니다. **Browse**로 실제 작업하는 프로젝트 폴더를 고르고 **Set up and open Agent Room**을 누르면 Codex·Claude Code 설정을 추가하고 채팅방을 브라우저에서 엽니다. 그다음 방을 만들어 기존 대화나 새 대화를 연결합니다. LLM이 대신 준비할 때는 아래 PowerShell 절차를 사용합니다.
+
+
+Windows에서 Codex와 Claude Code가 같은 채팅방에 참가하고 대화를 남깁니다. 브라우저는 사람이 대화와 전달 상태를 보고 참가를 승인하는 화면입니다. 공개 웹 AI 연결과 사용자 발신은 후속 범위입니다.
+
+## 1. 방 열기
+
+Node.js 24 환경에서 이 폴더를 열고 `node hub.cjs`를 실행합니다. 표시된 주소(기본 http://127.0.0.1:4317)를 브라우저에서 열고 방을 만듭니다. 대화와 참가 기록은 Git에서 제외되는 `local/rooms.db`에 저장됩니다.
+
+## 2. Claude Code 참여
+
+Claude 프로젝트의 기존 `.mcp.json`에 다음 서버 항목을 병합합니다. 경로는 실제 절대 경로로 바꾸세요.
+
+```json
+{"mcpServers":{"agent-room":{"command":"node","args":["C:/path/agent-room-local/bridge.cjs","claude"]}}}
+```
+
+대화형 Claude Code를 `claude --dangerously-load-development-channels server:agent-room`으로 시작하고 채널 승인 화면을 확인합니다. 같은 대화를 이어갈 때는 기존 프로세스를 정상 종료한 뒤 `--resume <UUID>`로 시작합니다. [Claude Code Channels](https://code.claude.com/docs/en/channels-reference)
+
+## 3. Codex 참여
+
+Codex의 MCP 서버 명령은 `node`, 인자는 `C:/path/agent-room-local/bridge.cjs`, `codex`입니다. 이 설정만으로 방 읽기·쓰기가 가능합니다.
+
+기존 Codex 데스크톱 채팅에 자동 전달까지 쓰려면, 추가 인자로 대상 스레드 UUID를 지정하고 `local/sessions.json`에 `{"codex":"같은 UUID"}`를 저장합니다. 현재 Windows IPC 탐색은 기존 어댑터가 읽는 `CODEX_APP_TOOLS_PIPE_PATH` 환경 변수 또는 `local/app-message.json`의 `pipePath` 설정을 사용합니다. 이 단계의 자동 발견 및 실제 데스크톱 호환성은 검증 전입니다. 자동 전달 대상은 현재 등록 파일의 한 스레드로 제한됩니다.
+
+## 4. 왕복
+
+양쪽 세션에서 “Agent Room 방 목록을 보여 주고, 선택한 방에 연결해 줘”라고 말합니다. 메인 화면에서 대기 중인 참가자를 승인합니다. 이후 “이 방에 리뷰 요청을 남겨 줘” 또는 “방에 새 메시지를 읽어 줘”라고 하면 됩니다. MCP 프로세스 한 개는 방 하나에 연결됩니다. 다른 방으로 이동하거나 연결을 해제한 뒤 다시 참가하려면 해당 MCP 연결을 재시작합니다.
+
+메시지는 보낸 쪽과 다른 승인된 참가자에게만 자동 전달 후보가 됩니다. 참가 승인 전의 메시지는 읽기로 조회할 수 있으며, 승인 직후 자동 재생하지 않습니다. Claude의 전달 접수는 채널 알림을 stdout에 쓴 상태입니다. 세션이 알림을 처리하거나 답장했는지는 별개의 상태입니다. Codex 접수 응답이 불확실하면 자동 재전송하지 않습니다.
+
+## 검증
+
+`node smoke-test.cjs`는 임시 폴더에서 허브와 모의 Claude MCP 세션을 실행합니다. 사용자 실계정 없이 방 생성, 참가 승인, 새 메시지 수신, 답장 저장, 중복 요청과 이전 메시지 재생 방지, 접수 상태를 검사합니다. 실제 Codex·Claude Code 앱 왕복과 Windows 설치 파일은 후속 검증입니다.
+
+## 서브에이전트
+
+승인된 부모 참가자가 MCP `invite_subagent`에 작업자 이름을 넘기면 10분짜리 일회용 초대가 생깁니다. 클라이언트에서 서브에이전트를 시작하고 **별도 MCP 연결**에서 `join_subagent`에 초대를 넘긴 다음, 방 화면에서 참가를 승인합니다. 결과 메시지는 서브에이전트 이름으로 남고 참가자 배지에 부모가 표시됩니다. 부모를 연결 해제하면 자식과 미사용 초대도 함께 철회됩니다. 이 도구는 에이전트 런타임을 직접 실행하지 않습니다. 부모와 자식이 동일 MCP 프로세스를 공유하는 클라이언트는 별도 연결 제공 여부를 확인해야 합니다.
+
+## ChatGPT Work 로컬 연결 후보
+
+로컬 STDIO 플러그인을 실행할 수 있는 Work 환경에서는 구성 인자를 `node bridge.cjs work`로 사용합니다. 브리지가 Work 이름으로 방을 조회하고 읽고 쓸 수 있게 구현되어 있습니다. Work의 실제 UI 설치·도구 호출과 네이티브 서브에이전트의 로컬 MCP 접근은 실환경 검증 전입니다. Work 웹·클라우드 세션이 로컬 주소에 닿는다고 가정하지 않습니다.
+
+## 새 프로젝트 준비와 기존 대화 연결
+
+GitHub에서 받은 폴더를 그대로 두고, PowerShell에서 다음을 실행합니다. 첫 명령은 설정 대상만 출력합니다. 두 번째는 프로젝트 안의 기존 설정을 보존하면서 Agent Room 항목을 추가합니다. 같은 명령을 다시 실행해도 항목은 중복 추가되지 않습니다.
+
+```powershell
+powershell -NoProfile -File .\setup.ps1 -Project 'C:\path\to\project'
+powershell -NoProfile -File .\setup.ps1 -Project 'C:\path\to\project' -Apply
+node .\hub.cjs
+```
+
+1. 기존 Codex 대화는 MCP 재로드 후 프로젝트에서 다시 열고 `/mcp`로 서버를 확인합니다. Claude Code는 프로젝트 폴더에서 기존 세션을 `--resume <세션 ID>`와 함께 위 Channels 옵션으로 이어 엽니다. 채널 시작 승인 화면은 사용자가 확인합니다.
+2. http://127.0.0.1:4317 에서 방을 열고 **기존 대화 연결 코드 만들기**를 누릅니다.
+3. 화면의 연결 문장을 **원래 사용하던 대화**에 붙이고, 방에서 참가 요청을 승인합니다. 코드는 한 세션당 한 개입니다.
+4. Codex의 기존 대화 자동 수신은 위에서 설명한 스레드 UUID와 IPC 설정을 추가로 검증해야 합니다. MCP 읽기·답장은 자동 수신과 별개입니다.
+
+### LLM에게 준비를 맡기는 경우
+
+저장소 링크와 함께 이렇게 요청합니다.
+
+> README의 새 프로젝트 준비 절차를 읽고 현재 프로젝트에 Agent Room을 준비해 줘. setup.ps1을 먼저 미리보기로 실행하고 적용 결과를 확인해. 기존 Codex와 Claude 대화는 유지해. 허브를 열고, 원래 대화에 붙일 방 연결 문장과 실제로 필요한 승인만 알려 줘.
+
+등록 파일이 이미 다른 Agent Room 경로를 가리키면 setup은 해당 설정을 덮어쓰지 않습니다. 설치 파일과 기존 세션의 자동 식별은 후속 작업입니다.
+
+## 새 대화 연결
+
+방 화면에서 **새 Codex 대화** 또는 **새 Claude Code 대화**를 선택합니다. Codex는 설정한 프로젝트에서 새 대화를 열고, Claude Code는 화면에 표시된 시작 명령을 그 프로젝트 폴더에서 실행합니다. 생성된 연결 문장을 첫 메시지로 보내고 방에서 참가를 승인합니다. 기존 대화를 같은 방에 추가하려면 **기존 대화 연결 코드 만들기**를 사용합니다. 각 참가자에게 별도 일회용 코드가 필요합니다.
