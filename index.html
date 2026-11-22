@@ -6,7 +6,7 @@ aside{background:#181d31;border-right:1px solid #2e3651;padding:28px 20px;overfl
 h1{font-size:21px;margin:0 0 24px}button,input{font:inherit;border-radius:9px;border:1px solid #384362;background:#252d46;color:inherit;padding:9px 12px}button{cursor:pointer}button:hover,button[aria-current=true]{background:#344265}form{display:flex;gap:5px}form[hidden]{display:none}input{width:100%;min-width:0}nav{display:grid;gap:8px;margin-top:20px}nav button{text-align:left}
 main{display:grid;grid-template-rows:auto auto minmax(0,1fr) auto;min-width:0}header,#people{padding:18px 25px;border-bottom:1px solid #2e3651}header h2{margin:0;font-size:18px}header p{margin:8px 0 0;color:#b8c5e0}header code{color:#9ce6d2}header button{margin-top:10px}#people{display:flex;gap:12px;flex-wrap:wrap}#people span{background:#202943;border-radius:9px;padding:6px 9px}#people button{margin-left:8px;font-size:12px}#messages{padding:24px;display:flex;flex-direction:column;gap:16px;overflow:auto}article{max-width:min(80%,720px);background:#222c43;border-radius:13px;padding:12px 16px;align-self:flex-start}article.codex{align-self:flex-end;background:#203d40}article p{white-space:pre-wrap;overflow-wrap:anywhere;margin:7px 0;color:#f4f6ff}small{color:#b8c5e0}article strong{color:#ffbf9e}article.codex strong{color:#9ce6d2}#error{color:#ffb9ad;padding-top:8px}
 </style>
-<aside><h1>Agent Room</h1><button id="update">업데이트 확인</button><p id="update-result" role="status"></p><form id="new"><input name="name" aria-label="채팅방 이름" placeholder="새 채팅방 이름" required maxlength="70"><button aria-label="채팅방 만들기">+</button></form><div id="error" role="status"></div><nav id="rooms"></nav></aside>
+<aside><h1>Agent Room <small id="current-version" aria-label="현재 버전">버전 확인 중</small></h1><button id="update">업데이트 확인</button><p id="update-result" role="status"></p><form id="new"><input name="name" aria-label="채팅방 이름" placeholder="새 채팅방 이름" required maxlength="70"><button aria-label="채팅방 만들기">+</button></form><div id="error" role="status"></div><nav id="rooms"></nav></aside>
 <main><header><h2 id="title">채팅방을 선택하세요</h2><button id="pair" hidden>기존 대화 연결 코드 만들기</button><button id="new-codex" hidden>새 Codex 대화</button> <button id="new-claude" hidden>새 Claude Code 대화</button><p id="pair-guide" hidden></p></header><section id="people" aria-label="참가자"></section><section id="messages" aria-label="대화"></section><form id="compose" hidden style="padding: 12px 25px"><select id="recipient" aria-label="받는 대화"></select><input id="draft" aria-label="메시지" placeholder="메시지 쓰기" maxlength="8000" required><button type="submit">보내기</button></form></main>
 <script>
 let composeRoom,selected,previous='',snapshot,refreshing=false,lastRendered,pairRoom;
@@ -21,6 +21,7 @@ async function control(body){
  }catch(e){err(e.message);return false;}
 }
 function update(next){
+ byId('current-version').textContent=next.version?'v'+next.version:'버전 확인 불가';
  const key=JSON.stringify(next);if(key===previous)return;previous=key;snapshot=next;
  if(!next.rooms.some(r=>r.id===selected))selected=next.rooms[0]?.id;
  render();
@@ -108,7 +109,7 @@ byId('update').onclick=async()=>{
  try{
   const res=await fetch('/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'check_update'})});
   const info=await res.json();if(!res.ok)throw Error(info.error);
-  status.textContent=info.available?'새 버전 '+info.latest+' ':'최신 버전 v'+info.version;
+  status.textContent=info.available?'설치됨 v'+info.version+' · 업데이트 '+info.latest+' ':'v'+info.version+'이 최신 버전이에요.';
   if(info.download){
    const link=el('a','Windows ZIP 받기');link.href=info.download;link.target='_blank';link.rel='noopener';
    const install=el('button','업데이트 설치');
@@ -118,7 +119,13 @@ byId('update').onclick=async()=>{
     try{
      const result=await fetch('/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'apply_update',tag:info.latest})});
      if(!result.ok)throw Error((await result.json()).error);
-     status.textContent='업데이트를 시작했어요. 설치가 끝나면 시작 화면이 다시 열려요.';
+     status.textContent='설치 요청을 보냈어요. '+info.latest+' 실행을 확인하는 중이에요.';
+    for(let attempt=0;attempt<40;attempt++){
+     await new Promise(resolve=>setTimeout(resolve,2000));
+     if('v'+snapshot?.version===info.latest){location.reload();return;}
+    }
+    status.textContent='아직 '+info.latest+' 실행을 확인하지 못했어요. 현재 버전을 확인하거나 ZIP으로 설치하세요.';
+    status.append(document.createTextNode(' '),link);
     }catch(error){err(error.message);install.disabled=false;}
    };
    status.append(install,document.createTextNode(' '),link);
