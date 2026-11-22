@@ -123,7 +123,7 @@ function render(){
 }
 function renderHistory(view,messages,typing,recipients,roomChanged){
  const oldTop=view.scrollTop, previousTail=view.lastElementChild?.dataset.key, previousMessage=view.dataset.latest;
- const status={queued:'대기 중',accepted:'전달 접수',submitting:'전달 중',working:'전달 접수',answered:'응답 완료',uncertain:'전달 불확실',failed:'응답 실패'};
+ const status={queued:'대기 중',accepted:'전달 접수',submitting:'전달 중',working:'전달 접수',answered:'응답 완료',no_reply:'답장 없음',uncertain:'전달 불확실',failed:'응답 실패'};
  view.replaceChildren(...messages.map(m=>{
   const card=agentCard(m.name,m.author==='human:'+selected);card.dataset.key='message:'+m.seq;
   const delivery=snapshot.deliveries.filter(d=>d.seq===m.seq).map(d=>d.name+' · '+status[d.state]).join(' / ');

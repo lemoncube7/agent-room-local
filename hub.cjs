@@ -69,19 +69,22 @@ async function cliTurn(participant, prompt, inputSeq){
   if(!session||!row||cliBusy.has(participant))return;
   cliBusy.add(participant);
   const scope=inputSeq?randomBytes(32).toString('hex'):null;
-  const input=inputSeq?one('SELECT relay_root FROM messages WHERE seq=?',inputSeq):null;
+  const input=inputSeq?one('SELECT relay_root,recipient FROM messages WHERE seq=?',inputSeq):null;
   if(scope)relayScopes.set(scope,{participant,room:row.room,root:input?.relay_root??inputSeq,sent:false});
   try{
     if(inputSeq)run("UPDATE deliveries SET state='working' WHERE seq=? AND member=?",inputSeq,participant);
     const context='Agent Room displays your normal CLI reply to the user only. When asked to talk to another agent, use the agent-room list_peers tool, then send_to_peer with the listed ID. For an incoming peer message, reply to its sender using send_to_peer if a reply is useful. The tool queues delivery; it does not confirm a reply. Never invent a delivery or response. If the tool fails, report the actual error.';
-    const result=await runCodex(session.project,context+'\n\n'+prompt,session.thread,session.provider,scope);
+    const audience=!input?'This is the first turn.':input.relay_root?'This is a peer message.':input.recipient?'This user message was addressed to you specifically.':'This user message was broadcast to everyone; it may be for awareness or meant for another participant.';
+    const replyPolicy='Only reply when the message calls for a response from you or you have a useful result, question, or correction. For FYI, acknowledgments, or messages meant for someone else, return exactly [[AGENT_ROOM_NO_REPLY]]. Do not post a courtesy acknowledgment. If you handled a request by messaging the peer, you may stay silent here unless the user asked you to report the outcome.';
+    const result=await runCodex(session.project,context+' '+audience+' '+replyPolicy+'\n\n'+prompt,session.thread,session.provider,scope);
+    const silent=result.reply.trim()==='[[AGENT_ROOM_NO_REPLY]]';
     run('UPDATE cli_sessions SET thread=? WHERE member=?',result.id,participant);
     if(row.state==='starting')run("UPDATE members SET state='approved' WHERE id=? AND state='starting'",participant);
-    if(one("SELECT id FROM members WHERE id=? AND state='approved'",participant)){
+    if(!silent&&one("SELECT id FROM members WHERE id=? AND state='approved'",participant)){
       const human='human:'+row.room;
       storeMessage(row.room,participant,result.reply,one('SELECT id FROM members WHERE id=?',human)?human:null);
     }
-    if(inputSeq)run("UPDATE deliveries SET state='answered' WHERE seq=? AND member=?",inputSeq,participant);
+    if(inputSeq)run('UPDATE deliveries SET state=? WHERE seq=? AND member=?',silent?'no_reply':'answered',inputSeq,participant);
   }catch(error){
     if(row.state==='starting')run("UPDATE members SET state='start_failed' WHERE id=? AND state='starting'",participant);
     if(inputSeq)run("UPDATE deliveries SET state='failed' WHERE seq=? AND member=?",inputSeq,participant);
