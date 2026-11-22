@@ -1,3 +1,3 @@
 @echo off
-powershell.exe -NoProfile -STA -ExecutionPolicy RemoteSigned -File "%~dp0start.ps1"
+powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File "%~dp0start.ps1"
 if errorlevel 1 pause
