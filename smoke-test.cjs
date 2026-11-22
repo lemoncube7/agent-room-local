@@ -6,9 +6,12 @@ const fs=require('node:fs');
 const os=require('node:os');
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-room-'));
 const procs=[];
-for(const name of ['hub.cjs','bridge.cjs','index.html'])fs.copyFileSync(path.join(__dirname,name),path.join(root,name));
+for(const name of ['hub.cjs','bridge.cjs','index.html','VERSION'])fs.copyFileSync(path.join(__dirname,name),path.join(root,name));
+fs.mkdirSync(path.join(root,'.codex'));
+fs.writeFileSync(path.join(root,'.codex/config.toml'),'');
+fs.writeFileSync(path.join(root,'managed-codex.cjs'),"exports.runCodex=async(project,prompt,session)=>({id:'mock-session',reply:session?'Resumed: '+prompt:'Opened'})");
 function start(file,args=[]){
-  const child=spawn(process.execPath,[path.join(root,file),...args],{env:{...process.env,ROOM_PORT:'0'}});
+  const child=spawn(process.execPath,[path.join(root,file),...args],{env:{...process.env,ROOM_PORT:'0',AGENT_ROOM_PROJECT:root}});
   procs.push(child); return child;
 }
 async function main(){
@@ -45,6 +48,14 @@ async function main(){
   emit('tools/call',{name:'request_join',arguments:{room:room.id}},2);
   const pending=await until(async()=>(await sync()).members.find(m=>m.name==='Claude Code'));
   await rpc('/control',{action:'approve',participant:pending.id});
+  await rpc('/control',{action:'user_message',room:room.id,participant:pending.id,text:'Claude only'});
+  await until(()=>frames.find(f=>f.method==='notifications/claude/channel'&&f.params.content.includes('Claude only')));
+  assert.ok(!(await rpc('/tool',{action:'read_messages',room:room.id,participant:sender.participant})).messages.some(m=>m.body==='Claude only'));
+  const direct=(await sync()).messages.find(m=>m.body==='Claude only');
+  emit('tools/call',{name:'reply_direct',arguments:{replyTo:direct.seq,request:'direct-reply',text:'Claude private reply'}},10);
+  assert.ok(!(await until(()=>frames.find(f=>f.id===10))).result.isError);
+  assert.ok(!(await rpc('/tool',{action:'read_messages',room:room.id,participant:sender.participant})).messages.some(m=>m.body==='Claude private reply'));
+  frames.splice(frames.findIndex(f=>f.method==='notifications/claude/channel'),1);
   const message=await rpc('/tool',{...writes,request:'request-1',text:'Please review.'});
   assert.deepEqual(await rpc('/tool',{...writes,request:'request-1',text:'Please review.'}),message);
   const push=await until(()=>frames.find(f=>f.method==='notifications/claude/channel'));
@@ -71,6 +82,11 @@ async function main(){
   await rpc('/control',{action:'disconnect',participant:sender.participant});
   workerCall(4,'read_messages',{after:0});
   assert.equal((await until(()=>workerFrames.find(f=>f.id===4))).result.isError,true);
-  console.log('Passed: room approval, one channel push, reply, receipt, one-use subagent invitation, separate authorship, inherited revocation.');
+  const sessionState=await rpc('/control',{action:'new_codex',room:room.id});
+  const managed=sessionState.members.find(m=>m.name==='Codex CLI');
+  await until(async()=>(await sync()).messages.find(m=>m.body==='Opened'));
+  await rpc('/control',{action:'user_message',room:room.id,participant:managed.id,text:'Follow up'});
+  await until(async()=>(await sync()).messages.find(m=>m.body==='Resumed: Follow up'));
+  console.log('Passed: room approval, one channel push, reply, receipt, one-use subagent invitation, separate authorship, inherited revocation, direct send and reply isolation, managed Codex creation and resume.');
 }
 main().catch(err=>{console.error(err);process.exitCode=1;}).finally(()=>procs.forEach(p=>p.kill()));

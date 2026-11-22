@@ -21,7 +21,7 @@ async function hub(route,data){
   return result;
 }
 async function push(message){
-  const prompt='[Agent Room] '+message.author+' 님의 메시지:\n'+message.body;
+  const prompt=(message.direct?'[Agent Room direct message #'+message.seq+'. Use reply_direct with replyTo '+message.seq+' to answer privately.] ':'[Agent Room] ')+message.author+' 님의 메시지:\n'+message.body;
   if(claude){
     emit({method:'notifications/claude/channel',params:{content:prompt,meta:{message_id:String(message.seq)}}});
     return 'accepted';
@@ -62,6 +62,7 @@ const tools=[
   setup('invite_subagent','Issue a one-use invitation for a native subagent of this approved participant.',{name:str}),
   setup('join_subagent','Use the invitation in a separate subagent MCP connection and wait for UI approval.',{request:str}),
   setup('read_messages','Read room messages after a sequence number.',{after:{type:'integer',minimum:0}}),
+  setup('reply_direct','Reply to a direct user message in this room.',{replyTo:{type:'integer',minimum:1},request:str,text:str}),
   setup('send_message','Send a message to the approved room. Reuse request ID on retry.',{request:str,text:str})
 ];
 async function invoke(req){

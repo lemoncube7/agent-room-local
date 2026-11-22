@@ -2,6 +2,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
+const {runCodex} = require('./managed-codex.cjs');
+const {spawn}=require('node:child_process');
+const version=fs.readFileSync(path.join(__dirname,'VERSION'),'utf8').trim();
 const {randomUUID, randomBytes, timingSafeEqual} = require('node:crypto');
 const {DatabaseSync} = require('node:sqlite');
 const local = path.join(__dirname,'local');
@@ -20,6 +23,46 @@ const all = (sql,...args)=>db.prepare(sql).all(...args);
 const one = (sql,...args)=>db.prepare(sql).get(...args);
 const run = (sql,...args)=>db.prepare(sql).run(...args);
 if(!db.prepare('PRAGMA table_info(members)').all().some(column=>column.name==='parent')) db.exec('ALTER TABLE members ADD COLUMN parent TEXT');
+if(!db.prepare('PRAGMA table_info(messages)').all().some(column=>column.name==='recipient')) db.exec('ALTER TABLE messages ADD COLUMN recipient TEXT');
+db.exec('CREATE TABLE IF NOT EXISTS cli_sessions(member TEXT PRIMARY KEY, project TEXT NOT NULL, thread TEXT)');
+const cliBusy=new Set();
+function storeMessage(room, author, body, recipient=null){
+  return Number(run('INSERT INTO messages(room,author,request,body,created,recipient) VALUES(?,?,?,?,?,?)',
+    room,author,randomUUID(),body,new Date().toISOString(),recipient).lastInsertRowid);
+}
+async function cliTurn(participant, prompt, inputSeq){
+  const session=one('SELECT * FROM cli_sessions WHERE member=?',participant);
+  const row=one("SELECT room FROM members WHERE id=? AND state='approved'",participant);
+  if(!session||!row||cliBusy.has(participant))return;
+  cliBusy.add(participant);
+  try{
+    const result=await runCodex(session.project,prompt,session.thread);
+    run('UPDATE cli_sessions SET thread=? WHERE member=?',result.id,participant);
+    if(one("SELECT id FROM members WHERE id=? AND state='approved'",participant)){
+      const human='human:'+row.room;
+      storeMessage(row.room,participant,result.reply,one('SELECT id FROM members WHERE id=?',human)?human:null);
+    }
+    if(inputSeq)run("UPDATE deliveries SET state='accepted' WHERE seq=? AND member=?",inputSeq,participant);
+  }catch(error){
+    if(inputSeq)run("UPDATE deliveries SET state='failed' WHERE seq=? AND member=?",inputSeq,participant);
+    storeMessage(row.room,participant,error.message,'human:'+row.room);
+  }finally{cliBusy.delete(participant);}
+}
+async function checkUpdate(){
+  const response=await fetch('https://api.github.com/repos/lemoncube7/agent-room-local/releases?per_page=20',{
+    headers:{Accept:'application/vnd.github+json','User-Agent':'Agent-Room'},signal:AbortSignal.timeout(8000)});
+  if(!response.ok)throw Error('GitHub에서 업데이트를 확인하지 못했어요 ('+response.status+').');
+  const newer=(a,b)=>{
+    const x=a.split('.').map(Number),y=b.split('.').map(Number);
+    return x.findIndex((n,i)=>n!==y[i])>=0 && x[x.findIndex((n,i)=>n!==y[i])]>y[x.findIndex((n,i)=>n!==y[i])];
+  };
+  const releases=(await response.json()).filter(item=>!item.draft&&/^v\d+\.\d+\.\d+$/.test(item.tag_name));
+  const latest=releases.reduce((best,item)=>!best||newer(item.tag_name.slice(1),best.tag_name.slice(1))?item:best,null);
+  const available=Boolean(latest&&newer(latest.tag_name.slice(1),version));
+  const tag=latest?.tag_name;
+  const zip=latest?.assets.find(asset=>asset.name==='Agent-Room-'+tag+'-Windows.zip');
+  return {version,available,latest:tag,download:available&&zip?'https://github.com/lemoncube7/agent-room-local/releases/download/'+tag+'/'+zip.name:null};
+}
 const token = randomBytes(32).toString('hex');
 const str = (value,max)=>{
   if(typeof value!=='string'||!value.trim()||value.length>max) throw Error('Invalid text input.');
@@ -31,7 +74,7 @@ function member(id,room){
   if(result.parent&&!one("SELECT id FROM members WHERE id=? AND room=? AND state='approved'",result.parent,room)) throw Error('The parent participant is disconnected.');
   return result;
 }
-function task({action,room,participant,name,text,request,after=0}){
+function task({action,room,participant,name,text,request,replyTo,after=0}){
   if(action==='list_rooms') return {rooms:all('SELECT * FROM rooms ORDER BY rowid')};
   if(action==='join_room_code'){
     const code=str(request,100).toUpperCase();
@@ -66,33 +109,35 @@ function task({action,room,participant,name,text,request,after=0}){
   }
   if(action==='read_messages'){
     if(!Number.isSafeInteger(after)||after<0) throw Error('Invalid cursor.');
-    return {messages:all('SELECT messages.seq,name AS author,body,created FROM messages JOIN members ON members.id=messages.author WHERE messages.room=? AND seq>? ORDER BY seq LIMIT 100',room,after)};
+    return {messages:all('SELECT messages.seq,name AS author,body,created,recipient IS NOT NULL AS direct FROM messages JOIN members ON members.id=messages.author WHERE messages.room=? AND seq>? AND (recipient IS NULL OR recipient=? OR messages.author=?) ORDER BY seq LIMIT 100',room,after,author.id,author.id)};
   }
-  if(action!=='send_message') throw Error('Unknown tool.');
+  if(!['send_message','reply_direct'].includes(action)) throw Error('Unknown tool.');
   const key=str(request,100), body=str(text,8000);
-  const existing=one('SELECT seq,room,body FROM messages WHERE author=? AND request=?',author.id,key);
+  const recipient=action==='reply_direct'?one('SELECT author FROM messages WHERE seq=? AND room=? AND recipient=? AND author=?',replyTo,room,author.id,'human:'+room)?.author:null;
+  if(action==='reply_direct'&&!recipient)throw Error('Direct message not found.');
+  const existing=one('SELECT seq,room,body,recipient FROM messages WHERE author=? AND request=?',author.id,key);
   if(existing){
-    if(existing.room!==room||existing.body!==body) throw Error('Request ID already used for different input.');
+    if(existing.room!==room||existing.body!==body||existing.recipient!==recipient) throw Error('Request ID already used for different input.');
     return {seq:existing.seq};
   }
-  const result=run('INSERT INTO messages(room,author,request,body,created) VALUES(?,?,?,?,?)',room,author.id,key,body,new Date().toISOString());
+  const result=run('INSERT INTO messages(room,author,request,body,created,recipient) VALUES(?,?,?,?,?,?)',room,author.id,key,body,new Date().toISOString(),recipient);
   return {seq:Number(result.lastInsertRowid)};
 }
 function state(){
   return {rooms:all('SELECT * FROM rooms ORDER BY rowid'),
-    members:all('SELECT id,room,name,state,parent FROM members'),
+    members:all("SELECT id,room,name,state,parent FROM members WHERE state<>'human'").map(row=>({...row,busy:cliBusy.has(row.id)})),
     messages:all('SELECT messages.*,members.name FROM messages JOIN members ON messages.author=members.id ORDER BY seq'),
     deliveries:all('SELECT deliveries.seq,members.name,deliveries.state FROM deliveries JOIN members ON deliveries.member=members.id')};
 }
 function deliver(args){
   const target=member(args.participant,args.room);
   if(args.action==='pending') return all(`
-    SELECT m.seq,a.name author,m.body FROM messages m
+    SELECT m.seq,a.name author,m.body,m.recipient IS NOT NULL AS direct FROM messages m
     JOIN members a ON a.id=m.author
     LEFT JOIN deliveries d ON d.seq=m.seq AND d.member=?
-    WHERE m.room=? AND m.author<>? AND m.seq>? AND d.seq IS NULL ORDER BY m.seq LIMIT 10
-  `,target.id,target.room,target.id,Math.max(target.since,args.after));
-  if(!Number.isSafeInteger(args.seq)||!one('SELECT seq FROM messages WHERE seq=? AND room=? AND author<>?',args.seq,target.room,target.id)) throw Error('Invalid delivery.');
+    WHERE m.room=? AND m.author<>? AND m.seq>? AND (m.recipient IS NULL OR m.recipient=?) AND d.seq IS NULL ORDER BY m.seq LIMIT 10
+  `,target.id,target.room,target.id,Math.max(target.since,args.after),target.id);
+  if(!Number.isSafeInteger(args.seq)||!one('SELECT seq FROM messages WHERE seq=? AND room=? AND author<>? AND (recipient IS NULL OR recipient=?)',args.seq,target.room,target.id,target.id)) throw Error('Invalid delivery.');
   if(args.action==='claim'){
     const result=run("INSERT OR IGNORE INTO deliveries VALUES(?,?,'submitting')",args.seq,target.id);
     return {claimed:result.changes===1};
@@ -124,6 +169,40 @@ const server=http.createServer(async(req,res)=>{
     let result;
     if(browser){
       if(args.action==='create')run('INSERT INTO rooms VALUES(?,?)',randomUUID(),str(args.name,70));
+      else if(args.action==='check_update')result=await checkUpdate();
+      else if(args.action==='apply_update'){
+        if(process.platform!=='win32')throw Error('자동 설치는 Windows에서 사용할 수 있어요.');
+        if(cliBusy.size)throw Error('Codex 답변이 끝난 후 업데이트해 주세요.');
+        const update=await checkUpdate();
+        if(!update.download||update.latest!==args.tag)throw Error('업데이트를 다시 확인해 주세요.');
+        const worker=spawn('powershell.exe',['-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',path.join(__dirname,'update.ps1'),'-Tag',update.latest,'-HubId',String(process.pid)],{detached:true,stdio:'ignore',windowsHide:true});
+        await new Promise((resolve,reject)=>{worker.once('spawn',resolve);worker.once('error',reject);});
+        worker.unref();
+        result={started:true};
+      }
+      else if(args.action==='new_codex'){
+        if(!one('SELECT id FROM rooms WHERE id=?',args.room))throw Error('Room not found.');
+        const activeProject=path.join(local,'project.txt');
+        const project=process.env.AGENT_ROOM_PROJECT||(fs.existsSync(activeProject)?fs.readFileSync(activeProject,'utf8').trim():null);
+        if(!project||!fs.existsSync(path.join(project,'.codex','config.toml')))throw Error('시작 파일에서 프로젝트를 선택하고 이 방을 다시 열어 주세요.');
+        const id=randomUUID();
+        run("INSERT INTO members(id,room,name,state) VALUES(?,?,?,'approved')",id,args.room,'Codex CLI');
+        run('INSERT INTO cli_sessions(member,project) VALUES(?,?)',id,project);
+        run("INSERT OR IGNORE INTO members(id,room,name,state) VALUES(?,?,?,'human')",'human:'+args.room,args.room,'나');
+        void cliTurn(id,'You are connected to Agent Room. Briefly say hello in Korean. Do not change any project files.');
+      }
+      else if(args.action==='user_message'){
+        const target=member(args.participant,args.room);
+        const body=str(args.text,8000);
+        if(cliBusy.has(target.id))throw Error('Codex가 답변 중이에요. 완료되면 다시 보내세요.');
+        const human='human:'+target.room;
+        run("INSERT OR IGNORE INTO members(id,room,name,state) VALUES(?,?,?,'human')",human,target.room,'나');
+        const seq=storeMessage(target.room,human,body,target.id);
+        if(one('SELECT member FROM cli_sessions WHERE member=?',target.id)){
+          run("INSERT INTO deliveries VALUES(?,?,'submitting')",seq,target.id);
+          void cliTurn(target.id,body,seq);
+        }
+      }
       else if(args.action==='room_code'){
         if(!one('SELECT id FROM rooms WHERE id=?',args.room))throw Error('Room not found.');
         run('DELETE FROM room_codes WHERE expires<=?',Date.now());
@@ -142,7 +221,7 @@ const server=http.createServer(async(req,res)=>{
           run('DELETE FROM invites WHERE parent=?',args.participant);
         }
       } else throw Error('Unknown control.');
-      result=state();
+      result??=state();
     } else result=req.url==='/tool'?task(args):deliver(args);
     res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'}).end(JSON.stringify(result));
   } catch(error){res.writeHead(400,{'Content-Type':'application/json'}).end(JSON.stringify({error:error.message}));}

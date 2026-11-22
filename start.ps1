@@ -23,6 +23,9 @@ $install = Add-Control Button '2. Set up and open Agent Room' 16 88 270 32
 $status = Add-Control Label 'This adds Agent Room to the selected project.' 16 134 520 25
 $install.Enabled = $false
 $project.add_TextChanged({ $install.Enabled = -not [string]::IsNullOrWhiteSpace($project.Text) })
+$lastProject=Join-Path $PSScriptRoot 'local/project.txt'
+if(Test-Path -LiteralPath $lastProject){$project.Text=(Get-Content -LiteralPath $lastProject -Raw).Trim()}
+$form.AcceptButton=$install
 $choose.add_Click({
     $picker = New-Object Windows.Forms.FolderBrowserDialog
     try {
@@ -47,6 +50,9 @@ $install.add_Click({
         $node = Get-Command node.exe -ErrorAction SilentlyContinue
         if (-not $node) { throw 'Install Node.js 24 or later, then reopen Agent Room.' }
         & (Join-Path $PSScriptRoot 'setup.ps1') -Project $project.Text.Trim() -Apply | Out-Null
+        $roomLocal = Join-Path $PSScriptRoot 'local'
+        [void][IO.Directory]::CreateDirectory($roomLocal)
+        [IO.File]::WriteAllText((Join-Path $roomLocal 'project.txt'), (Resolve-Path -LiteralPath $project.Text.Trim()).Path)
         if (-not (Test-RoomHub)) {
             $hubPath = Join-Path $PSScriptRoot 'hub.cjs'
             $hub = Start-Process -FilePath $node.Source -ArgumentList ('"' + $hubPath + '"') -WorkingDirectory $PSScriptRoot -WindowStyle Hidden -PassThru
