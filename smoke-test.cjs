@@ -172,6 +172,14 @@ async function main(){
   const bad=await rpc('/control',{action:'user_message',room:room.id,text:'Bad rank JSON'});
   const badSeq=bad.messages.find(m=>m.body==='Bad rank JSON').seq;
   await until(async()=>(await sync()).replyPlans.find(p=>p.seq===badSeq&&p.state==='fallback'));
+  const retractState=await rpc('/control',{action:'user_message',room:room.id,text:'Retract test'});
+  const retractSeq=retractState.messages.find(m=>m.body==='Retract test').seq;
+  await rpc('/control',{action:'retract_message',room:room.id,seq:retractSeq});
+  const afterRetract=await sync();
+  assert.equal(afterRetract.messages.find(m=>m.seq===retractSeq).retracted,1);
+  assert.ok(!afterRetract.deliveries.some(d=>d.seq===retractSeq&&['queued','ranking','context_only'].includes(d.state)));
+  await until(async()=>!(await sync()).deliveries.some(d=>d.seq===retractSeq&&['working','submitting'].includes(d.state)),420);
+  assert.ok(!(await sync()).messages.some(m=>m.relay_root===retractSeq));
   const privateText='Private test '+managedAgy.id;
   const privateState=await rpc('/control',{action:'user_message',room:room.id,text:privateText});
   const privateSeq=privateState.messages.find(m=>m.body===privateText).seq;

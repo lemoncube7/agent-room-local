@@ -190,105 +190,216 @@ function describeStreamProgress(event){
   if(event.type==='init'||event.event==='init'||event.type==='system')return {step:'세션 연결 중…',text:''};
   return null;
 }
-function runStreamLive(provider,file,prefix,args,project,prompt,session,inboxFile,progressFile,interimFile){
-  return new Promise((resolve,reject)=>{
-    const writeProgress=createProgressWriter(progressFile);
-    let pendingInterim='';
-    const flushInterim=()=>{
-      const text=cleanInterim(pendingInterim);
-      pendingInterim='';
-      if(!text||!interimFile)return;
-      try{fs.appendFileSync(interimFile,JSON.stringify(text)+'\n');writeProgress.reset?.();}catch{}
-    };
-    writeProgress('CLI 시작 중…');
-    const child=spawn(file,[...prefix,...args],{cwd:project,windowsHide:true,env:cliEnv()});
-    const closingFile=inboxFile+'.closing', liveFile=inboxFile+'.live';
-    const parts=[];
-    const usage={turns:0,inputTokens:0,outputTokens:0,costUsd:0};
-    let sent=0,done=0,offset=0,buffer='',stderr='',failure='',id=session,closing=false,timedOut=false,lastEvent=Date.now();
-    const send=text=>{
-      sent++;
-      const payload=provider==='agy'
-        ?{event:'user',message:{content:[{type:'text',text}]}}
-        :{type:'user',message:{role:'user',content:[{type:'text',text}]}};
-      child.stdin.write(JSON.stringify(payload)+'\n');
-    };
-    const pull=source=>{
-      const data=fs.readFileSync(source);
-      if(data.length<=offset)return;
-      const fresh=data.subarray(offset), end=fresh.lastIndexOf(10);
-      if(end<0)return;
-      offset+=end+1;
-      for(const line of fresh.subarray(0,end).toString('utf8').split('\n'))if(line.trim())send(JSON.parse(line));
-    };
-    const finishInput=()=>{closing=true;clearInterval(poller);fs.rmSync(liveFile,{force:true});child.stdin.end();};
-    const poll=()=>{
-      if(closing)return;
-      try{pull(inboxFile);}catch(error){if(error.code==='ENOENT')return finishInput();}
-      const stale=done>0&&Date.now()-lastEvent>90000;
-      if(done<sent&&!stale)return;
-      try{fs.renameSync(inboxFile,closingFile);}catch(error){if(error.code==='ENOENT')finishInput();return;}
-      try{pull(closingFile);}catch{}
-      if(done<sent&&!stale){try{fs.renameSync(closingFile,inboxFile);}catch{finishInput();}return;}
-      finishInput();
-    };
-    const poller=setInterval(poll,300);
-    const killer=setTimeout(()=>{timedOut=true;child.kill();},1800000);
-    child.stdin.on('error',()=>{});
-    child.stderr.on('data',chunk=>{stderr=(stderr+chunk).slice(-8000);});
-    child.stdout.on('data',chunk=>{
-      buffer+=chunk;
-      for(let at=buffer.indexOf('\n');at>=0;at=buffer.indexOf('\n')){
-        const line=buffer.slice(0,at);buffer=buffer.slice(at+1);
-        let event;try{event=JSON.parse(line);}catch{continue;}
-        lastEvent=Date.now();
-        const kind=event.type||event.event;
-        if(provider==='claude'&&event.type==='rate_limit_event')saveClaudeLimits(event.rate_limit_info);
-        const info=describeStreamProgress(event);
-        if(info)writeProgress(info.step,info.text,info.delta);
-        if(provider==='claude'&&event.type==='assistant'&&!event.parent_tool_use_id&&Array.isArray(event.message?.content)){
-          for(const block of event.message.content){
-            if(block?.type==='text'&&block.text){flushInterim();pendingInterim=block.text;}
-            else if(block?.type==='tool_use')flushInterim();
-          }
-        }
-        if(provider==='agy'&&(event.type==='step_update'||event.event==='step_update')){
-          const su=(event.event==='step_update'&&event.step_update&&typeof event.step_update==='object')?event.step_update:event;
-          const st=String(su.step_type||'').toLowerCase();
-          if(su.tool_info?.name||su.tool_name||st.includes('tool')||st.includes('command'))flushInterim();
-          else if(info?.text&&!st.includes('think')&&!st.includes('reason')){
-            if(info.delta)pendingInterim+=info.text;
-            else{if(pendingInterim&&info.text!==pendingInterim)flushInterim();pendingInterim=info.text;}
-          }
-        }
-        if(kind==='result')pendingInterim='';
-        const cid=event.conversation_id||event.session_id||event.result?.conversation_id||event.step_update?.conversation_id;
-        if(cid)id=cid;
-        if(kind==='error'||event.error)failure+='\n'+(event.error?.message||event.error||event.message||'');
-        if(kind==='result'){
-          done++;
-          const res=(event.event==='result'&&event.result&&typeof event.result==='object')?event.result:event;
-          if(provider==='agy'){usage.turns=0;usage.inputTokens=0;usage.outputTokens=0;usage.costUsd=0;}
-          sumUsage(usage,res.usage||res.token_usage||{total_cost_usd:res.total_cost_usd},provider==='agy'?(res.num_turns||done):1);
-          if(res.total_cost_usd&&!res.usage?.total_cost_usd)usage.costUsd+=Number(res.total_cost_usd)||0;
-          const ok=res.status?(res.status==='SUCCESS'||res.status==='success'):!res.is_error;
-          const reply=res.response??res.result;
-          if(ok&&typeof reply==='string')parts.push(reply);
-          else failure+='\n'+(Array.isArray(res.errors)?res.errors.join('; '):'')+' '+(res.error||res.message||res.result||res.response||res.status||res.subtype||'');
-          poll();
+function buildStreamArgs(provider,session,model,effort,options={}){
+  const permission=options.permission||'dev';
+  if(provider==='claude'){
+    const args=['--print','--output-format','stream-json','--input-format','stream-json','--verbose','--permission-mode',permission==='full'?'bypassPermissions':'acceptEdits',...(session?['--resume',session]:[])];
+    if(permission==='dev')args.push('--allowedTools',devAllowedTools);
+    if(permission!=='full'&&options.approvalConfig)args.push('--mcp-config',options.approvalConfig,'--permission-prompt-tool','mcp__agent-room-approval__permission_prompt');
+    if(model)args.push('--model',model);
+    if(effort)args.push('--effort',effort);
+    return args;
+  }
+  const agyPerm=permission==='full'?['--dangerously-skip-permissions']:['--mode',permission==='edit'?'accept-edits':'auto'];
+  const args=['--input-format','stream-json','--output-format','stream-json',...agyPerm,...(session?['--conversation',session]:[]),'--print-timeout','1800s'];
+  if(model)args.push('--model',model);
+  if(effort)args.push('--effort',effort);
+  return args;
+}
+function createStreamHost(provider,file,prefix,args,project,session,persistent=false,onExit=null){
+  const child=spawn(file,[...prefix,...args],{cwd:project,windowsHide:true,env:cliEnv()});
+  let id=session, buffer='', stderr='', alive=true, turnsCompleted=0, active=null;
+  const sendPayload=text=>{
+    const payload=provider==='agy'
+      ?{event:'user',message:{content:[{type:'text',text}]}}
+      :{type:'user',message:{role:'user',content:[{type:'text',text}]}};
+    child.stdin.write(JSON.stringify(payload)+'\n');
+  };
+  const finishTurn=turn=>{
+    clearInterval(turn.poller);clearTimeout(turn.killer);
+    for(const item of [turn.closingFile,turn.liveFile])if(item)fs.rmSync(item,{force:true});
+    active=null;turnsCompleted++;
+    if(id&&turn.parts.length)turn.resolve({id,reply:mergeLiveReplies(turn.parts),usage:turn.usage});
+    else turn.reject(diagnoseCliFailure(provider,{code:0},stderr+turn.failure));
+  };
+  const failTurn=(turn,err)=>{
+    clearInterval(turn.poller);clearTimeout(turn.killer);
+    for(const item of [turn.inboxFile,turn.closingFile,turn.liveFile])if(item)fs.rmSync(item,{force:true});
+    active=null;
+    turn.reject(err);
+  };
+  child.stdin.on('error',()=>{});
+  child.stderr.on('data',chunk=>{stderr=(stderr+chunk).slice(-8000);});
+  child.stdout.on('data',chunk=>{
+    buffer+=chunk;
+    for(let at=buffer.indexOf('\n');at>=0;at=buffer.indexOf('\n')){
+      const line=buffer.slice(0,at);buffer=buffer.slice(at+1);
+      let event;try{event=JSON.parse(line);}catch{continue;}
+      const cid=event.conversation_id||event.session_id||event.result?.conversation_id||event.step_update?.conversation_id;
+      if(cid)id=cid;
+      if(provider==='claude'&&event.type==='rate_limit_event')saveClaudeLimits(event.rate_limit_info);
+      const turn=active;
+      if(!turn)continue;
+      turn.lastEvent=Date.now();
+      const kind=event.type||event.event;
+      const info=describeStreamProgress(event);
+      if(info)turn.writeProgress(info.step,info.text,info.delta);
+      if(provider==='claude'&&event.type==='assistant'&&!event.parent_tool_use_id&&Array.isArray(event.message?.content)){
+        for(const block of event.message.content){
+          if(block?.type==='text'&&block.text){turn.flushInterim();turn.pendingInterim=block.text;}
+          else if(block?.type==='tool_use')turn.flushInterim();
         }
       }
-    });
-    const cleanup=()=>{clearInterval(poller);clearTimeout(killer);for(const item of [inboxFile,closingFile,liveFile])fs.rmSync(item,{force:true});};
-    child.once('error',error=>{cleanup();reject(diagnoseCliFailure(provider,error,stderr));});
-    child.once('close',code=>{
-      cleanup();
-      if(id&&parts.length)return resolve({id,reply:mergeLiveReplies(parts),usage});
-      reject(diagnoseCliFailure(provider,timedOut?{killed:true}:{code},stderr+failure));
-    });
-    fs.writeFileSync(liveFile,'1');
-    send(prompt);
+      if(provider==='agy'&&(event.type==='step_update'||event.event==='step_update')){
+        const su=(event.event==='step_update'&&event.step_update&&typeof event.step_update==='object')?event.step_update:event;
+        const st=String(su.step_type||'').toLowerCase();
+        if(su.tool_info?.name||su.tool_name||st.includes('tool')||st.includes('command'))turn.flushInterim();
+        else if(info?.text&&!st.includes('think')&&!st.includes('reason')){
+          if(info.delta)turn.pendingInterim+=info.text;
+          else{if(turn.pendingInterim&&info.text!==turn.pendingInterim)turn.flushInterim();turn.pendingInterim=info.text;}
+        }
+      }
+      if(kind==='result')turn.pendingInterim='';
+      if(kind==='error'||event.error)turn.failure+='\n'+(event.error?.message||event.error||event.message||'');
+      if(kind==='result'){
+        turn.done++;
+        const res=(event.event==='result'&&event.result&&typeof event.result==='object')?event.result:event;
+        if(provider==='agy'){turn.usage.turns=0;turn.usage.inputTokens=0;turn.usage.outputTokens=0;turn.usage.costUsd=0;}
+        sumUsage(turn.usage,res.usage||res.token_usage||{total_cost_usd:res.total_cost_usd},provider==='agy'?(res.num_turns||turn.done):1);
+        if(res.total_cost_usd&&!res.usage?.total_cost_usd)turn.usage.costUsd+=Number(res.total_cost_usd)||0;
+        const ok=res.status?(res.status==='SUCCESS'||res.status==='success'):!res.is_error;
+        const reply=res.response??res.result;
+        if(ok&&typeof reply==='string')turn.parts.push(reply);
+        else turn.failure+='\n'+(Array.isArray(res.errors)?res.errors.join('; '):'')+' '+(res.error||res.message||res.result||res.response||res.status||res.subtype||'');
+        turn.poll();
+      }
+    }
   });
+  child.once('error',error=>{
+    alive=false;
+    const turn=active;
+    if(turn)failTurn(turn,Object.assign(diagnoseCliFailure(provider,error,stderr),{warmReused:turnsCompleted>0}));
+    onExit?.();
+  });
+  child.once('close',code=>{
+    alive=false;
+    const turn=active;
+    if(turn){
+      if(!persistent&&id&&turn.parts.length)finishTurn(turn);
+      else failTurn(turn,Object.assign(diagnoseCliFailure(provider,turn.timedOut?{killed:true}:{code},stderr+turn.failure),{warmReused:turnsCompleted>0}));
+    }
+    onExit?.();
+  });
+  return {
+    get alive(){return alive;},
+    get busy(){return Boolean(active);},
+    get session(){return id;},
+    get turnsCompleted(){return turnsCompleted;},
+    close(){alive=false;try{child.stdin.end();}catch{}const t=setTimeout(()=>{try{child.kill();}catch{}},1500);t.unref?.();},
+    runTurn(prompt,options={}){
+      if(!alive||active)return Promise.reject(Object.assign(Error('Warm CLI unavailable.'),{warmReused:true}));
+      return new Promise((resolve,reject)=>{
+        const inboxFile=options.inboxFile||null, closingFile=inboxFile?inboxFile+'.closing':null, liveFile=inboxFile?inboxFile+'.live':null;
+        const writeProgress=createProgressWriter(options.progressFile);
+        writeProgress(turnsCompleted>0?'대기 세션에 전달 중…':'CLI 시작 중…');
+        const turn={
+          sent:0,done:0,offset:0,parts:[],usage:{turns:0,inputTokens:0,outputTokens:0,costUsd:0},
+          failure:'',pendingInterim:'',lastEvent:Date.now(),timedOut:false,closing:false,
+          inboxFile,closingFile,liveFile,writeProgress,resolve,reject,
+          flushInterim(){
+            const text=cleanInterim(turn.pendingInterim);
+            turn.pendingInterim='';
+            if(!text)return;
+            if(options.onInterim)try{options.onInterim(text);}catch{}
+            if(options.interimFile)try{fs.appendFileSync(options.interimFile,JSON.stringify(text)+'\n');writeProgress.reset?.();}catch{}
+          },
+          pull(source){
+            if(!source||!fs.existsSync(source))return;
+            const data=fs.readFileSync(source);
+            if(data.length<=turn.offset)return;
+            const fresh=data.subarray(turn.offset), end=fresh.lastIndexOf(10);
+            if(end<0)return;
+            turn.offset+=end+1;
+            for(const line of fresh.subarray(0,end).toString('utf8').split('\n'))if(line.trim()){turn.sent++;sendPayload(JSON.parse(line));}
+          },
+          poll(){
+            if(turn.closing||active!==turn)return;
+            try{turn.pull(inboxFile);}catch(error){if(error.code==='ENOENT'){turn.closing=true;if(persistent)finishTurn(turn);else child.stdin.end();return;}}
+            const stale=turn.done>0&&Date.now()-turn.lastEvent>90000;
+            if(turn.done<turn.sent&&!stale)return;
+            if(inboxFile){
+              try{fs.renameSync(inboxFile,closingFile);}catch(error){if(error.code==='ENOENT'){turn.closing=true;if(persistent)finishTurn(turn);else child.stdin.end();}return;}
+              try{turn.pull(closingFile);}catch{}
+              if(turn.done<turn.sent&&!stale){try{fs.renameSync(closingFile,inboxFile);}catch{turn.closing=true;if(persistent)finishTurn(turn);else child.stdin.end();}return;}
+            }
+            turn.closing=true;
+            if(persistent)finishTurn(turn);
+            else{clearInterval(turn.poller);if(liveFile)fs.rmSync(liveFile,{force:true});child.stdin.end();}
+          }
+        };
+        active=turn;
+        turn.poller=setInterval(()=>turn.poll(),300);
+        turn.killer=setTimeout(()=>{turn.timedOut=true;child.kill();},1800000);
+        if(liveFile)fs.writeFileSync(liveFile,'1');
+        turn.sent++;
+        sendPayload(prompt);
+      });
+    }
+  };
+}
+function runStreamLive(provider,file,prefix,args,project,prompt,session,inboxFile,progressFile,interimFile){
+  const host=createStreamHost(provider,file,prefix,args,project,session,false);
+  return host.runTurn(prompt,{inboxFile,progressFile,interimFile});
+}
+const warmPool=new Map();
+const warmIdleMs=30*60*1000;
+function invalidateWarm(participant){
+  const entry=warmPool.get(participant);
+  if(!entry)return;
+  warmPool.delete(participant);
+  clearTimeout(entry.idleTimer);
+  entry.host.close();
+  if(entry.cleanupApproval)try{entry.cleanupApproval();}catch{}
+}
+function closeAllWarm(){
+  for(const participant of [...warmPool.keys()])invalidateWarm(participant);
+}
+async function runWarmTurn(participant,project,prompt,session,provider,model=null,effort=null,options={}){
+  if((provider!=='claude'&&provider!=='agy')||options.rank)return runCodex(project,prompt,session,provider,model,effort,options);
+  const cfgKey=JSON.stringify([project,provider,model||'',effort||'',options.permission||'dev']);
+  let entry=warmPool.get(participant);
+  if(entry&&(!entry.host.alive||entry.host.busy||entry.cfgKey!==cfgKey||(session&&entry.host.session&&entry.host.session!==session))){
+    invalidateWarm(participant);
+    entry=null;
+  }
+  if(!entry){
+    const [file,...prefix]=cliCommand(provider);
+    const args=buildStreamArgs(provider,session,model,effort,options);
+    const host=createStreamHost(provider,file,prefix,args,project,session,true,()=>{
+      const cur=warmPool.get(participant);
+      if(cur&&cur.host===host){
+        warmPool.delete(participant);
+        clearTimeout(cur.idleTimer);
+        if(cur.cleanupApproval)try{cur.cleanupApproval();}catch{}
+      }
+    });
+    entry={host,cfgKey,idleTimer:null,cleanupApproval:options.cleanupApproval||null};
+    warmPool.set(participant,entry);
+  }
+  clearTimeout(entry.idleTimer);
+  try{
+    const result=await entry.host.runTurn(prompt,options);
+    if(entry.host.alive){
+      entry.idleTimer=setTimeout(()=>invalidateWarm(participant),warmIdleMs);
+      entry.idleTimer.unref?.();
+    }
+    return result;
+  }catch(error){
+    const wasReused=Boolean(error?.warmReused);
+    invalidateWarm(participant);
+    if(wasReused)return runCodex(project,prompt,session,provider,model,effort,options);
+    throw error;
+  }
 }
 function runCodex(project, prompt, session, provider='codex',model=null,effort=null,options={}) {
   const claude=provider==='claude';
@@ -306,7 +417,7 @@ function runCodex(project, prompt, session, provider='codex',model=null,effort=n
     if(permission!=='full'&&options.approvalConfig)claudeArgs.push('--mcp-config',options.approvalConfig,'--permission-prompt-tool','mcp__agent-room-approval__permission_prompt');
   }
   const agyPerm=options.rank?['--mode','plan']:permission==='full'?['--dangerously-skip-permissions']:['--mode',permission==='edit'?'accept-edits':'auto'];
-  const agyArgs=['-p',prompt,'--output-format','json',...agyPerm,...(session?['--conversation',session]:[]),'--print-timeout','285s'];
+  const agyArgs=['-p',prompt,'--output-format','json',...agyPerm,...(session?['--conversation',session]:[]),'--print-timeout',options.rank?'24s':'285s'];
   if(model){codexArgs.splice(-1,0,'--model',model);claudeArgs.push('--model',model);agyArgs.push('--model',model);}
   if(effort){
     codexArgs.splice(-1,0,'-c','model_reasoning_effort='+JSON.stringify(effort));
@@ -430,4 +541,4 @@ function discoverModels(project,provider){
   });
 }
 
-module.exports={runCodex,discoverModels,diagnoseCliFailure,cliCommand};
+module.exports={runCodex,runWarmTurn,invalidateWarm,closeAllWarm,discoverModels,diagnoseCliFailure,cliCommand};

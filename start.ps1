@@ -80,13 +80,17 @@ $install.add_Click({
         }else{
             $appBrowser=@(
                 (Get-Command msedge.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1),
-                "$env:ProgramFiles(x86)\Microsoft\Edge\Application\msedge.exe",
+                (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe' -ErrorAction SilentlyContinue).'(default)',
+                "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
                 "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe",
                 (Get-Command chrome.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1),
+                (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe' -ErrorAction SilentlyContinue).'(default)',
                 "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+                "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
                 "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
             ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
-            if($appBrowser){Start-Process -FilePath $appBrowser -ArgumentList '--app=http://127.0.0.1:4317'}
+            $appProfile=Join-Path $PSScriptRoot 'local\app-window'
+            if($appBrowser){Start-Process -FilePath $appBrowser -ArgumentList ('--app=http://127.0.0.1:4317 --user-data-dir="'+$appProfile+'" --no-first-run --no-default-browser-check --window-size=1440,900')}
             else{Start-Process 'http://127.0.0.1:4317'}
         }
         $form.Close()

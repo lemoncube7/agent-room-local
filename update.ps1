@@ -36,6 +36,7 @@ try {
     while ($true) {
         try {
             Invoke-RestMethod -Method Post -Uri ($hubConfig.url + '/shutdown_for_update') -Headers @{Authorization='Bearer ' + $hubConfig.token} -ContentType 'application/json' -Body '{}' -TimeoutSec 10 | Out-Null
+            $restart = $true
             break
         } catch {
             if ($_.Exception.Response -eq $null -or [int]$_.Exception.Response.StatusCode -ne 409 -or (Get-Date) -gt $shutdownDeadline) { throw }
@@ -44,7 +45,6 @@ try {
         }
     }
     if (-not $hub.WaitForExit(15000)) { throw 'Agent Room is still closing. No files were replaced.' }
-    $restart = $true
     Write-Output 'Installing new application files...'
     foreach ($file in $files) {
         $applied.Add($file)
@@ -68,7 +68,20 @@ try {
 }
 if ($restart) {
     Write-Output 'Starting Agent Room...'
-    Start-Process -FilePath $NodePath -ArgumentList ('"' + (Join-Path $PSScriptRoot 'hub.cjs') + '"') -WorkingDirectory $PSScriptRoot -WindowStyle Hidden
+    if (-not $hub.HasExited) { [void]$hub.WaitForExit(20000) }
+    $running = $false
+    foreach ($try in 1..3) {
+        try {
+            Start-Process -FilePath $NodePath -ArgumentList ('"' + (Join-Path $PSScriptRoot 'hub.cjs') + '"') -WorkingDirectory $PSScriptRoot -WindowStyle Hidden
+        } catch { Write-Output ('Restart attempt failed: ' + $_.Exception.Message) }
+        foreach ($wait in 1..20) {
+            Start-Sleep -Milliseconds 500
+            try { [void](Invoke-RestMethod -Uri 'http://127.0.0.1:4317/state' -TimeoutSec 2); $running = $true; break } catch { }
+        }
+        if ($running) { break }
+    }
+    if ($running) { Write-Output 'Agent Room is running.' }
+    else { $failed = $true; Write-Output 'Update failed: Agent Room did not restart. Open Start Agent Room.' }
 }
 
 if($failed){exit 1}
