@@ -8,7 +8,17 @@ const local=path.join(__dirname,'local');
 const provider=process.argv[2];
 const thread=process.argv[3];
 const claude=provider==='claude';
-if(!['claude','codex','work','approval'].includes(provider))throw Error('Specify claude, codex, or work.');
+if(!['claude','codex','work','approval','turn'].includes(provider))throw Error('Specify claude, codex, or work.');
+async function runTurn(jobFile){
+  const job=JSON.parse(fs.readFileSync(jobFile,'utf8'));
+  let output;
+  try{
+    const result=await require('./managed-codex.cjs').runCodex(job.project,job.prompt,job.session,job.provider,job.model,job.effort,job.options);
+    output={ok:true,result};
+  }catch(error){output={ok:false,message:error.message,cliCode:error.cliCode};}
+  fs.writeFileSync(job.resultFile+'.tmp',JSON.stringify(output));
+  fs.renameSync(job.resultFile+'.tmp',job.resultFile);
+}
 let joined, timer, busy=false, joining=false;
 const emit=payload=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',...payload})+'\n');
 async function hub(route,data){
@@ -153,7 +163,8 @@ async function invoke(req){
     default: return emit({id:req.id,error:{code:-32601,message:'Method not found'}});
   }
 }
-createInterface({input:process.stdin}).on('close',()=>{clearInterval(timer);}).on('line',line=>{
+if(provider==='turn')void runTurn(thread).catch(error=>{console.error(error.message);process.exitCode=1;});
+else createInterface({input:process.stdin}).on('close',()=>{clearInterval(timer);}).on('line',line=>{
   let request;
   try{request=JSON.parse(line);}catch{return;}
   invoke(request).catch(err=>console.error(err.message));

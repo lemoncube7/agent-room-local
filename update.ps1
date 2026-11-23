@@ -29,7 +29,18 @@ try {
     $hubConfig = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'local/hub.json') -Raw | ConvertFrom-Json
     if ($hubConfig.url -ne 'http://127.0.0.1:4317') { throw 'Unexpected Agent Room address.' }
     Write-Output 'Waiting for the Agent Room hub to close...'
-    Invoke-RestMethod -Method Post -Uri ($hubConfig.url + '/shutdown_for_update') -Headers @{Authorization='Bearer ' + $hubConfig.token} -ContentType 'application/json' -Body '{}' -TimeoutSec 10 | Out-Null
+    $shutdownDeadline = (Get-Date).AddSeconds(330)
+    $announced = $false
+    while ($true) {
+        try {
+            Invoke-RestMethod -Method Post -Uri ($hubConfig.url + '/shutdown_for_update') -Headers @{Authorization='Bearer ' + $hubConfig.token} -ContentType 'application/json' -Body '{}' -TimeoutSec 10 | Out-Null
+            break
+        } catch {
+            if ($_.Exception.Response -eq $null -or [int]$_.Exception.Response.StatusCode -ne 409 -or (Get-Date) -gt $shutdownDeadline) { throw }
+            if (-not $announced) { Write-Output 'Agent replies are finishing. The update will install automatically; new messages are kept.'; $announced = $true }
+            Start-Sleep -Seconds 2
+        }
+    }
     if (-not $hub.WaitForExit(15000)) { throw 'Agent Room is still closing. No files were replaced.' }
     $restart = $true
     Write-Output 'Installing new application files...'
