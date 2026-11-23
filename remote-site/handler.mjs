@@ -25,12 +25,11 @@ export async function handleRoom(request,env){
   if(route==='/api/room/device'&&request.method==='POST'){
     if(!await sameSecret(request.headers.get('x-agent-room-key'),env.REMOTE_DEVICE_KEY))return json({error:'Unauthorized'},403);
     let payload;try{payload=await readBody(request,1500000);}catch{return json({error:'Invalid payload'},400);}
-    if(!Array.isArray(payload.rooms)||payload.rooms.length>25||!payload.rooms.every(room=>isId(room?.id)&&isText(room.name,70))||
+    if(!Array.isArray(payload.rooms)||!payload.rooms.every(room=>isId(room?.id)&&isText(room.name,70))||
        !Array.isArray(payload.events)||payload.events.length>35||!Array.isArray(payload.acknowledged)||payload.acknowledged.length>20)return json({error:'Invalid batch'},400);
     const ids=new Set(payload.rooms.map(room=>room.id));
     if(!payload.acknowledged.every(isId)||!payload.events.every(e=>ids.has(e?.room)&&Number.isSafeInteger(e.seq)&&e.seq>0&&isText(e.name,120)&&isText(e.text,30000)&&isText(e.created,50)))return json({error:'Invalid event'},400);
-    const actions=[env.DB.prepare('DELETE FROM remote_rooms')];
-    for(const room of payload.rooms)actions.push(env.DB.prepare('INSERT OR IGNORE INTO remote_rooms(id,name) VALUES(?,?)').bind(room.id,room.name));
+    const actions=[env.DB.prepare('DELETE FROM remote_rooms'),env.DB.prepare("INSERT OR IGNORE INTO remote_rooms(id,name) SELECT json_extract(value,'$.id'),json_extract(value,'$.name') FROM json_each(?)").bind(JSON.stringify(payload.rooms))];
     if(ids.has(payload.legacyRoom)){
       actions.push(env.DB.prepare('UPDATE remote_events SET room=? WHERE room IS NULL').bind(payload.legacyRoom));
       actions.push(env.DB.prepare('UPDATE remote_commands SET room=? WHERE room IS NULL').bind(payload.legacyRoom));

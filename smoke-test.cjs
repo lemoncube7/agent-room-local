@@ -46,8 +46,8 @@ async function main(){
   const frames=[];
   require('node:readline').createInterface({input:client.stdout}).on('line',line=>frames.push(JSON.parse(line)));
   const emit=(method,params,id)=>client.stdin.write(JSON.stringify({jsonrpc:'2.0',method,params,id})+'\n');
-  async function until(fn){
-    for(let i=0;i<100;i++){const result=await fn();if(result)return result;await new Promise(r=>setTimeout(r,60));}
+  async function until(fn,attempts=100){
+    for(let i=0;i<attempts;i++){const result=await fn();if(result)return result;await new Promise(r=>setTimeout(r,60));}
     throw Error('Timed out waiting for integration event.');
   }
   emit('initialize',{protocolVersion:'2025-03-26'},1);
@@ -175,6 +175,22 @@ async function main(){
   const direct=await rpc('/control',{action:'user_message',room:room.id,text:directText});
   const directSeq=direct.messages.find(m=>m.body===directText).seq;
   await until(async()=>(await sync()).deliveries.find(d=>d.seq===directSeq&&d.member===managedAgy.id&&d.priority===1));
+  await rpc('/control',{action:'edit_agent',room:room.id,participant:managedAgy.id,model:'other-model',name:'sol 6.2',effort:'low'});
+  for(const [text,priority] of [['솔, 해줘',1],['솔직히 궁금해',0],['solution is here',0]]){
+    const state=await rpc('/control',{action:'user_message',room:room.id,text});
+    const seq=state.messages.find(m=>m.body===text).seq;
+    await until(async()=>(await sync()).deliveries.find(d=>d.seq===seq&&d.member===managedAgy.id&&d.priority===priority));
+  }
+  await rpc('/control',{action:'edit_agent',room:room.id,participant:managedAgy.id,model:'other-model',name:'opus 5.5',effort:'low'});
+  const shortName='opus가 해';
+  const shortState=await rpc('/control',{action:'user_message',room:room.id,text:shortName});
+  const shortSeq=shortState.messages.find(m=>m.body===shortName).seq;
+  await until(async()=>(await sync()).deliveries.find(d=>d.seq===shortSeq&&d.member===managedAgy.id&&d.priority===1));
+  const privateText='Private test '+managedAgy.id;
+  const privateState=await rpc('/control',{action:'user_message',room:room.id,text:privateText});
+  const privateSeq=privateState.messages.find(m=>m.body===privateText).seq;
+  const privateReply=await until(async()=>(await sync()).messages.find(m=>m.relay_root===privateSeq&&m.author===managed.id&&m.recipient===managedAgy.id),420);
+  await until(async()=>(await sync()).deliveries.find(d=>d.seq===privateReply.seq&&d.member===managedAgy.id));
   const stopped=once(hub,'exit');
   hub.kill();
   await stopped;
