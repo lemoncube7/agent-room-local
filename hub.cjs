@@ -133,6 +133,9 @@ function desktopCommands(args){
     const pipePrefix=slash+slash+'.'+slash+'pipe'+slash+'codex-app-tools-';
     if(args.pipe&&(typeof args.pipe!=='string'||!args.pipe.startsWith(pipePrefix)||/[\r\n]/.test(args.pipe)))throw Error('Invalid Codex desktop pipe.');
     const last=one('SELECT COALESCE(MAX(seq),0) AS seq FROM messages WHERE room=?',target.room).seq;
+    const holder=one('SELECT member,members.state FROM desktop_bindings LEFT JOIN members ON members.id=desktop_bindings.member WHERE thread=? AND member<>?',args.thread,target.id);
+    if(holder?.state==='approved')throw Error('This Codex conversation is already connected to another approved participant.');
+    if(holder)run('DELETE FROM desktop_bindings WHERE member=?',holder.member);
     run('INSERT INTO desktop_bindings(member,thread,pipe,since) VALUES(?,?,?,?) ON CONFLICT(member) DO UPDATE SET thread=excluded.thread,pipe=excluded.pipe,since=CASE WHEN desktop_bindings.thread=excluded.thread THEN desktop_bindings.since ELSE excluded.since END',target.id,args.thread,args.pipe??null,last);
     desktopRetry.delete(target.id);
     return {bound:true,participant:target.id,room:target.room};
@@ -172,6 +175,7 @@ const outbox=path.join(local,'outbox');
 const updateLog=path.join(local,'update.log');
 fs.mkdirSync(outbox,{recursive:true});
 function storeMessage(room,author,body,root=null,recipient=null){
+  setImmediate(dispatchDesktop);
   return Number(run('INSERT INTO messages(room,author,request,body,created,relay_root,recipient) VALUES(?,?,?,?,?,?,?)',
     room,author,randomUUID(),body,new Date().toISOString(),root,recipient).lastInsertRowid);
 }
@@ -389,6 +393,7 @@ function recordUserMessage(room,text,request=randomUUID()){
       run("INSERT INTO reply_plans VALUES(?,?,'pending')",seq,room);
     }
     db.exec('COMMIT');
+    setImmediate(dispatchDesktop);
     return seq;
   }catch(error){db.exec('ROLLBACK');throw error;}
 }
