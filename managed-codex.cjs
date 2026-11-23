@@ -58,13 +58,14 @@ function diagnoseCliFailure(provider,error,diagnostic){
   return failure('unknown','CLI에서 완성된 응답을 받지 못했어요'+suffix+'.','같은 프로젝트에서 CLI를 직접 열어 오류를 확인하세요.');
 }
 
-function runCodex(project, prompt, session, provider='codex',model=null,effort=null) {
+function runCodex(project, prompt, session, provider='codex',model=null,effort=null,options={}) {
   const claude=provider==='claude';
   const agy=provider==='agy';
   const name=agy?'Antigravity':claude?'Claude Code':'Codex';
   const [file,...prefix]=cliCommand(provider);
   const codexArgs=session?['exec','resume','--json','--skip-git-repo-check',session,'-']:['exec','--json','--skip-git-repo-check','-'];
   if(provider==='codex'&&process.platform==='win32'&&(process.env.AGENT_ROOM_CODEX_SANDBOX||cliSettings().codexSandbox)==='mxc')codexArgs.unshift('-c','windows.sandbox="mxc"');
+  if(options.rank)codexArgs.splice(-1,0,'--sandbox','read-only');
   const claudeArgs=['--print','--output-format','json',...(session?['--resume',session]:[])];
   const agyArgs=['-p',prompt,'--output-format','json',...(session?['--conversation',session]:[]),'--print-timeout','285s'];
   if(model){codexArgs.splice(-1,0,'--model',model);claudeArgs.push('--model',model);agyArgs.push('--model',model);}
@@ -75,7 +76,7 @@ function runCodex(project, prompt, session, provider='codex',model=null,effort=n
   }
   return new Promise((resolve,reject)=>{
     const child=execFile(file,[...prefix,...(agy?agyArgs:claude?claudeArgs:codexArgs)],{
-      cwd:project,windowsHide:true,timeout:300000,maxBuffer:8*1024*1024
+      cwd:project,windowsHide:true,timeout:options.rank?25000:300000,maxBuffer:8*1024*1024
     },(error,stdout,stderr)=>{
       let result;
       try {

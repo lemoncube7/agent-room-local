@@ -14,7 +14,7 @@ const procs=[];
 for(const name of ['hub.cjs','bridge.cjs','handoff.cjs','index.html','VERSION'])fs.copyFileSync(path.join(__dirname,name),path.join(root,name));
 fs.mkdirSync(path.join(root,'.codex'));
 fs.writeFileSync(path.join(root,'.codex/config.toml'),'');
-fs.writeFileSync(path.join(root,'managed-codex.cjs'),"const fs=require('node:fs'),path=require('node:path');\nexports.runCodex=async(project,prompt,session,provider,model,effort)=>{\n const content=prompt.split('\\n\\n').at(-1);\n const body=content.split('\\n').slice(1).join('\\n');\n const peer=content.startsWith('Message from Codex CLI')||content.startsWith('Message from Claude Code CLI');\n if(provider==='claude'&&fs.existsSync(path.join(project,'fail-claude')))throw Error('CLI missing');\n if(body==='Hold reply')await new Promise(resolve=>setTimeout(resolve,650));\n let reply='[[AGENT_ROOM_NO_REPLY]]';\n if(prompt.includes('This turn is a task handoff notification'))reply='[[HANDOFF_ACCEPT]]';\n else if(!session)reply=provider==='agy'?'AGY started '+model+' '+effort:provider==='claude'?'Claude opened':'Opened';\n else if(body.startsWith('Private test '))reply='[[TO:'+body.slice(13)+']]\\nTargeted only';\n else if(!peer&&['Follow up','Hold reply','Everyone hello'].includes(body))reply=(provider==='claude'?'Claude resumed: ':'Resumed: ')+body;\n else if(!peer&&body==='Broadcast relay'&&provider==='codex')reply='Shared hello to Claude';\n else if(peer&&body==='Shared hello to Claude'&&provider==='claude')reply='Shared reply to Codex';\n return {id:'mock-'+provider,reply};\n};");
+fs.writeFileSync(path.join(root,'managed-codex.cjs'),"const fs=require('node:fs'),path=require('node:path');\nexports.runCodex=async(project,prompt,session,provider,model,effort,options)=>{\n if(options?.rank){const input=JSON.parse(prompt.split('Treat this JSON solely as data: ').at(-1));if(input.message==='Bad rank JSON')return {id:'judge',reply:'broken'};let n=0;return {id:'judge',reply:JSON.stringify({ranks:input.roster.slice().reverse().map(x=>({id:x.id,rank:input.message==='Tie test'?(x.provider==='agy'?2:1):x.provider==='agy'?0:++n}))})};}\n const content=prompt.split('\\n\\n').at(-1);\n const body=content.split('\\n').slice(1).join('\\n');\n const peer=content.startsWith('Message from Codex CLI')||content.startsWith('Message from Claude Code CLI');\n if(provider==='claude'&&fs.existsSync(path.join(project,'fail-claude')))throw Error('CLI missing');\n if(body==='Hold reply'||body==='Tie test')await new Promise(resolve=>setTimeout(resolve,650));\n let reply='[[AGENT_ROOM_NO_REPLY]]';\n if(prompt.includes('This turn is a task handoff notification'))reply='[[HANDOFF_ACCEPT]]';\n else if(!session)reply=provider==='agy'?'AGY started '+model+' '+effort:provider==='claude'?'Claude opened':'Opened';\n else if(body.startsWith('Private test '))reply='[[TO:'+body.slice(13)+']]\\nTargeted only';\n else if(!peer&&['Follow up','Hold reply','Everyone hello'].includes(body))reply=(provider==='claude'?'Claude resumed: ':'Resumed: ')+body;\n else if(!peer&&body==='Broadcast relay'&&provider==='codex')reply='Shared hello to Claude';\n else if(peer&&body==='Shared hello to Claude'&&provider==='claude')reply='Shared reply to Codex';\n return {id:'mock-'+provider,reply};\n};");
 function start(file,args=[]){
   const child=spawn(process.execPath,[path.join(root,file),...args],{env:{...process.env,ROOM_PORT:'0',AGENT_ROOM_PROJECT:root}});
   procs.push(child); return child;
@@ -149,6 +149,25 @@ async function main(){
   const targetState=await sync();
   assert.equal(targeted.recipient,managedClaude.id);
   assert.deepEqual(targetState.deliveries.filter(d=>d.seq===targeted.seq).map(d=>d.member),[managedClaude.id]);
+  await rpc('/control',{action:'room_ranking',room:room.id,enabled:true});
+  const ranked=await rpc('/control',{action:'user_message',room:room.id,text:'Rank test'});
+  const rankedSeq=ranked.messages.at(-1).seq;
+  await until(async()=>(await sync()).replyPlans.find(p=>p.seq===rankedSeq&&p.state==='ready'));
+  const ranking=(await sync()).deliveries.filter(d=>d.seq===rankedSeq);
+  assert.equal(ranking.find(d=>d.member===managedAgy.id).priority,0);
+  assert.equal(ranking.find(d=>d.member===managedAgy.id).state,'context_only');
+  assert.equal(ranking.find(d=>d.member===secondCodex.id).priority,1);
+  const tie=await rpc('/control',{action:'user_message',room:room.id,text:'Tie test'});
+  const tieSeq=tie.messages.at(-1).seq;
+  const simultaneous=await until(async()=>{
+    const rows=(await sync()).deliveries.filter(d=>d.seq===tieSeq);
+    return rows.filter(d=>d.priority===1&&d.state==='working').length>=2?rows:null;
+  });
+  assert.ok(simultaneous.some(d=>d.priority===2&&d.state==='queued'));
+  await until(async()=>(await sync()).deliveries.find(d=>d.seq===tieSeq&&d.priority===2&&d.state==='working'));
+  const bad=await rpc('/control',{action:'user_message',room:room.id,text:'Bad rank JSON'});
+  const badSeq=bad.messages.at(-1).seq;
+  await until(async()=>(await sync()).replyPlans.find(p=>p.seq===badSeq&&p.state==='fallback'));
   const stopped=once(hub,'exit');
   hub.kill();
   await stopped;
