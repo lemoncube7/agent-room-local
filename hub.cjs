@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
 const {createHandoff}=require('./handoff.cjs');
-const {runCodex,runWarmTurn=((_p,project,prompt,session,provider,model,effort,options)=>runCodex(project,prompt,session,provider,model,effort,options)),invalidateWarm=(()=>{}),closeAllWarm=(()=>{}),discoverModels,cliCommand} = require('./managed-codex.cjs');
+const {runCodex,runWarmTurn=((_p,project,prompt,session,provider,model,effort,options)=>runCodex(project,prompt,session,provider,model,effort,options)),invalidateWarm=(()=>{}),closeAllWarm=(()=>{}),refreshCodexLimits=(async()=>false),refreshAgyLimits=(async()=>false),discoverModels,cliCommand} = require('./managed-codex.cjs');
 const {spawn,execFile}=require('node:child_process');
 const version=fs.readFileSync(path.join(__dirname,'VERSION'),'utf8').trim();
 const {randomUUID, randomBytes, timingSafeEqual} = require('node:crypto');
@@ -465,6 +465,7 @@ async function cliTurn(participant, prompt, inputSeq){
     const silent=!body||body==='[[AGENT_ROOM_NO_REPLY]]';
     run('UPDATE cli_sessions SET thread=?, last_cli_error=?, turns=turns+?, input_tokens=input_tokens+?, output_tokens=output_tokens+?, cost_usd=cost_usd+? WHERE member=?',
       result.id,result.issue?JSON.stringify(result.issue):null,result.usage?.turns||1,result.usage?.inputTokens||0,result.usage?.outputTokens||0,result.usage?.costUsd||0,participant);
+    if(session.provider==='codex')void refreshCodexLimits();
     if(row.state==='starting')run("UPDATE members SET state='approved' WHERE id=? AND state='starting'",participant);
     if(forwarded.size&&silent&&inputSeq){
       for(const targetId of forwarded)run("INSERT INTO deliveries(seq,member,state,priority) VALUES(?,?,'queued',1) ON CONFLICT(seq,member) DO UPDATE SET state='queued',priority=1",inputSeq,targetId);
@@ -1036,6 +1037,9 @@ server.listen(Number(process.env.ROOM_PORT||4317),'127.0.0.1',()=>{
   recoverDetachedTurns();
   dispatchQueuedTurns();
   setInterval(()=>{if(!draining){drainOutbox();dispatchRankings();dispatchQueuedTurns();dispatchDesktop();}},1000).unref();
+  const refreshAllLimits=()=>{if(!draining){void refreshCodexLimits();void refreshAgyLimits(true);}};
+  setTimeout(refreshAllLimits,2000).unref();
+  setInterval(refreshAllLimits,20*60*1000).unref();
   process.once('exit',closeAllWarm);
   console.log(url);
 });

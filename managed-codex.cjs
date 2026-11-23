@@ -136,14 +136,91 @@ function createProgressWriter(progressFile){
   };
   return write;
 }
-function saveClaudeLimits(info){
-  const windows=info?.unifiedWindows;
-  if(!windows||typeof windows!=='object')return;
-  const file=path.join(__dirname,'local','limits-claude.json');
+function saveProviderLimits(provider,windows,status=null,updatedAt=Date.now()){
+  if(!windows||typeof windows!=='object'||!Object.keys(windows).length)return false;
+  const dir=path.join(__dirname,'local');
+  fs.mkdirSync(dir,{recursive:true});
+  const file=path.join(dir,'limits-'+provider+'.json');
   try{
-    fs.writeFileSync(file+'.tmp',JSON.stringify({provider:'claude',updatedAt:Date.now(),status:info.status||null,windows}));
+    fs.writeFileSync(file+'.tmp',JSON.stringify({provider,updatedAt,status,windows}));
     fs.renameSync(file+'.tmp',file);
-  }catch{}
+    return true;
+  }catch{return false;}
+}
+function saveClaudeLimits(info){
+  saveProviderLimits('claude',info?.unifiedWindows,info?.status||null);
+}
+function refreshCodexLimits(){
+  return new Promise(resolve=>{
+    const [file,...prefix]=cliCommand('codex');
+    const child=spawn(file,[...prefix,'app-server','--listen','stdio://'],{windowsHide:true,stdio:['pipe','pipe','ignore'],env:cliEnv()});
+    let buf='', settled=false;
+    const done=ok=>{if(settled)return;settled=true;clearTimeout(timer);try{child.kill();}catch{}resolve(ok);};
+    const timer=setTimeout(()=>done(false),12000);
+    const send=msg=>{try{child.stdin.write(JSON.stringify(msg)+'\n');}catch{done(false);}};
+    child.on('error',()=>done(false));
+    child.stdin.on('error',()=>done(false));
+    child.on('exit',()=>done(false));
+    child.stdout.on('data',chunk=>{
+      buf+=chunk;
+      for(let at=buf.indexOf('\n');at>=0;at=buf.indexOf('\n')){
+        const line=buf.slice(0,at);buf=buf.slice(at+1);
+        let msg;try{msg=JSON.parse(line);}catch{continue;}
+        if(msg.id===1&&!msg.error){send({method:'initialized'});send({id:2,method:'account/rateLimits/read'});}
+        else if(msg.id===2&&!msg.error){
+          const buckets=msg.result?.rateLimitsByLimitId;
+          const limit=buckets&&Object.keys(buckets).length?(buckets.codex||Object.values(buckets)[0]):msg.result?.rateLimits;
+          const windows={};
+          for(const key of ['primary','secondary']){
+            const e=limit?.[key];
+            if(typeof e?.usedPercent==='number'&&Number.isFinite(e.usedPercent)){
+              const winKey=e.windowDurationMins===300?'five_hour':e.windowDurationMins===10080?'seven_day':key;
+              windows[winKey]={utilization:Math.max(0,Math.min(1,e.usedPercent/100)),resetsAt:e.resetsAt??null};
+            }
+          }
+          done(saveProviderLimits('codex',windows));
+        }else if(msg.error)done(false);
+      }
+    });
+    send({id:1,method:'initialize',params:{clientInfo:{name:'agent-room',version:'0.2.39'}}});
+  });
+}
+function importAgyUsageFile(usageFile){
+  try{
+    if(!usageFile||!fs.existsSync(usageFile))return false;
+    const snap=JSON.parse(fs.readFileSync(usageFile,'utf8'));
+    if(!Array.isArray(snap?.limits))return false;
+    const windows={};
+    for(const row of snap.limits){
+      if(row?.disabled)continue;
+      if(typeof row?.remainingPercent==='number'&&Number.isFinite(row.remainingPercent)){
+        windows[row.id||'quota']={utilization:Math.max(0,Math.min(1,(100-row.remainingPercent)/100)),resetsAt:row.resetsAt||null};
+      }
+    }
+    const observed=Date.parse(snap.observedAt);
+    return saveProviderLimits('agy',windows,null,Number.isFinite(observed)?observed:Date.now());
+  }catch{return false;}
+}
+function refreshAgyLimits(spawnIfStale=true){
+  const usageFile=process.env.AGENT_ROOM_AGY_USAGE_FILE||'E:\\Codex\\2026-09-28\\1-1-id-pw-2-n\\work\\handoff\\usage\\agy.json';
+  const before=fs.existsSync(usageFile)?fs.statSync(usageFile).mtimeMs:0;
+  if(before&&Date.now()-before<25*60*1000)return Promise.resolve(importAgyUsageFile(usageFile));
+  if(!spawnIfStale)return Promise.resolve(before?importAgyUsageFile(usageFile):false);
+  const [exe]=cliCommand('agy');
+  if(!exe||!fs.existsSync(exe))return Promise.resolve(before?importAgyUsageFile(usageFile):false);
+  return new Promise(resolve=>{
+    const child=spawn(exe,[],{cwd:os.tmpdir(),windowsHide:true,stdio:'ignore',detached:false});
+    const started=Date.now();
+    const timer=setInterval(()=>{
+      const now=fs.existsSync(usageFile)?fs.statSync(usageFile).mtimeMs:0;
+      if(now>before||Date.now()-started>25000){
+        clearInterval(timer);
+        if(child.pid)try{spawn('taskkill',['/PID',String(child.pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});}catch{}
+        resolve(now>before?importAgyUsageFile(usageFile):(before?importAgyUsageFile(usageFile):false));
+      }
+    },1000);
+    child.on('error',()=>{clearInterval(timer);resolve(before?importAgyUsageFile(usageFile):false);});
+  });
 }
 function cleanInterim(text){
   const clean=String(text||'').replace(/^(?:\[\[CALL:[^\]\r\n]+\]\]\s*)+/,'').trim();
@@ -541,4 +618,4 @@ function discoverModels(project,provider){
   });
 }
 
-module.exports={runCodex,runWarmTurn,invalidateWarm,closeAllWarm,discoverModels,diagnoseCliFailure,cliCommand};
+module.exports={runCodex,runWarmTurn,invalidateWarm,closeAllWarm,refreshCodexLimits,refreshAgyLimits,discoverModels,diagnoseCliFailure,cliCommand};

@@ -47,6 +47,7 @@ dialog{background:var(--panel);color:var(--text);border-color:var(--line);border
 #ranking-form{display:grid;gap:10px}#ranking-form select,#ranking-form textarea,#agent-form select{width:100%;min-width:0}#ranking-form textarea{resize:vertical}
 #attach-list{flex:none;display:flex;flex-wrap:wrap;gap:6px;padding:6px max(22px,calc((100% - 1240px)/2)) 0}#attach-list:empty{display:none}#attach-list span{display:inline-flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:3px 8px;font-size:12px}#attach-list button{padding:0 5px;font-size:12px;border:0;background:transparent;color:var(--muted)}#attach-btn{background:var(--raised)!important;border-color:var(--line)!important;color:var(--text)!important;padding:10px 12px!important}
 body{--left:248px;--right:320px;grid-template-columns:var(--left) minmax(0,1fr) var(--right)}
+body>aside{grid-column:1;grid-row:1}main{grid-column:2;grid-row:1}#agent-panel{grid-column:3;grid-row:1}
 body.rooms-collapsed{--left:0px}body.rooms-collapsed>aside{display:none}
 body.agents-collapsed,body.no-room{--right:0px}body.agents-collapsed #agent-panel,body.no-room #agent-panel{display:none}
 aside{min-height:0;overflow:hidden}#rooms{flex:1;min-height:0;overflow:auto;align-content:start}#side-foot{flex:none;display:grid;gap:6px;padding-top:10px;border-top:1px solid var(--line)}#side-foot button{font-size:12px;color:var(--muted);background:transparent}#update-result:empty{display:none}
@@ -120,6 +121,11 @@ function inlineMarkdown(target,text,allowLinks=true){
  }
  target.append(document.createTextNode(text.slice(start)));
 }
+function copyText(text,btn){
+ const done=()=>{if(!btn)return;btn.textContent='복사됨';setTimeout(()=>{btn.textContent='복사';},1500);};
+ const fallback=()=>{const t=document.createElement('textarea');t.value=text;t.style.position='fixed';t.style.opacity='0';document.body.append(t);t.focus();t.select();const ok=document.execCommand('copy');t.remove();if(ok)done();};
+ if(navigator.clipboard?.writeText)navigator.clipboard.writeText(text).then(done).catch(fallback);else fallback();
+}
 function markdown(text){
  const root=el('div','');root.className='markdown';
  let paragraph,list,code;
@@ -130,7 +136,7 @@ function markdown(text){
   }
   const item=line.match(/^\s*([-+*]|\d+\.)\s+(.+)$/), heading=line.match(/^(#{1,6})\s+(.+)$/);
   if(!item)list=null;
-  if(/^\s*```/.test(line)){const pre=el("pre","");code=el("code","");const copy=el("button","복사");copy.type="button";copy.className="copy-btn";copy.onclick=async()=>{const text=code.textContent.replace(/\n$/,'');try{await navigator.clipboard.writeText(text);}catch{const t=document.createElement('textarea');t.value=text;document.body.append(t);t.select();document.execCommand('copy');t.remove();}copy.textContent='복사됨';setTimeout(()=>{copy.textContent='복사';},1500);};pre.append(copy,code);root.append(pre);paragraph=null;continue;}
+  if(/^\s*```/.test(line)){const pre=el("pre","");code=el("code","");const copy=el("button","복사");copy.type="button";copy.className="copy-btn";copy.onclick=()=>copyText(code.textContent.replace(/\n$/,''),copy);pre.append(copy,code);root.append(pre);paragraph=null;continue;}
   if(!line.trim()){paragraph=null;continue;}
   if(item){
    const tag=/^\d/.test(item[1])?'OL':'UL';
@@ -151,10 +157,23 @@ async function control(body){
  const res=await fetch('/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
  const next=await res.json();if(!res.ok)throw Error(next.error);
  err('');update(next);return true;
- }catch(e){err(e.message);return false;}
+ }catch(e){err(e instanceof TypeError?reconnectText:e.message);return false;}
 }
+const reconnectText='앱 서버에 다시 연결하는 중이에요. 업데이트나 재시작이 끝나면 자동으로 이어집니다.';
+let loadedVersion,serverLost=false;
 function update(next){
  if(!Array.isArray(next?.rooms))return;
+ if(serverLost){serverLost=false;if(byId('error').textContent===reconnectText)err('');}
+ if(loadedVersion&&next.version&&next.version!==loadedVersion){
+  sessionStorage.setItem('agentRoomDraft',byId('draft').value);
+  if(selected)sessionStorage.setItem('agentRoomSelected',selected);
+  location.reload();return;
+ }
+ loadedVersion=next.version||loadedVersion;
+ if(!selected&&sessionStorage.getItem('agentRoomSelected')){
+  const saved=sessionStorage.getItem('agentRoomSelected');sessionStorage.removeItem('agentRoomSelected');
+  if(next.rooms.some(room=>room.id===saved))selected=saved;
+ }
  byId('current-version').textContent=next.version?'v'+next.version:'버전 확인 불가';
  const finished=[];
  for(const m of next.members||[]){
@@ -189,7 +208,11 @@ setupPane(byId('agents-toggle'),'agents-collapsed','agentRoomAgentsCollapsed');
 function closeRoomMenu(){byId('room-actions').hidden=true;byId('room-menu-btn').setAttribute('aria-expanded','false');}
 byId('room-menu-btn').onclick=event=>{event.stopPropagation();const open=byId('room-actions').hidden;byId('room-actions').hidden=!open;byId('room-menu-btn').setAttribute('aria-expanded',String(open));};
 byId('room-actions').addEventListener('click',closeRoomMenu);
-document.addEventListener('click',event=>{if(!byId('room-actions').contains(event.target))closeRoomMenu();});
+document.addEventListener('click',event=>{
+ if(!byId('room-actions').contains(event.target))closeRoomMenu();
+ if(!narrowView()||!(event.target instanceof Element)||event.target.closest('body>aside,#agent-panel,#rooms-toggle,#agents-toggle,dialog'))return;
+ for(const [cls,key] of [['rooms-collapsed','agentRoomRoomsCollapsed'],['agents-collapsed','agentRoomAgentsCollapsed']])if(!document.body.classList.contains(cls)){document.body.classList.add(cls);localStorage.setItem(key,'1');}
+});
 document.addEventListener('keydown',event=>{if(event.key==='Escape')closeRoomMenu();});
 function agentActions(m){
  const box=document.createElement('div');box.className='act-actions';
@@ -324,13 +347,17 @@ function renderApprovals(){
 function renderHistory(view,messages,typing,roomChanged){
  const oldTop=view.scrollTop, previousTail=view.lastElementChild?.dataset.key, previousMessage=view.dataset.latest;
  const status={ranking:'순위 판단 중',context_only:'문맥 전달 · 응답 생략',context_seen:'문맥 확인 · 응답 생략',queued:'대기 중',accepted:'전달 접수',submitting:'전달 중',working:'전달 접수',answered:'응답 완료',no_reply:'답장 없음',uncertain:'전달 불확실',failed:'응답 실패',retracted:'철회됨',retract_notice:'다음 턴에 철회 알림'};
- view.replaceChildren(...messages.map(m=>{
+ const existing=new Map([...view.children].filter(node=>node.dataset.key?.startsWith('message:')).map(node=>[node.dataset.key,node]));
+ const nodes=messages.map(m=>{
   const author=snapshot.members.find(member=>member.id===m.author);
   const target=m.recipient?snapshot.members.find(member=>member.id===m.recipient):null;
-  const card=agentCard(m.name,m.author==='human:'+selected,author?.provider);card.dataset.key='message:'+m.seq;
   const sorted=snapshot.deliveries.filter(d=>d.seq===m.seq).sort((a,b)=>(a.priority||Infinity)-(b.priority||Infinity));
   const fallback=snapshot.replyPlans?.some(plan=>plan.seq===m.seq&&plan.state==='fallback');
   const delivery=sorted.map(d=>(d.priority===null||d.priority===undefined?'':d.priority+' · ')+d.name+' · '+status[d.state]).join(' / ')+(fallback?' · 기본 순서 사용':'');
+  const sig=JSON.stringify([m.retracted?1:0,delivery,target?.name||'',author?.provider||'']);
+  const key='message:'+m.seq, prev=existing.get(key);
+  if(prev&&prev.dataset.sig===sig)return prev;
+  const card=agentCard(m.name,m.author==='human:'+selected,author?.provider);card.dataset.key=key;card.dataset.sig=sig;
   if(m.retracted)card.classList.add('retracted');
   card.append(el('strong',m.name+(target?' → '+target.name:'')),m.retracted?el('p','철회한 메시지입니다.'):markdown(m.body),el('small',new Date(m.created).toLocaleTimeString('ko-KR')+' · '+(delivery||'방에 저장됨')));
   if(m.author==='human:'+selected&&!m.retracted){
@@ -339,7 +366,7 @@ function renderHistory(view,messages,typing,roomChanged){
    card.append(retract);
   }
   return card;
- }));
+ });
  for(const agent of typing){
   const card=agentCard(agent.name,false,agent.provider);card.classList.add('typing');card.dataset.key='typing:'+agent.id;
   const elapsed=agent.progress?.updatedAt?Math.max(0,Math.floor((Date.now()-agent.progress.updatedAt)/1000)):0;
@@ -347,16 +374,17 @@ function renderHistory(view,messages,typing,roomChanged){
   card.setAttribute('role','status');card.append(el('strong',agent.name));
   if(agent.progress?.preview)card.append(markdown(agent.progress.preview));
   card.append(el('small',statusText));
-  view.append(card);
+  nodes.push(card);
  }
- if(!view.children.length)view.append(el('small','아직 메시지가 없어요.'));
+ if(!nodes.length)nodes.push(el('small','아직 메시지가 없어요.'));
+ view.replaceChildren(...nodes);
  view.dataset.latest=String(messages.at(-1)?.seq??'');
  if(roomChanged||previousTail!==view.lastElementChild?.dataset.key||previousMessage!==view.dataset.latest)view.scrollTop=view.scrollHeight;
  else view.scrollTop=oldTop;
 }
 async function refresh(){
  if(refreshing)return;refreshing=true;
- try{const res=await fetch('/state');if(!res.ok)throw Error('로컬 허브 연결을 확인하세요.');update(await res.json());}catch(e){err(e.message);}finally{refreshing=false;}
+ try{const res=await fetch('/state');if(!res.ok)throw Error('로컬 허브 연결을 확인하세요.');update(await res.json());}catch(e){if(e instanceof TypeError){serverLost=true;err(reconnectText);}else err(e.message);}finally{refreshing=false;}
 }
 byId('new').onsubmit=async e=>{e.preventDefault();if(await control({action:'create',name:e.target.elements.name.value})){selected=snapshot.rooms.at(-1).id;render();e.target.reset();}};
 async function makePair(instructions, launchCommand){
@@ -371,9 +399,11 @@ async function makePair(instructions, launchCommand){
   pairRoom=room;
   const prompt='Agent Room MCP의 join_room_code 도구로 '+next.code+' 코드에 참가 요청해 줘.';
   const copy=el('button','연결 문장 복사');
-  copy.onclick=()=>navigator.clipboard.writeText(prompt).then(()=>copy.textContent='복사됨').catch(()=>err('아래 연결 문장을 직접 복사하세요.'));
+  copy.onclick=()=>copyText(prompt,copy);
+  const close=el('button','닫기');
+  close.onclick=()=>{pairRoom=null;guide.hidden=true;};
   const guide=byId('pair-guide');
-  guide.replaceChildren(el('small',instructions),document.createElement('br'),el('code',prompt),document.createElement('br'),el('small','문장을 붙여 넣은 뒤 이 화면에서 참가 요청을 승인하세요. 코드는 참가자 한 명에 한 번만, 10분 동안 유효합니다.'),document.createElement('br'),copy);
+  guide.replaceChildren(el('small',instructions),document.createElement('br'),el('code',prompt),document.createElement('br'),el('small','문장을 붙여 넣은 뒤 이 화면에서 참가 요청을 승인하세요. 코드는 참가자 한 명에 한 번만, 10분 동안 유효합니다.'),document.createElement('br'),copy,document.createTextNode(' '),close);
   if(launchCommand){
    const copyCommand=el('button','시작 명령 복사');
    copyCommand.onclick=()=>navigator.clipboard.writeText(launchCommand).then(()=>copyCommand.textContent='복사됨').catch(()=>err('화면의 시작 명령을 직접 복사하세요.'));
@@ -395,11 +425,13 @@ byId('external-say').onclick=async()=>{
   pairRoom=room;
   const cmd='node bridge.cjs say --code '+next.code+' "보낼 메시지" --as "외부 세션" --wake';
   const copyCmd=el('button','명령 복사');
-  copyCmd.onclick=()=>navigator.clipboard.writeText(cmd).then(()=>copyCmd.textContent='복사됨').catch(()=>err('아래 명령을 직접 복사하세요.'));
+  copyCmd.onclick=()=>copyText(cmd,copyCmd);
   const copyCode=el('button','코드만 복사');
-  copyCode.onclick=()=>navigator.clipboard.writeText(next.code).then(()=>copyCode.textContent='복사됨').catch(()=>err('코드를 직접 복사하세요.'));
+  copyCode.onclick=()=>copyText(next.code,copyCode);
+  const close=el('button','닫기');
+  close.onclick=()=>{pairRoom=null;guide.hidden=true;};
   const guide=byId('pair-guide');
-  guide.replaceChildren(el('small','외부 터미널/세션에서 아래 명령으로 이 방에 단일 메시지를 보낼 수 있습니다. (코드 10분 유효, --wake 빼면 기록만 저장)'),document.createElement('br'),el('code',cmd),document.createElement('br'),copyCmd,document.createTextNode(' '),copyCode);
+  guide.replaceChildren(el('small','외부 터미널/세션에서 아래 명령으로 이 방에 단일 메시지를 보낼 수 있습니다. (코드 10분 유효, --wake 빼면 기록만 저장)'),document.createElement('br'),el('code',cmd),document.createElement('br'),copyCmd,document.createTextNode(' '),copyCode,document.createTextNode(' '),close);
   guide.hidden=false;
   err('');
  }catch(e){err(e.message);}finally{btn.disabled=false;}
@@ -685,5 +717,6 @@ byId('update').onclick=async()=>{
 };
 window.addEventListener('pageshow',()=>{byId('new').reset();byId('compose').reset();});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void refresh();});
+{const savedDraft=sessionStorage.getItem('agentRoomDraft');if(savedDraft){sessionStorage.removeItem('agentRoomDraft');composeRoom=sessionStorage.getItem('agentRoomSelected')||undefined;byId('draft').value=savedDraft;fitDraft();}}
 refresh();setInterval(refresh,1500);
 </script></html>
