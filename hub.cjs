@@ -194,7 +194,29 @@ function queueForRoom(room,author,seq,recipient=null,root=null){
 }
 const spool=path.join(local,'spool');
 fs.mkdirSync(spool,{recursive:true});
-const spoolPaths=id=>({job:path.join(spool,id+'.job.json'),result:path.join(spool,id+'.result.json'),pid:path.join(spool,id+'.pid'),inbox:path.join(spool,id+'.inbox'),closing:path.join(spool,id+'.inbox.closing'),live:path.join(spool,id+'.inbox.live'),progress:path.join(spool,id+'.progress.json')});
+const spoolPaths=id=>({job:path.join(spool,id+'.job.json'),result:path.join(spool,id+'.result.json'),pid:path.join(spool,id+'.pid'),inbox:path.join(spool,id+'.inbox'),closing:path.join(spool,id+'.inbox.closing'),live:path.join(spool,id+'.inbox.live'),progress:path.join(spool,id+'.progress.json'),interim:path.join(spool,id+'.interim.jsonl')});
+function readLimits(){
+  const limits={};
+  for(const name of fs.readdirSync(local).filter(file=>/^limits-[a-z]+\.json$/.test(file))){
+    try{const data=JSON.parse(fs.readFileSync(path.join(local,name),'utf8'));if(data.provider)limits[data.provider]=data;}catch{}
+  }
+  return limits;
+}
+function storeInterim(jobId,author,room,sender,text,index){
+  const inserted=run('INSERT OR IGNORE INTO messages(room,author,request,body,created) VALUES(?,?,?,?,?)',room,author,'interim:'+jobId+':'+index,text,new Date().toISOString());
+  if(!inserted.changes)return;
+  const seq=Number(inserted.lastInsertRowid);
+  for(const {id} of all("SELECT id FROM members WHERE room=? AND state='approved' AND id<>?",room,author)){
+    const live=index===0&&liveTurns.has(id)&&deliverLive(id,{seq,sender,body:'[Work-start status; no reply needed unless it conflicts with your work]\n'+text});
+    run('INSERT OR IGNORE INTO deliveries(seq,member,state,priority) VALUES(?,?,?,0)',seq,id,live?'accepted':'context_only');
+  }
+}
+function drainInterim(file,onInterim){
+  if(!onInterim||!fs.existsSync(file))return;
+  const lines=fs.readFileSync(file,'utf8').split('\n');
+  lines.pop();
+  lines.forEach((line,index)=>{try{onInterim(JSON.parse(line),index);}catch(error){console.error('Agent Room interim:',error.message);}});
+}
 const liveTurns=new Map();
 const liveProgress=new Map();
 const readProgress=participant=>{const f=liveProgress.get(participant);if(!f)return null;try{return JSON.parse(fs.readFileSync(f,'utf8'));}catch{return null;}};
@@ -214,8 +236,9 @@ function deliverLive(participant,row){
 const readSpoolJob=id=>{try{return JSON.parse(fs.readFileSync(spoolPaths(id).job,'utf8'));}catch{return null;}};
 const clearSpool=id=>{for(const file of Object.values(spoolPaths(id)))fs.rmSync(file,{force:true});};
 const processAlive=pid=>{try{process.kill(pid,0);return true;}catch(error){return error.code==='EPERM';}};
-function runDetached(id,data){
+function runDetached(id,data,onInterim){
   const files=spoolPaths(id);
+  let interimSize=-1;
   if(!fs.existsSync(files.job)){
     fs.writeFileSync(files.job,JSON.stringify({...data,resultFile:files.result}),{flag:'wx',mode:0o600});
     const child=spawn(process.execPath,[path.join(__dirname,'bridge.cjs'),'turn',files.job],{detached:true,stdio:'ignore',windowsHide:true});
@@ -228,8 +251,11 @@ function runDetached(id,data){
     const check=()=>{
       if(draining)return;
       try{
+        const size=fs.existsSync(files.interim)?fs.statSync(files.interim).size:0;
+        if(size!==interimSize){interimSize=size;drainInterim(files.interim,onInterim);}
         if(fs.existsSync(files.result)){
           const output=JSON.parse(fs.readFileSync(files.result,'utf8'));
+          drainInterim(files.interim,onInterim);
           clearSpool(id);
           if(output.ok)return resolve(output.result);
           return reject(Object.assign(Error(output.message),output.cliCode?{cliCode:output.cliCode}:{}));
@@ -267,7 +293,7 @@ async function cliTurn(participant, prompt, inputSeq){
   const input=inputSeq?one('SELECT relay_root,author,recipient FROM messages WHERE seq=?',inputSeq):null;
   const jobId=inputSeq?inputSeq+'-'+participant:null, priorJob=jobId?readSpoolJob(jobId):null;
   const approvalTurn=priorJob?.approvalTurn??randomBytes(24).toString('hex'), approvalConfig=priorJob?.approvalConfig??path.join(local,randomUUID()+'.approval.json');
-  const invokeCli=(project,text,thread,provider,model,effort,options)=>jobId?runDetached(jobId,{participant,inputSeq,approvalTurn,approvalConfig,project,prompt:text,session:thread,provider,model,effort,options}):runCodex(project,text,thread,provider,model,effort,options);
+  const invokeCli=(project,text,thread,provider,model,effort,options)=>jobId?runDetached(jobId,{participant,inputSeq,approvalTurn,approvalConfig,project,prompt:text,session:thread,provider,model,effort,options},(interim,index)=>storeInterim(jobId,participant,row.room,row.name,interim,index)):runCodex(project,text,thread,provider,model,effort,options);
   try{
     const origin=input?one('SELECT request FROM messages WHERE seq=?',input.relay_root??inputSeq):null;
     const permission=session.permission_profile==='full'&&origin?.request?.startsWith('remote:')?'dev':session.permission_profile;
@@ -275,6 +301,7 @@ async function cliTurn(participant, prompt, inputSeq){
     if(jobId){
       const progress=spoolPaths(jobId).progress;
       turnOptions.progressFile=progress;
+      turnOptions.interimFile=spoolPaths(jobId).interim;
       liveProgress.set(participant,progress);
     }
     if((session.provider==='claude'||session.provider==='agy')&&jobId){
@@ -470,6 +497,23 @@ function task({action,room,participant,name,text,request,replyTo,after=0,...extr
     dispatchQueuedTurns();
     return {seq};
   }
+  if(action==='external_message'){
+    if(draining)throw Error('Hub is restarting.');
+    const matches=all('SELECT id FROM rooms WHERE id=? OR name=?',String(room||''),String(room||''));
+    if(matches.length!==1)throw Error(matches.length?'Several rooms have this name. Use the room ID.':'Room not found.');
+    const roomId=matches[0].id, sender=str(name||'외부 세션',40), body=str(text,8000), authorId='external:'+roomId+':'+sender;
+    db.exec('BEGIN');
+    let seq;
+    try{
+      run("INSERT OR IGNORE INTO members(id,room,name,state) VALUES(?,?,?,'human')",authorId,roomId,'외부 · '+sender);
+      seq=Number(run('INSERT INTO messages(room,author,request,body,created) VALUES(?,?,?,?,?)',roomId,authorId,randomUUID(),body,new Date().toISOString()).lastInsertRowid);
+      if(extra.wake===true)queueForRoom(roomId,authorId,seq);
+      else for(const {id} of all("SELECT id FROM members WHERE room=? AND state='approved'",roomId))run("INSERT OR IGNORE INTO deliveries(seq,member,state,priority) VALUES(?,?,'context_only',0)",seq,id);
+      db.exec('COMMIT');
+    }catch(error){db.exec('ROLLBACK');throw error;}
+    if(extra.wake===true){dispatchQueuedTurns();setImmediate(dispatchDesktop);}
+    return {seq};
+  }
   if(action==='list_rooms') return {rooms:all('SELECT * FROM rooms ORDER BY rowid')};
   if(action==='join_room_code'){
     const code=str(request,100).toUpperCase();
@@ -523,7 +567,7 @@ function task({action,room,participant,name,text,request,replyTo,after=0,...extr
   }catch(error){db.exec('ROLLBACK');throw error;}
 }
 function state(){
-  return {version,approvals:[...approvals.values()].filter(item=>item.state==='pending').map(({id,room,name,tool,input,rule,created})=>({id,room,name,tool,input,rule,created})),approvalRules:all('SELECT member,rule FROM approval_rules'),ranking:all('SELECT room,enabled,judge_provider,judge_model,judge_effort FROM room_ranking'),replyPlans:all('SELECT seq,state FROM reply_plans'),remoteConfigured:remoteConfigured(),remoteRooms:selectedRemoteRooms(),tasks:handoff.list(),updateStatus:fs.existsSync(updateLog)?fs.readFileSync(updateLog,'utf8').trim().split(/\r?\n/).at(-1):null,rooms:all('SELECT * FROM rooms ORDER BY rowid'),
+  return {version,approvals:[...approvals.values()].filter(item=>item.state==='pending').map(({id,room,name,tool,input,rule,created})=>({id,room,name,tool,input,rule,created})),approvalRules:all('SELECT member,rule FROM approval_rules'),limits:readLimits(),ranking:all('SELECT room,enabled,judge_provider,judge_model,judge_effort FROM room_ranking'),replyPlans:all('SELECT seq,state FROM reply_plans'),remoteConfigured:remoteConfigured(),remoteRooms:selectedRemoteRooms(),tasks:handoff.list(),updateStatus:fs.existsSync(updateLog)?fs.readFileSync(updateLog,'utf8').trim().split(/\r?\n/).at(-1):null,rooms:all('SELECT * FROM rooms ORDER BY rowid'),
     members:all("SELECT members.id,room,name,state,parent,cli_sessions.provider,cli_sessions.model,cli_sessions.effort,cli_sessions.permission_profile,cli_sessions.last_cli_error,cli_sessions.thread,cli_sessions.turns,cli_sessions.input_tokens,cli_sessions.output_tokens,cli_sessions.cost_usd FROM members LEFT JOIN cli_sessions ON cli_sessions.member=members.id WHERE state<>'human'").map(({thread,...row})=>({...row,hasSession:Boolean(thread),busy:cliBusy.has(row.id),progress:cliBusy.has(row.id)?readProgress(row.id):null,cliError:row.last_cli_error?JSON.parse(row.last_cli_error):null})),
     messages:all("SELECT messages.*,members.name FROM messages JOIN members ON messages.author=members.id WHERE messages.request NOT LIKE 'receipt:%' ORDER BY seq"),
     deliveries:all('SELECT deliveries.seq,deliveries.member,members.name,deliveries.state,deliveries.priority FROM deliveries JOIN members ON deliveries.member=members.id')};

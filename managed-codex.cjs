@@ -109,7 +109,7 @@ function createProgressWriter(progressFile){
   if(!progressFile)return()=>{};
   let lastStep='', preview='', lastChunk='', lastAt=0;
   const cleanPreview=text=>String(text||'').replace(/^(?:\[\[(?:CALL|TO):[^\]\r\n]+\]\]\s*)+/,'').trim();
-  return (step,chunk,delta=false)=>{
+  const write=(step,chunk,delta=false)=>{
     let nextChunk='';
     if(delta&&chunk){
       preview=cleanPreview((preview+String(chunk)).slice(-4000));
@@ -129,6 +129,25 @@ function createProgressWriter(progressFile){
     lastStep=nextStep; lastAt=now;
     try{fs.writeFileSync(progressFile,JSON.stringify({step:nextStep,preview,updatedAt:now}));}catch{}
   };
+  write.reset=()=>{
+    preview='';
+    try{fs.writeFileSync(progressFile,JSON.stringify({step:lastStep||'작업 진행 중…',preview,updatedAt:Date.now()}));}catch{}
+  };
+  return write;
+}
+function saveClaudeLimits(info){
+  const windows=info?.unifiedWindows;
+  if(!windows||typeof windows!=='object')return;
+  const file=path.join(__dirname,'local','limits-claude.json');
+  try{
+    fs.writeFileSync(file+'.tmp',JSON.stringify({provider:'claude',updatedAt:Date.now(),status:info.status||null,windows}));
+    fs.renameSync(file+'.tmp',file);
+  }catch{}
+}
+function cleanInterim(text){
+  const clean=String(text||'').replace(/^(?:\[\[CALL:[^\]\r\n]+\]\]\s*)+/,'').trim();
+  if(!clean||clean.includes('[[AGENT_ROOM_NO_REPLY]]')||/^\[\[(?:TO|HANDOFF_)/.test(clean))return '';
+  return clean.slice(0,4000);
 }
 function toolLabel(name,input){
   const n=String(name||'');
@@ -170,9 +189,16 @@ function describeStreamProgress(event){
   if(event.type==='init'||event.event==='init'||event.type==='system')return {step:'세션 초기화 중…',text:''};
   return null;
 }
-function runStreamLive(provider,file,prefix,args,project,prompt,session,inboxFile,progressFile){
+function runStreamLive(provider,file,prefix,args,project,prompt,session,inboxFile,progressFile,interimFile){
   return new Promise((resolve,reject)=>{
     const writeProgress=createProgressWriter(progressFile);
+    let pendingInterim='';
+    const flushInterim=()=>{
+      const text=cleanInterim(pendingInterim);
+      pendingInterim='';
+      if(!text||!interimFile)return;
+      try{fs.appendFileSync(interimFile,JSON.stringify(text)+'\n');writeProgress.reset?.();}catch{}
+    };
     writeProgress('CLI 시작 중…');
     const child=spawn(file,[...prefix,...args],{cwd:project,windowsHide:true});
     const closingFile=inboxFile+'.closing', liveFile=inboxFile+'.live';
@@ -216,8 +242,16 @@ function runStreamLive(provider,file,prefix,args,project,prompt,session,inboxFil
         let event;try{event=JSON.parse(line);}catch{continue;}
         lastEvent=Date.now();
         const kind=event.type||event.event;
+        if(provider==='claude'&&event.type==='rate_limit_event')saveClaudeLimits(event.rate_limit_info);
         const info=describeStreamProgress(event);
         if(info)writeProgress(info.step,info.text,info.delta);
+        if(provider==='claude'&&event.type==='assistant'&&!event.parent_tool_use_id&&Array.isArray(event.message?.content)){
+          for(const block of event.message.content){
+            if(block?.type==='text'&&block.text){flushInterim();pendingInterim=block.text;}
+            else if(block?.type==='tool_use')flushInterim();
+          }
+        }
+        if(kind==='result')pendingInterim='';
         const cid=event.conversation_id||event.session_id||event.result?.conversation_id||event.step_update?.conversation_id;
         if(cid)id=cid;
         if(kind==='error'||event.error)failure+='\n'+(event.error?.message||event.error||event.message||'');
@@ -272,7 +306,7 @@ function runCodex(project, prompt, session, provider='codex',model=null,effort=n
   if(claude&&!options.rank&&options.inboxFile){
     claudeArgs[2]='stream-json';
     claudeArgs.push('--input-format','stream-json','--verbose');
-    return runStreamLive('claude',file,prefix,claudeArgs,project,prompt,session,options.inboxFile,options.progressFile);
+    return runStreamLive('claude',file,prefix,claudeArgs,project,prompt,session,options.inboxFile,options.progressFile,options.interimFile);
   }
   if(agy&&!options.rank&&options.inboxFile){
     const liveArgs=['--input-format','stream-json','--output-format','stream-json',...agyPerm,...(session?['--conversation',session]:[]),'--print-timeout','1800s'];

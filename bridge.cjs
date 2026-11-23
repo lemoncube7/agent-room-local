@@ -8,7 +8,19 @@ const local=path.join(__dirname,'local');
 const provider=process.argv[2];
 const thread=process.argv[3];
 const claude=provider==='claude';
-if(!['claude','codex','work','agy','approval','turn'].includes(provider))throw Error('Specify claude, codex, work, or agy.');
+if(!['claude','codex','work','agy','approval','turn','say'].includes(provider))throw Error('Specify claude, codex, work, or agy.');
+async function runSay(){
+  const args=process.argv.slice(3), positional=[];
+  let name='외부 세션', wake=false;
+  for(let i=0;i<args.length;i++){
+    if(args[i]==='--wake')wake=true;
+    else if(args[i]==='--as')name=args[++i]||name;
+    else positional.push(args[i]);
+  }
+  if(positional.length!==2)throw Error('Usage: node bridge.cjs say "room name or ID" "message" [--as name] [--wake]');
+  const result=await hub('/tool',{action:'external_message',room:positional[0],text:positional[1],name,wake});
+  console.log('sent: #'+result.seq);
+}
 async function runTurn(jobFile){
   const job=JSON.parse(fs.readFileSync(jobFile,'utf8'));
   let output;
@@ -181,7 +193,8 @@ async function invoke(req){
     default: return emit({id:req.id,error:{code:-32601,message:'Method not found'}});
   }
 }
-if(provider==='turn')void runTurn(thread).catch(error=>{console.error(error.message);process.exitCode=1;});
+if(provider==='say')void runSay().catch(error=>{console.error(error.message);process.exitCode=1;});
+else if(provider==='turn')void runTurn(thread).catch(error=>{console.error(error.message);process.exitCode=1;});
 else createInterface({input:process.stdin}).on('close',()=>{clearInterval(timer);}).on('line',line=>{
   let request;
   try{request=JSON.parse(line);}catch{return;}
