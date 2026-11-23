@@ -95,17 +95,17 @@ function queueForRoom(room,author,seq,recipient=null){
 }
 async function cliTurn(participant, prompt, inputSeq){
   const session=one('SELECT * FROM cli_sessions WHERE member=?',participant);
-  const row=one("SELECT room,state FROM members WHERE id=? AND state IN ('approved','starting')",participant);
+  const row=one("SELECT room,name,state FROM members WHERE id=? AND state IN ('approved','starting')",participant);
   if(!session||!row||cliBusy.has(participant))return;
   cliBusy.add(participant);
   const input=inputSeq?one('SELECT relay_root,author,recipient FROM messages WHERE seq=?',inputSeq):null;
   try{
     if(inputSeq)run("UPDATE deliveries SET state='working' WHERE seq=? AND member=?",inputSeq,participant);
     const peers=all("SELECT id,name FROM members WHERE room=? AND state='approved' AND id<>?",row.room,participant);
-    const context='You are in a shared Agent Room chat. Your normal response goes to the whole room. Keep the default so other agents can follow progress. Only when a specific reply really needs a single recipient, put [[TO:participant-id]] on its own first line, using an exact ID from this room roster: '+JSON.stringify(peers)+'. Never invent a reply from another agent.';
+    const context='Your display name in Agent Room is '+JSON.stringify(row.name)+'. Your agent provider is '+session.provider+'. Use this name when interpreting mentions and identifying yourself. You are in a shared Agent Room chat. Your normal response goes to the whole room. Keep the default so other agents can follow progress. Only when a specific reply really needs a single recipient, put [[TO:participant-id]] on its own first line, using an exact ID from this room roster: '+JSON.stringify(peers)+'. Never invent a reply from another agent.';
     const audience=!input?'This is the first turn.':input.author.startsWith('human:')?'The user posted to the whole room.':'Another agent posted to the whole room.';
     const replyPolicy='Only reply when addressed, asked to do work, or when you can contribute a useful answer. If it is FYI, meant for someone else, or no useful reply is needed, respond exactly [[AGENT_ROOM_NO_REPLY]]. Avoid courtesy acknowledgments and unnecessary agent-to-agent chatter.';
-    const history=all("SELECT members.name,messages.body FROM messages JOIN members ON members.id=messages.author WHERE messages.room=? AND (messages.recipient IS NULL OR messages.recipient=? OR messages.author=?) AND messages.seq<? ORDER BY messages.seq DESC LIMIT 10",row.room,participant,participant,inputSeq??0).reverse();
+    const history=all("SELECT members.name,messages.body FROM messages JOIN members ON members.id=messages.author WHERE messages.room=? AND (messages.recipient IS NULL OR messages.recipient=? OR messages.author=?) AND messages.seq<>? ORDER BY messages.seq DESC LIMIT 12",row.room,participant,participant,inputSeq??0).reverse();
     const alert=inputSeq?one('SELECT task,revision FROM handoff_alerts WHERE seq=?',inputSeq):null;
     const handoffPolicy=alert?' This turn is a task handoff notification. Before doing work, reply exactly [[HANDOFF_ACCEPT]] to accept, or [[HANDOFF_DECLINE]] to decline. Use only that control line.':'';
     const result=await runCodex(session.project,context+' '+audience+' '+replyPolicy+handoffPolicy+'\nRecent shared room messages (context only): '+JSON.stringify(history.map(message=>({name:message.name,body:message.body.slice(0,800)})))+'\n\n'+prompt,session.thread,session.provider,session.model,session.effort);
@@ -130,7 +130,7 @@ async function cliTurn(participant, prompt, inputSeq){
       db.exec('BEGIN');
       try{
         const seq=storeMessage(row.room,participant,body,root,recipient);
-        if(root&&count<4)queueForRoom(row.room,participant,seq,recipient);
+        if(root&&count<12)queueForRoom(row.room,participant,seq,recipient);
         db.exec('COMMIT');
       }catch(error){db.exec('ROLLBACK');throw error;}
     }
@@ -277,9 +277,11 @@ function deliver(args){
 }
 function dispatchQueuedTurns(){
   if(draining)return;
-  const rows=all("SELECT deliveries.seq,deliveries.member,messages.body,messages.relay_root,messages.author,authors.name AS sender FROM deliveries JOIN messages USING(seq) JOIN members AS authors ON authors.id=messages.author JOIN members ON members.id=deliveries.member WHERE deliveries.state='queued' AND members.state='approved' ORDER BY deliveries.seq");
+  const rows=all("SELECT deliveries.seq,deliveries.member,messages.body,messages.relay_root,messages.room,messages.author,authors.name AS sender FROM deliveries JOIN messages USING(seq) JOIN members AS authors ON authors.id=messages.author JOIN members ON members.id=deliveries.member WHERE deliveries.state='queued' AND members.state='approved' ORDER BY deliveries.seq");
+  const busyRooms=new Set([...cliBusy].map(id=>one('SELECT room FROM members WHERE id=?',id)?.room));
   for(const row of rows){
-    if(cliBusy.has(row.member))continue;
+    if(busyRooms.has(row.room))continue;
+    busyRooms.add(row.room);
     run("UPDATE deliveries SET state='submitting' WHERE seq=? AND member=?",row.seq,row.member);
     const prompt='Message from '+row.sender+' in the room:\n'+row.body;
     void cliTurn(row.member,prompt,row.seq);

@@ -49,7 +49,7 @@ function runCodex(project, prompt, session, provider='codex',model=null,effort=n
   return new Promise((resolve,reject)=>{
     const child=execFile(file,[...prefix,...(agy?agyArgs:claude?claudeArgs:codexArgs)],{
       cwd:project,windowsHide:true,timeout:300000,maxBuffer:8*1024*1024
-    },(error,stdout)=>{
+    },(error,stdout,stderr)=>{
       let result;
       try {
         if(agy){
@@ -61,6 +61,11 @@ function runCodex(project, prompt, session, provider='codex',model=null,effort=n
         }else result=parseCodex(stdout,session);
       }catch{}
       if(error||!result?.id||typeof result.reply!=='string'||!result.reply.trim()){
+        const diagnostic=(stderr||'')+'\n'+stdout;
+        if(/appx|app.?runtime|provisioning service/i.test(diagnostic))return reject(Error(name+' CLI의 Windows 앱 런타임을 시작하지 못했어요.'));
+        if(/not logged in|please log in|authentication failed|not authenticated|login required/i.test(diagnostic))return reject(Error(name+' CLI 로그인 확인이 필요해요.'));
+        if(/rate limit|resource_exhausted|usage limit|quota exceeded/i.test(diagnostic))return reject(Error(name+' CLI 사용량 한도에 도달했어요.'));
+        if(/model.*(?:invalid|not available|not found|not supported)/i.test(diagnostic))return reject(Error(name+' CLI에서 선택한 모델을 사용할 수 없어요.'));
         return reject(new Error(['ENOENT','EACCES','EPERM'].includes(error?.code)
           ? name+' CLI를 실행할 수 없어요. CLI를 설치한 뒤 Agent Room 시작 창에서 프로젝트를 다시 설정하세요.'
           : name+' CLI가 답변을 완료하지 못했어요. CLI 로그인과 프로젝트 접근 설정을 확인하세요.'));
