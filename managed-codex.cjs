@@ -1,5 +1,5 @@
 'use strict';
-const {execFile} = require('node:child_process');
+const {execFile,spawn} = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
@@ -58,8 +58,77 @@ function diagnoseCliFailure(provider,error,diagnostic){
   return failure('unknown','CLI에서 완성된 응답을 받지 못했어요'+suffix+'.','같은 프로젝트에서 CLI를 직접 열어 오류를 확인하세요.');
 }
 
-const devCommands=['node','npm','git status','git diff','git log','git show','git add','git commit','git branch','git fetch'];
-const devAllowedTools=['Bash','PowerShell'].flatMap(tool=>devCommands.map(command=>tool+'('+command+':*)')).join(',');
+const devCommands=['node','npm','pytest','cargo test','cargo build','go test','go build','dotnet test','dotnet build','git status','git diff','git log','git show','git add','git commit','git branch','git fetch','git remote','git rev-parse','git ls-files','git blame','ls','pwd','cat','head','tail','wc','grep'];
+const devPowerShellCommands=['Get-ChildItem','Get-Content','Get-Location','Test-Path','Select-String','Measure-Object'];
+const devAllowedTools=[...['Bash','PowerShell'].flatMap(tool=>devCommands.map(command=>tool+'('+command+':*)')),...devPowerShellCommands.map(command=>'PowerShell('+command+':*)')].join(',');
+function mergeLiveReplies(parts){
+  const usable=parts.map(part=>String(part||'').trim()).filter(part=>part&&part!=='[[AGENT_ROOM_NO_REPLY]]');
+  if(!usable.length)return '[[AGENT_ROOM_NO_REPLY]]';
+  if(usable.length===1)return usable[0];
+  const calls=new Set(), bodies=[];
+  for(let part of usable){
+    for(let call=part.match(/^\[\[CALL:([^\]\r\n]+)\]\]\s*/);call;call=part.match(/^\[\[CALL:([^\]\r\n]+)\]\]\s*/)){calls.add(call[0].trim());part=part.slice(call[0].length);}
+    part=part.replace(/^\[\[TO:[^\]\r\n]+\]\]\s*/,'').trim();
+    if(part)bodies.push(part);
+  }
+  return [...calls,bodies.join('\n\n')].join('\n');
+}
+function runClaudeLive(file,prefix,args,project,prompt,session,inboxFile){
+  return new Promise((resolve,reject)=>{
+    const child=spawn(file,[...prefix,...args],{cwd:project,windowsHide:true});
+    const closingFile=inboxFile+'.closing', liveFile=inboxFile+'.live';
+    const parts=[];
+    let sent=0,done=0,offset=0,buffer='',stderr='',failure='',id=session,closing=false,timedOut=false,lastEvent=Date.now();
+    const send=text=>{sent++;child.stdin.write(JSON.stringify({type:'user',message:{role:'user',content:[{type:'text',text}]}})+'\n');};
+    const pull=source=>{
+      const data=fs.readFileSync(source);
+      if(data.length<=offset)return;
+      const fresh=data.subarray(offset), end=fresh.lastIndexOf(10);
+      if(end<0)return;
+      offset+=end+1;
+      for(const line of fresh.subarray(0,end).toString('utf8').split('\n'))if(line.trim())send(JSON.parse(line));
+    };
+    const finishInput=()=>{closing=true;clearInterval(poller);fs.rmSync(liveFile,{force:true});child.stdin.end();};
+    const poll=()=>{
+      if(closing)return;
+      try{pull(inboxFile);}catch(error){if(error.code==='ENOENT')return finishInput();}
+      const stale=done>0&&Date.now()-lastEvent>90000;
+      if(done<sent&&!stale)return;
+      try{fs.renameSync(inboxFile,closingFile);}catch(error){if(error.code==='ENOENT')finishInput();return;}
+      try{pull(closingFile);}catch{}
+      if(done<sent&&!stale){try{fs.renameSync(closingFile,inboxFile);}catch{finishInput();}return;}
+      finishInput();
+    };
+    const poller=setInterval(poll,300);
+    const killer=setTimeout(()=>{timedOut=true;child.kill();},1800000);
+    child.stdin.on('error',()=>{});
+    child.stderr.on('data',chunk=>{stderr=(stderr+chunk).slice(-8000);});
+    child.stdout.on('data',chunk=>{
+      buffer+=chunk;
+      for(let at=buffer.indexOf('\n');at>=0;at=buffer.indexOf('\n')){
+        const line=buffer.slice(0,at);buffer=buffer.slice(at+1);
+        let event;try{event=JSON.parse(line);}catch{continue;}
+        lastEvent=Date.now();
+        if(event.session_id)id=event.session_id;
+        if(event.type==='result'){
+          done++;
+          if(event.is_error)failure+='\n'+(event.result||event.subtype||'');
+          else parts.push(event.result);
+          poll();
+        }
+      }
+    });
+    const cleanup=()=>{clearInterval(poller);clearTimeout(killer);for(const item of [inboxFile,closingFile,liveFile])fs.rmSync(item,{force:true});};
+    child.once('error',error=>{cleanup();reject(diagnoseCliFailure('claude',error,stderr));});
+    child.once('close',code=>{
+      cleanup();
+      if(id&&parts.length)return resolve({id,reply:mergeLiveReplies(parts)});
+      reject(diagnoseCliFailure('claude',timedOut?{killed:true}:{code},stderr+failure));
+    });
+    fs.writeFileSync(liveFile,'1');
+    send(prompt);
+  });
+}
 function runCodex(project, prompt, session, provider='codex',model=null,effort=null,options={}) {
   const claude=provider==='claude';
   const agy=provider==='agy';
@@ -82,9 +151,14 @@ function runCodex(project, prompt, session, provider='codex',model=null,effort=n
     claudeArgs.push('--effort',effort);
     agyArgs.push('--effort',effort);
   }
+  if(claude&&!options.rank&&options.inboxFile){
+    claudeArgs[2]='stream-json';
+    claudeArgs.push('--input-format','stream-json','--verbose');
+    return runClaudeLive(file,prefix,claudeArgs,project,prompt,session,options.inboxFile);
+  }
   return new Promise((resolve,reject)=>{
     const child=execFile(file,[...prefix,...(agy?agyArgs:claude?claudeArgs:codexArgs)],{
-      cwd:project,windowsHide:true,timeout:options.rank?25000:300000,maxBuffer:8*1024*1024
+      cwd:project,windowsHide:true,timeout:options.rank?25000:agy?300000:1800000,maxBuffer:8*1024*1024
     },(error,stdout,stderr)=>{
       let result;
       try {

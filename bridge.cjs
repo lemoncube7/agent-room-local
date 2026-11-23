@@ -102,11 +102,22 @@ const tools=[
   setup('read_messages','Read room messages after a sequence number.',{after:{type:'integer',minimum:0}}),
   setup('send_message','Send a message to the approved room. Reuse request ID on retry.',{request:str,text:str})
 ];
+function approvalRule(tool,input){
+  if(['Write','Edit','MultiEdit','NotebookEdit'].includes(tool))return null;
+  if(!['Bash','PowerShell'].includes(tool))return tool;
+  const command=String(input.command||'').trim();
+  if(!command||/[;&|`$<>()\r\n]/.test(command))return null;
+  const words=command.split(/\s+/), base=words[0].toLowerCase();
+  if(/^(rm|rmdir|del|erase|rd|remove-item|format|shutdown|reg|curl|wget|invoke-webrequest|invoke-restmethod|powershell|pwsh|cmd|bash|sh|gh)$/.test(base))return null;
+  if(base==='git'&&/^(push|reset|clean|rebase|checkout|restore|tag|config)$/i.test(words[1]||''))return null;
+  return tool+':'+(['git','npm','npx','docker','cargo','go','dotnet'].includes(base)&&words[1]?base+' '+words[1].toLowerCase():base);
+}
 async function askApproval({tool_name:tool,input={}}){
   const turn=process.env.AGENT_ROOM_APPROVAL_TURN;
   const deny=message=>({behavior:'deny',message});
   try{
-    const {id}=await hub('/tool',{action:'approval_request',turn,tool:String(tool),input:JSON.stringify(input).slice(0,2000)});
+    const {id,state:initial}=await hub('/tool',{action:'approval_request',turn,tool:String(tool),input:JSON.stringify(input).slice(0,2000),rule:approvalRule(String(tool),input)});
+    if(initial==='allowed')return {behavior:'allow',updatedInput:input};
     const deadline=Date.now()+240000;
     while(Date.now()<deadline){
       await new Promise(resolve=>setTimeout(resolve,1000));
