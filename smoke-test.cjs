@@ -93,6 +93,9 @@ async function main(){
   await until(async()=>(await sync()).messages.find(m=>m.body==='Resumed: Follow up'));
   await rpc('/control',{action:'user_message',room:room.id,participant:managed.id,text:'Hold reply'});
   const working=await until(async()=>(await sync()).deliveries.find(d=>d.name==='Codex CLI'&&d.state==='working'));
+  const pendingState=await sync();
+  assert.ok(pendingState.messages.some(m=>m.author===managed.id&&m.seq>working.seq&&m.body==='메시지를 받았습니다. 응답을 준비합니다.'));
+  assert.ok(!pendingState.messages.some(m=>m.body==='Resumed: Hold reply'));
   await until(async()=>(await sync()).deliveries.find(d=>d.seq===working.seq&&d.state==='answered'));
   const claudeState=await rpc('/control',{action:'new_claude',room:room.id});
   const managedClaude=claudeState.members.find(m=>m.name==='Claude Code CLI');
@@ -144,7 +147,7 @@ async function main(){
   const audit=await rpc('/control',{action:'handoff_history',room:room.id,id:offer.id});
   assert.equal(audit.events[0].action,'handoff_accept');
   const scopedUser=await rpc('/control',{action:'user_message',room:room.id,text:'Private test '+managedClaude.id});
-  const scopedUserSeq=scopedUser.messages.at(-1).seq;
+  const scopedUserSeq=scopedUser.messages.find(m=>m.body==='Private test '+managedClaude.id).seq;
   const targeted=await until(async()=>(await sync()).messages.find(m=>m.relay_root===scopedUserSeq&&m.author===managed.id&&m.body==='Targeted only'));
   const targetState=await sync();
   assert.equal(targeted.recipient,managedClaude.id);

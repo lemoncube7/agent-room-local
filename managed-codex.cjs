@@ -66,7 +66,7 @@ function runCodex(project, prompt, session, provider='codex',model=null,effort=n
   const codexArgs=session?['exec','resume','--json','--skip-git-repo-check',session,'-']:['exec','--json','--skip-git-repo-check','-'];
   if(provider==='codex'&&process.platform==='win32'&&(process.env.AGENT_ROOM_CODEX_SANDBOX||cliSettings().codexSandbox)==='mxc')codexArgs.unshift('-c','windows.sandbox="mxc"');
   if(options.rank)codexArgs.splice(-1,0,'--sandbox','read-only');
-  const claudeArgs=['--print','--output-format','json',...(session?['--resume',session]:[])];
+  const claudeArgs=['--print','--output-format','json','--permission-mode',options.rank?'plan':'acceptEdits',...(session?['--resume',session]:[])];
   const agyArgs=['-p',prompt,'--output-format','json',...(session?['--conversation',session]:[]),'--print-timeout','285s'];
   if(model){codexArgs.splice(-1,0,'--model',model);claudeArgs.push('--model',model);agyArgs.push('--model',model);}
   if(effort){
