@@ -11,13 +11,19 @@ const claude=provider==='claude';
 if(!['claude','codex','work','agy','approval','turn','say'].includes(provider))throw Error('Specify claude, codex, work, or agy.');
 async function runSay(){
   const args=process.argv.slice(3), positional=[];
-  let name='외부 세션', wake=false;
+  let name='외부 세션', wake=false, code=null;
   for(let i=0;i<args.length;i++){
     if(args[i]==='--wake')wake=true;
     else if(args[i]==='--as')name=args[++i]||name;
+    else if(args[i]==='--code')code=args[++i]||code;
     else positional.push(args[i]);
   }
-  if(positional.length!==2)throw Error('Usage: node bridge.cjs say "room name or ID" "message" [--as name] [--wake]');
+  if(code&&positional.length===1){
+    const result=await hub('/tool',{action:'external_message',code,text:positional[0],name,wake});
+    console.log('sent: #'+result.seq);
+    return;
+  }
+  if(positional.length!==2)throw Error('Usage: node bridge.cjs say --code <CODE> "message" [--as name] [--wake]  OR  node bridge.cjs say "room name or ID" "message" [--as name] [--wake]');
   const result=await hub('/tool',{action:'external_message',room:positional[0],text:positional[1],name,wake});
   console.log('sent: #'+result.seq);
 }
@@ -120,6 +126,45 @@ function isSafeRead(tool,input){
   if(!command||/[;&|`$<>()\r\n]/.test(command)||/(^|\s)(--output|--ext-diff|--textconv|--exec)(=|\s|$)/i.test(command)||/(^|\s)-c(=|\s|$)/.test(command))return false;
   return /^git\s+-C\s+("[^"]+"|'[^']+'|\S+)\s+(status|log|show|diff|rev-parse|ls-files|blame)(\s|$)/i.test(command);
 }
+function splitCommand(command){
+  if(/\\["';&|\r\n]/.test(command))return null;
+  const text=command.replace(/(^|\s)2>(\/dev\/null|&1|\$null)(?=\s|$)/g,'$1'), parts=[];
+  let quote='', current='';
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(quote){if(c===quote)quote='';else if(quote==='"'&&/[$`]/.test(c))return null;current+=c;continue;}
+    if(c==='"'||c==="'"){quote=c;current+=c;continue;}
+    if(/[$`<>(){}#]/.test(c))return null;
+    if(/[;|&\r\n]/.test(c)){
+      if((c==='&'||c==='|')&&text[i+1]===c)i++;
+      if(c==='\r'&&text[i+1]==='\n')i++;
+      if(current.trim())parts.push(current.trim());
+      else if(c!=='\n'&&c!=='\r')return null;
+      current='';
+      continue;
+    }
+    current+=c;
+  }
+  if(quote)return null;
+  if(current.trim())parts.push(current.trim());
+  return parts.length?parts:null;
+}
+const safeDevCommands=new Set(['cd','pwd','ls','cat','head','tail','wc','grep','cut','tr','sort','echo','sleep','mkdir','which','where','true','node','npm','pytest','get-childitem','get-content','get-location','set-location','test-path','select-string','measure-object']);
+function isSafeDevPart(part){
+  const words=part.split(/\s+/), base=words[0].toLowerCase();
+  if(base==='git'){
+    if(words[0]!=='git'||/(^|\s)(-c|--output|--ext-diff|--textconv|--exec|--upload-pack|--receive-pack)(=|\s|$)/.test(part))return false;
+    return /^git(\s+-C\s+("[^"]+"|'[^']+'|\S+))?\s+(status|diff|log|show|add|commit|branch|fetch|remote|rev-parse|ls-files|blame)(\s|$)/.test(part);
+  }
+  if(base==='sort'&&words.some(word=>/^(-o|--output|--compress-program)/.test(word)))return false;
+  if(['cargo','go','dotnet'].includes(base))return /^(test|build)$/.test(words[1]||'');
+  return safeDevCommands.has(base);
+}
+function isSafeDevCommand(tool,input){
+  if(!['Bash','PowerShell'].includes(tool))return false;
+  const parts=splitCommand(String(input.command||'').trim());
+  return !!parts&&parts.every(isSafeDevPart);
+}
 function approvalRule(tool,input){
   if(['Write','Edit','MultiEdit','NotebookEdit'].includes(tool))return null;
   if(!['Bash','PowerShell'].includes(tool))return tool;
@@ -134,7 +179,7 @@ async function askApproval({tool_name:tool,input={}}){
   const turn=process.env.AGENT_ROOM_APPROVAL_TURN;
   const deny=message=>({behavior:'deny',message});
   try{
-    if(isSafeRead(String(tool),input))return {behavior:'allow',updatedInput:input};
+    if(isSafeRead(String(tool),input)||(process.env.AGENT_ROOM_PERMISSION==='dev'&&isSafeDevCommand(String(tool),input)))return {behavior:'allow',updatedInput:input};
     const {id,state:initial}=await hub('/tool',{action:'approval_request',turn,tool:String(tool),input:JSON.stringify(input).slice(0,2000),rule:approvalRule(String(tool),input)});
     if(initial==='allowed')return {behavior:'allow',updatedInput:input};
     const deadline=Date.now()+240000;

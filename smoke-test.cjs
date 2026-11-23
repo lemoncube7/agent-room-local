@@ -159,8 +159,9 @@ async function main(){
   await until(async()=>(await sync()).replyPlans.find(p=>p.seq===rankedSeq&&p.state==='ready'));
   const ranking=(await sync()).deliveries.filter(d=>d.seq===rankedSeq);
   assert.equal(ranking.find(d=>d.member===managedAgy.id).priority,0);
-  assert.equal(ranking.find(d=>d.member===managedAgy.id).state,'context_only');
   assert.equal(ranking.find(d=>d.member===secondCodex.id).priority,1);
+  await until(async()=>(await sync()).deliveries.find(d=>d.seq===rankedSeq&&d.member===managedAgy.id&&['context_only','context_seen','accepted'].includes(d.state)),420);
+  assert.ok(!(await sync()).messages.some(m=>m.relay_root===rankedSeq&&m.author===managedAgy.id));
   const tie=await rpc('/control',{action:'user_message',room:room.id,text:'Tie test'});
   const tieSeq=tie.messages.find(m=>m.body==='Tie test').seq;
   const simultaneous=await until(async()=>{

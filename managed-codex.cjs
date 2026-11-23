@@ -74,7 +74,7 @@ function diagnoseCliFailure(provider,error,diagnostic){
     return failure('windows_runtime','Windows에서 작업 명령을 실행하는 환경이 시작되지 않았어요.','기존 데스크톱 대화를 연결하거나 독립 CLI 설치를 확인하세요.');
   if(/oauth.{0,35}(?:expired|refresh)|failed to authenticate|not logged in|please log in|authentication failed|not authenticated|login required/i.test(diagnostic))
     return failure('auth_expired','로그인이 만료됐거나 인증에 실패했어요.',provider==='claude'?'터미널에서 claude auth login을 실행한 뒤 다시 보내세요.':provider==='codex'?'터미널에서 codex login을 실행한 뒤 다시 보내세요.':'Antigravity를 열어 로그인한 뒤 다시 보내세요.');
-  if(/rate limit|resource_exhausted|usage limit|quota exceeded|hit your.{0,20}limit|5-hour limit|(?:http|status)s*429/i.test(diagnostic))
+  if(/rate limit|resource_exhausted|usage limit|quota exceeded|hit your.{0,20}limit|5-hour limit|(?:http|status)\s*429/i.test(diagnostic))
     return failure('usage_limit','요청 또는 사용량 한도에 걸렸어요.','한도 초기화 후 다시 시도하거나 사용 가능한 모델을 선택하세요.');
   if(/model.{0,100}(?:invalid|not available|not found|not supported)|invalid model/i.test(diagnostic))
     return failure('model_unavailable','선택한 모델을 사용할 수 없어요.','모델 목록에서 다른 모델을 선택하세요.');
@@ -90,6 +90,7 @@ function diagnoseCliFailure(provider,error,diagnostic){
   return failure('unknown','CLI에서 완성된 응답을 받지 못했어요'+suffix+(detail?': '+detail:'')+'.','같은 프로젝트에서 CLI를 직접 열어 오류를 확인하세요.');
 }
 
+const cliEnv=()=>({...process.env,CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:process.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE||'50'});
 const devCommands=['node','npm','pytest','cargo test','cargo build','go test','go build','dotnet test','dotnet build','git status','git diff','git log','git show','git add','git commit','git branch','git fetch','git remote','git rev-parse','git ls-files','git blame','ls','pwd','cat','head','tail','wc','grep'];
 const devPowerShellCommands=['Get-ChildItem','Get-Content','Get-Location','Test-Path','Select-String','Measure-Object'];
 const devAllowedTools=[...['Bash','PowerShell'].flatMap(tool=>devCommands.map(command=>tool+'('+command+':*)')),...devPowerShellCommands.map(command=>'PowerShell('+command+':*)'),'WebSearch','WebFetch'].join(',');
@@ -186,7 +187,7 @@ function describeStreamProgress(event){
     const step=t==='command_execution'?'명령 실행 중…':t==='file_change'?'파일 수정 중…':t==='reasoning'?'생각 중…':t==='agent_message'?'답변 작성 중…':'';
     return step||text?{step,text}:null;
   }
-  if(event.type==='init'||event.event==='init'||event.type==='system')return {step:'세션 초기화 중…',text:''};
+  if(event.type==='init'||event.event==='init'||event.type==='system')return {step:'세션 연결 중…',text:''};
   return null;
 }
 function runStreamLive(provider,file,prefix,args,project,prompt,session,inboxFile,progressFile,interimFile){
@@ -200,7 +201,7 @@ function runStreamLive(provider,file,prefix,args,project,prompt,session,inboxFil
       try{fs.appendFileSync(interimFile,JSON.stringify(text)+'\n');writeProgress.reset?.();}catch{}
     };
     writeProgress('CLI 시작 중…');
-    const child=spawn(file,[...prefix,...args],{cwd:project,windowsHide:true});
+    const child=spawn(file,[...prefix,...args],{cwd:project,windowsHide:true,env:cliEnv()});
     const closingFile=inboxFile+'.closing', liveFile=inboxFile+'.live';
     const parts=[];
     const usage={turns:0,inputTokens:0,outputTokens:0,costUsd:0};
@@ -321,13 +322,13 @@ function runCodex(project, prompt, session, provider='codex',model=null,effort=n
     const liveArgs=['--input-format','stream-json','--output-format','stream-json',...agyPerm,...(session?['--conversation',session]:[]),'--print-timeout','1800s'];
     if(model)liveArgs.push('--model',model);
     if(effort)liveArgs.push('--effort',effort);
-    return runStreamLive('agy',file,prefix,liveArgs,project,prompt,session,options.inboxFile,options.progressFile);
+    return runStreamLive('agy',file,prefix,liveArgs,project,prompt,session,options.inboxFile,options.progressFile,options.interimFile);
   }
   const writeProgress=createProgressWriter(options.progressFile);
   writeProgress('CLI 실행 중…');
   return new Promise((resolve,reject)=>{
     const child=execFile(file,[...prefix,...(agy?agyArgs:claude?claudeArgs:codexArgs)],{
-      cwd:project,windowsHide:true,timeout:options.rank?25000:agy?300000:1800000,maxBuffer:8*1024*1024
+      cwd:project,windowsHide:true,env:cliEnv(),timeout:options.rank?25000:agy?300000:1800000,maxBuffer:8*1024*1024
     },(error,stdout,stderr)=>{
       let result;
       try {
