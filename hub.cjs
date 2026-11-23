@@ -86,7 +86,7 @@ function parseRanks(raw,people){
   return ranks;
 }
 const usageCooldownMs=15*60*1000;
-const cliCooldown=new Map(), limitNotified=new Set(), judgeCooldown=new Map();
+const cliCooldown=new Map(), limitNotified=new Set(), judgeCooldown=new Map(), cliRepeatErrors=new Map();
 async function planReplies(plan){
   rankingRooms.add(plan.room);
   try{
@@ -255,8 +255,9 @@ function recoverDetachedTurns(){
   }
 }
 function clipContext(text,recent,provider){
+  const source=recent?text:String(text||'').replace(/```[\s\S]*?```/g,'`[code omitted]`');
   const limit=recent?(provider==='agy'?2500:6000):800;
-  return text.length>limit?text.slice(0,limit)+'\n[... '+(text.length-limit)+' characters omitted; ask the author if you need the rest]':text;
+  return source.length>limit?source.slice(0,limit)+'\n[... '+(source.length-limit)+' characters omitted; ask the author if you need the rest]':source;
 }
 async function cliTurn(participant, prompt, inputSeq){
   const session=one('SELECT * FROM cli_sessions WHERE member=?',participant);
@@ -292,12 +293,14 @@ async function cliTurn(participant, prompt, inputSeq){
     const context='Your display name in Agent Room is '+JSON.stringify(row.name)+'. Your agent provider is '+session.provider+'. Use this name when interpreting mentions and identifying yourself. You are in a shared Agent Room chat. Your normal response goes to the whole room. Keep the default so other agents can follow progress. Only when a specific reply really needs a single recipient, put [[TO:participant-id]] on its own first line, using an exact ID from this room roster: '+JSON.stringify(peers)+'. Never invent a reply from another agent.';
     const audience=!input?'This is the first turn.':input.author.startsWith('human:')?'The user posted to the whole room.':'Another agent posted to the whole room.';
     const replyPolicy='This room works like a real conversation: speak when you have something useful to add, and everyone can read what you post. Before starting non-trivial work (editing files, running commands or tests, investigating), briefly state what you plan to do and which files you will touch. If you need another agent to act or answer, put [[CALL:participant-id]] on its own line at the very start of your reply, one line per agent, using an exact roster ID; only called agents are woken. If no reply is needed, respond exactly [[AGENT_ROOM_NO_REPLY]]. Avoid courtesy acknowledgments and unnecessary agent-to-agent chatter.';
-    const history=all("SELECT members.name,messages.body FROM messages JOIN members ON members.id=messages.author WHERE messages.room=? AND (messages.recipient IS NULL OR messages.recipient=? OR messages.author=?) AND messages.request NOT LIKE 'receipt:%' AND messages.seq<>? ORDER BY messages.seq DESC LIMIT 12",row.room,participant,participant,inputSeq??0).reverse();
+    const history=all("SELECT messages.seq,members.name,messages.body FROM messages JOIN members ON members.id=messages.author WHERE messages.room=? AND (messages.recipient IS NULL OR messages.recipient=? OR messages.author=?) AND messages.request NOT LIKE 'receipt:%' AND messages.seq<>? ORDER BY messages.seq DESC LIMIT 12",row.room,participant,participant,inputSeq??0).reverse();
     const received=inputSeq?all("SELECT messages.seq,members.name,messages.body FROM deliveries JOIN messages USING(seq) JOIN members ON members.id=messages.author WHERE deliveries.member=? AND deliveries.state='context_only' AND messages.seq<? ORDER BY messages.seq DESC LIMIT 10",participant,inputSeq).reverse():[];
+    const receivedSeqs=new Set(received.map(item=>item.seq));
+    const contextHistory=history.filter(item=>!receivedSeqs.has(item.seq));
     const alert=inputSeq?one('SELECT task,revision FROM handoff_alerts WHERE seq=?',inputSeq):null;
     const handoffPolicy=alert?' This turn is a task handoff notification. Before doing work, reply exactly [[HANDOFF_ACCEPT]] to accept, or [[HANDOFF_DECLINE]] to decline. Use only that control line.':'';
-    const result=await invokeCli(session.project,context+' '+audience+' '+replyPolicy+handoffPolicy+'\nRecent shared room messages (context only): '+JSON.stringify(history.map((message,index)=>({name:message.name,body:clipContext(message.body,index>=history.length-3,session.provider)})))+(received.length?'\nRoom messages that arrived since your last turn. Take them into account and handle anything still meant for you in this one reply: '+JSON.stringify(received.map(({name,body},index)=>({name,body:clipContext(body,index>=received.length-3,session.provider)}))):'')+'\n\n'+prompt,session.thread,session.provider,session.model,session.effort,turnOptions);
-    cliCooldown.delete(participant);limitNotified.delete(participant);
+    const result=await invokeCli(session.project,context+' '+audience+' '+replyPolicy+handoffPolicy+'\nRecent shared room messages (context only): '+JSON.stringify(contextHistory.map((message,index)=>({name:message.name,body:clipContext(message.body,index>=contextHistory.length-3,session.provider)})))+(received.length?'\nRoom messages that arrived since your last turn. Take them into account and handle anything still meant for you in this one reply: '+JSON.stringify(received.map(({name,body},index)=>({name,body:clipContext(body,index>=received.length-3,session.provider)}))):'')+'\n\n'+prompt,session.thread,session.provider,session.model,session.effort,turnOptions);
+    cliCooldown.delete(participant);limitNotified.delete(participant);cliRepeatErrors.delete(participant);
     if(!result.issue&&inputSeq)run("UPDATE deliveries SET state='context_seen' WHERE member=? AND state='context_only' AND seq<?",participant,inputSeq);
     const decision=result.reply.trim().match(/^\[\[HANDOFF_(ACCEPT|DECLINE)\]\]$/);
     if(alert&&decision){
@@ -355,7 +358,17 @@ async function cliTurn(participant, prompt, inputSeq){
     }
     if(row.state==='starting')run("UPDATE members SET state='start_failed' WHERE id=? AND state='starting'",participant);
     if(inputSeq)run("UPDATE deliveries SET state='failed' WHERE seq=? AND member=?",inputSeq,participant);
-    storeMessage(row.room,participant,error.message);
+    const errKey=(error.cliCode||'unknown')+':'+String(error.message||'').slice(0,120);
+    const prevErr=cliRepeatErrors.get(participant);
+    const errCount=prevErr?.key===errKey?prevErr.count+1:1;
+    cliRepeatErrors.set(participant,{key:errKey,count:errCount});
+    if(errCount>=2){
+      cliCooldown.set(participant,Date.now()+usageCooldownMs);
+      if(inputSeq&&row.state==='approved')run("UPDATE deliveries SET state='queued' WHERE seq=? AND member=?",inputSeq,participant);
+      if(errCount===2)storeMessage(row.room,participant,error.message+'\n\n동일한 오류가 2회 연속 발생해 자동 실행을 잠시 멈췄습니다. 설정에서 모델·권한을 확인하거나 다시 연결해 주세요.');
+    }else{
+      storeMessage(row.room,participant,error.message);
+    }
   }finally{
     cliBusy.delete(participant);
     liveTurns.delete(participant);
@@ -672,6 +685,7 @@ const server=http.createServer(async(req,res)=>{
         void cliTurn(failed.id,'Briefly greet the room. Do not change any files.');
       }
       else if(args.action==='approval_decide'){
+        if(req.headers['sec-fetch-site']!=='same-origin'||req.headers['sec-fetch-mode']!=='cors')throw Error('허용 요청은 Agent Room 화면에서만 처리할 수 있어요.');
         const item=approvals.get(args.id);
         if(!item||item.state!=='pending'||typeof args.allow!=='boolean')throw Error('이미 처리됐거나 만료된 허용 요청이에요.');
         if(args.allow&&args.always===true&&item.rule)run('INSERT OR IGNORE INTO approval_rules(member,rule) VALUES(?,?)',item.member,item.rule);
@@ -684,7 +698,7 @@ const server=http.createServer(async(req,res)=>{
         const model=args.model?.trim()?str(args.model,120):null;
         const name=args.name?.trim()?str(args.name,120):model||providerNames[agent.provider];
         run('UPDATE cli_sessions SET model=?,effort=?,permission_profile=? WHERE member=?',model,normalizeEffort(args.effort),normalizePermission(args.permission),args.participant);
-        cliCooldown.delete(args.participant);limitNotified.delete(args.participant);
+        cliCooldown.delete(args.participant);limitNotified.delete(args.participant);cliRepeatErrors.delete(args.participant);
         if(args.clearRules===true)run('DELETE FROM approval_rules WHERE member=?',args.participant);
         run('UPDATE members SET name=? WHERE id=?',name,args.participant);
       }

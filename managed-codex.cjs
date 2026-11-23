@@ -25,7 +25,7 @@ function cliCommand(provider) {
 }
 
 function sumUsage(target,source,fallbackTurns=0){
-  const input=Number(source?.input_tokens??source?.inputTokens??0)+(Number(source?.cache_read_input_tokens??source?.cached_input_tokens??0))+(Number(source?.cache_creation_input_tokens??0));
+  const input=Number(source?.input_tokens??source?.inputTokens??0)+(Number(source?.cache_read_input_tokens??source?.cache_read_tokens??source?.cached_input_tokens??0))+(Number(source?.cache_creation_input_tokens??0));
   const output=Number(source?.output_tokens??source?.outputTokens??0);
   const cost=Number(source?.total_cost_usd??source?.cost_usd??0);
   const turns=Number(source?.num_turns??fallbackTurns);
@@ -74,7 +74,7 @@ function diagnoseCliFailure(provider,error,diagnostic){
     return failure('windows_runtime','Windows에서 작업 명령을 실행하는 환경이 시작되지 않았어요.','기존 데스크톱 대화를 연결하거나 독립 CLI 설치를 확인하세요.');
   if(/oauth.{0,35}(?:expired|refresh)|failed to authenticate|not logged in|please log in|authentication failed|not authenticated|login required/i.test(diagnostic))
     return failure('auth_expired','로그인이 만료됐거나 인증에 실패했어요.',provider==='claude'?'터미널에서 claude auth login을 실행한 뒤 다시 보내세요.':provider==='codex'?'터미널에서 codex login을 실행한 뒤 다시 보내세요.':'Antigravity를 열어 로그인한 뒤 다시 보내세요.');
-  if(/rate limit|resource_exhausted|usage limit|quota exceeded|(?:http|status)s*429/i.test(diagnostic))
+  if(/rate limit|resource_exhausted|usage limit|quota exceeded|hit your.{0,20}limit|5-hour limit|(?:http|status)s*429/i.test(diagnostic))
     return failure('usage_limit','요청 또는 사용량 한도에 걸렸어요.','한도 초기화 후 다시 시도하거나 사용 가능한 모델을 선택하세요.');
   if(/model.{0,100}(?:invalid|not available|not found|not supported)|invalid model/i.test(diagnostic))
     return failure('model_unavailable','선택한 모델을 사용할 수 없어요.','모델 목록에서 다른 모델을 선택하세요.');
@@ -92,7 +92,7 @@ function diagnoseCliFailure(provider,error,diagnostic){
 
 const devCommands=['node','npm','pytest','cargo test','cargo build','go test','go build','dotnet test','dotnet build','git status','git diff','git log','git show','git add','git commit','git branch','git fetch','git remote','git rev-parse','git ls-files','git blame','ls','pwd','cat','head','tail','wc','grep'];
 const devPowerShellCommands=['Get-ChildItem','Get-Content','Get-Location','Test-Path','Select-String','Measure-Object'];
-const devAllowedTools=[...['Bash','PowerShell'].flatMap(tool=>devCommands.map(command=>tool+'('+command+':*)')),...devPowerShellCommands.map(command=>'PowerShell('+command+':*)')].join(',');
+const devAllowedTools=[...['Bash','PowerShell'].flatMap(tool=>devCommands.map(command=>tool+'('+command+':*)')),...devPowerShellCommands.map(command=>'PowerShell('+command+':*)'),'WebSearch','WebFetch'].join(',');
 function mergeLiveReplies(parts){
   const usable=parts.map(part=>String(part||'').trim()).filter(part=>part&&part!=='[[AGENT_ROOM_NO_REPLY]]');
   if(!usable.length)return '[[AGENT_ROOM_NO_REPLY]]';
@@ -109,12 +109,18 @@ function createProgressWriter(progressFile){
   if(!progressFile)return()=>{};
   let lastStep='', preview='', lastChunk='', lastAt=0;
   const cleanPreview=text=>String(text||'').replace(/^(?:\[\[(?:CALL|TO):[^\]\r\n]+\]\]\s*)+/,'').trim();
-  return (step,chunk)=>{
-    const clean=chunk?cleanPreview(chunk):'';
-    const nextChunk=clean&&clean!=='[[AGENT_ROOM_NO_REPLY]]'&&clean!==lastChunk?clean:'';
-    if(nextChunk){
-      lastChunk=nextChunk;
-      preview=(preview?preview+'\n\n'+nextChunk:nextChunk).slice(-4000);
+  return (step,chunk,delta=false)=>{
+    let nextChunk='';
+    if(delta&&chunk){
+      preview=cleanPreview((preview+String(chunk)).slice(-4000));
+      nextChunk=String(chunk);
+    }else{
+      const clean=chunk?cleanPreview(chunk):'';
+      nextChunk=clean&&clean!=='[[AGENT_ROOM_NO_REPLY]]'&&clean!==lastChunk?clean:'';
+      if(nextChunk){
+        lastChunk=nextChunk;
+        preview=(preview?preview+'\n\n'+nextChunk:nextChunk).slice(-4000);
+      }
     }
     if(!step&&!nextChunk)return;
     const nextStep=step||lastStep||'작업 진행 중…';
@@ -145,12 +151,15 @@ function describeStreamProgress(event){
     }
     return step||text?{step,text}:null;
   }
-  if(event.type==='step_update'){
-    const text=typeof event.text==='string'?event.text:typeof event.content==='string'?event.content:typeof event.response==='string'?event.response:'';
-    if(event.tool_info?.name)return {step:toolLabel(event.tool_info.name,event.tool_info.parameters||event.tool_info.input),text};
-    const st=String(event.step_type||'').toLowerCase();
+  if(event.type==='step_update'||event.event==='step_update'){
+    const su=(event.event==='step_update'&&event.step_update&&typeof event.step_update==='object')?event.step_update:event;
+    const delta=typeof su.text_delta==='string'&&su.text_delta.length>0;
+    const text=delta?su.text_delta:typeof su.text==='string'?su.text:typeof su.content==='string'?su.content:typeof su.response==='string'?su.response:'';
+    const toolName=su.tool_info?.name||su.tool_name;
+    if(toolName)return {step:toolLabel(toolName,su.tool_info?.parameters||su.tool_info?.input),text,delta};
+    const st=String(su.step_type||'').toLowerCase();
     const step=st.includes('think')||st.includes('reason')?'생각 중…':st.includes('tool')||st.includes('command')?'도구 실행 중…':st.includes('resp')||st.includes('text')||st.includes('answer')?'답변 작성 중…':'작업 진행 중…';
-    return {step,text};
+    return {step,text,delta};
   }
   if(event.type==='item.started'||event.type==='item.completed'){
     const t=event.item?.type;
@@ -158,7 +167,7 @@ function describeStreamProgress(event){
     const step=t==='command_execution'?'명령 실행 중…':t==='file_change'?'파일 수정 중…':t==='reasoning'?'생각 중…':t==='agent_message'?'답변 작성 중…':'';
     return step||text?{step,text}:null;
   }
-  if(event.type==='init'||event.type==='system')return {step:'세션 초기화 중…',text:''};
+  if(event.type==='init'||event.event==='init'||event.type==='system')return {step:'세션 초기화 중…',text:''};
   return null;
 }
 function runStreamLive(provider,file,prefix,args,project,prompt,session,inboxFile,progressFile){
@@ -170,7 +179,13 @@ function runStreamLive(provider,file,prefix,args,project,prompt,session,inboxFil
     const parts=[];
     const usage={turns:0,inputTokens:0,outputTokens:0,costUsd:0};
     let sent=0,done=0,offset=0,buffer='',stderr='',failure='',id=session,closing=false,timedOut=false,lastEvent=Date.now();
-    const send=text=>{sent++;child.stdin.write(JSON.stringify({type:'user',message:{role:'user',content:[{type:'text',text}]}})+'\n');};
+    const send=text=>{
+      sent++;
+      const payload=provider==='agy'
+        ?{event:'user',message:{content:[{type:'text',text}]}}
+        :{type:'user',message:{role:'user',content:[{type:'text',text}]}};
+      child.stdin.write(JSON.stringify(payload)+'\n');
+    };
     const pull=source=>{
       const data=fs.readFileSync(source);
       if(data.length<=offset)return;
@@ -200,18 +215,22 @@ function runStreamLive(provider,file,prefix,args,project,prompt,session,inboxFil
         const line=buffer.slice(0,at);buffer=buffer.slice(at+1);
         let event;try{event=JSON.parse(line);}catch{continue;}
         lastEvent=Date.now();
+        const kind=event.type||event.event;
         const info=describeStreamProgress(event);
-        if(info)writeProgress(info.step,info.text);
-        if(event.conversation_id||event.session_id)id=event.conversation_id||event.session_id;
-        if(event.type==='error'||event.error)failure+='\n'+(event.error?.message||event.error||event.message||'');
-        if(event.type==='result'){
+        if(info)writeProgress(info.step,info.text,info.delta);
+        const cid=event.conversation_id||event.session_id||event.result?.conversation_id||event.step_update?.conversation_id;
+        if(cid)id=cid;
+        if(kind==='error'||event.error)failure+='\n'+(event.error?.message||event.error||event.message||'');
+        if(kind==='result'){
           done++;
-          sumUsage(usage,event.usage||event.token_usage||{total_cost_usd:event.total_cost_usd},1);
-          if(event.total_cost_usd&&!event.usage?.total_cost_usd)usage.costUsd+=Number(event.total_cost_usd)||0;
-          const ok=event.status?(event.status==='SUCCESS'||event.status==='success'):!event.is_error;
-          const reply=event.response??event.result;
+          const res=(event.event==='result'&&event.result&&typeof event.result==='object')?event.result:event;
+          if(provider==='agy'){usage.turns=0;usage.inputTokens=0;usage.outputTokens=0;usage.costUsd=0;}
+          sumUsage(usage,res.usage||res.token_usage||{total_cost_usd:res.total_cost_usd},provider==='agy'?(res.num_turns||done):1);
+          if(res.total_cost_usd&&!res.usage?.total_cost_usd)usage.costUsd+=Number(res.total_cost_usd)||0;
+          const ok=res.status?(res.status==='SUCCESS'||res.status==='success'):!res.is_error;
+          const reply=res.response??res.result;
           if(ok&&typeof reply==='string')parts.push(reply);
-          else failure+='\n'+(Array.isArray(event.errors)?event.errors.join('; '):'')+' '+(event.error||event.message||event.result||event.response||event.status||event.subtype||'');
+          else failure+='\n'+(Array.isArray(res.errors)?res.errors.join('; '):'')+' '+(res.error||res.message||res.result||res.response||res.status||res.subtype||'');
           poll();
         }
       }
@@ -256,7 +275,7 @@ function runCodex(project, prompt, session, provider='codex',model=null,effort=n
     return runStreamLive('claude',file,prefix,claudeArgs,project,prompt,session,options.inboxFile,options.progressFile);
   }
   if(agy&&!options.rank&&options.inboxFile){
-    const liveArgs=['--input-format','stream-json','--output-format','stream-json','-p=',...agyPerm,...(session?['--conversation',session]:[]),'--print-timeout','1800s'];
+    const liveArgs=['--input-format','stream-json','--output-format','stream-json',...agyPerm,...(session?['--conversation',session]:[]),'--print-timeout','1800s'];
     if(model)liveArgs.push('--model',model);
     if(effort)liveArgs.push('--effort',effort);
     return runStreamLive('agy',file,prefix,liveArgs,project,prompt,session,options.inboxFile,options.progressFile);

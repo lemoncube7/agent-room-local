@@ -8,7 +8,7 @@ const local=path.join(__dirname,'local');
 const provider=process.argv[2];
 const thread=process.argv[3];
 const claude=provider==='claude';
-if(!['claude','codex','work','approval','turn'].includes(provider))throw Error('Specify claude, codex, or work.');
+if(!['claude','codex','work','agy','approval','turn'].includes(provider))throw Error('Specify claude, codex, work, or agy.');
 async function runTurn(jobFile){
   const job=JSON.parse(fs.readFileSync(jobFile,'utf8'));
   let output;
@@ -102,6 +102,12 @@ const tools=[
   setup('read_messages','Read room messages after a sequence number.',{after:{type:'integer',minimum:0}}),
   setup('send_message','Send a message to the approved room. Reuse request ID on retry.',{request:str,text:str})
 ];
+function isSafeRead(tool,input){
+  if(!['Bash','PowerShell'].includes(tool))return false;
+  const command=String(input.command||'').trim();
+  if(!command||/[;&|`$<>()\r\n]/.test(command)||/(^|\s)(--output|--ext-diff|--textconv|--exec)(=|\s|$)/i.test(command)||/(^|\s)-c(=|\s|$)/.test(command))return false;
+  return /^git\s+-C\s+("[^"]+"|'[^']+'|\S+)\s+(status|log|show|diff|rev-parse|ls-files|blame)(\s|$)/i.test(command);
+}
 function approvalRule(tool,input){
   if(['Write','Edit','MultiEdit','NotebookEdit'].includes(tool))return null;
   if(!['Bash','PowerShell'].includes(tool))return tool;
@@ -116,6 +122,7 @@ async function askApproval({tool_name:tool,input={}}){
   const turn=process.env.AGENT_ROOM_APPROVAL_TURN;
   const deny=message=>({behavior:'deny',message});
   try{
+    if(isSafeRead(String(tool),input))return {behavior:'allow',updatedInput:input};
     const {id,state:initial}=await hub('/tool',{action:'approval_request',turn,tool:String(tool),input:JSON.stringify(input).slice(0,2000),rule:approvalRule(String(tool),input)});
     if(initial==='allowed')return {behavior:'allow',updatedInput:input};
     const deadline=Date.now()+240000;
@@ -158,7 +165,7 @@ async function invoke(req){
         if(['request_join','join_room_code','join_subagent'].includes(name)){
           if(joined||joining)throw Error('This MCP process is already pairing or paired. Restart this client connection to change rooms.');
           joining=true;
-          try{data=await hub('/tool',{action:name,room:args.room,request:args.request,name:claude?'Claude Code':provider==='work'?'ChatGPT Work':'Codex'});}
+          try{data=await hub('/tool',{action:name,room:args.room,request:args.request,name:claude?'Claude Code':provider==='work'?'ChatGPT Work':provider==='agy'?'Antigravity':'Codex'});}
           finally{joining=false;}
           joined={room:data.room??args.room,participant:data.participant};
           data={state:data.state,instructions:'Approve this participant in Agent Room.'};
