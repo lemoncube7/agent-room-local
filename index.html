@@ -536,5 +536,6 @@ byId('update').onclick=async()=>{
  }catch(error){status.textContent=error.message;}finally{button.disabled=false;}
 };
 window.addEventListener('pageshow',()=>{byId('new').reset();byId('compose').reset();});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void refresh();});
 refresh();setInterval(refresh,1500);
 </script></html>

@@ -344,6 +344,15 @@ async function cliTurn(participant, prompt, inputSeq){
       }
       return;
     }
+    if(error.cliCode==='network'&&inputSeq&&row.state==='approved'){
+      cliCooldown.set(participant,Date.now()+20000);
+      run("UPDATE deliveries SET state='queued' WHERE seq=? AND member=?",inputSeq,participant);
+      if(!limitNotified.has(participant)){
+        limitNotified.add(participant);
+        storeMessage(row.room,participant,'네트워크 연결이 끊겨 잠시 대기 중입니다. 인터넷이 복구되면 받은 메시지를 자동으로 다시 처리해요.');
+      }
+      return;
+    }
     if(row.state==='starting')run("UPDATE members SET state='start_failed' WHERE id=? AND state='starting'",participant);
     if(inputSeq)run("UPDATE deliveries SET state='failed' WHERE seq=? AND member=?",inputSeq,participant);
     storeMessage(row.room,participant,error.message);

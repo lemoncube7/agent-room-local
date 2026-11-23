@@ -4,6 +4,8 @@ param(
     [Parameter(Mandatory)][string]$NodePath
 )
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $stage = Join-Path ([IO.Path]::GetTempPath()) ('agent-room-update-' + [guid]::NewGuid())
 $files = @('hub.cjs','bridge.cjs','codex-ipc.cjs','managed-codex.cjs','index.html','setup.ps1','start.ps1','update.ps1','Start Agent Room.cmd','README.md','VERSION','smoke-test.cjs','native-chat.ps1','remote-sync.cjs','REMOTE-SETUP.md','HANDOFF.md','bind-desktop.cjs','handoff.cjs')
 $applied = [Collections.Generic.List[string]]::new()
