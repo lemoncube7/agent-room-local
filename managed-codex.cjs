@@ -4,14 +4,17 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 
-function cliCommand(provider) {
-  const env=process.env['AGENT_ROOM_'+provider.toUpperCase()];
-  let saved;
+function cliSettings(){
   try {
-    saved = JSON.parse(fs.readFileSync(path.join(__dirname,'local','cli.json'),'utf8').replace(/^\uFEFF/,''));
+    return JSON.parse(fs.readFileSync(path.join(__dirname,'local','cli.json'),'utf8').replace(/^\uFEFF/,''));
   } catch (error) {
     if(error.code!=='ENOENT')throw error;
+    return {};
   }
+}
+function cliCommand(provider) {
+  const env=process.env['AGENT_ROOM_'+provider.toUpperCase()];
+  const saved=cliSettings();
   const npm = process.env.APPDATA ? path.join(process.env.APPDATA,'npm','node_modules') : null;
   const defaults = provider==='claude'
     ? [path.join(os.homedir(),'.local','bin','claude.exe'), npm && path.join(npm,'@anthropic-ai','claude-code','cli.js')]
@@ -61,6 +64,7 @@ function runCodex(project, prompt, session, provider='codex',model=null,effort=n
   const name=agy?'Antigravity':claude?'Claude Code':'Codex';
   const [file,...prefix]=cliCommand(provider);
   const codexArgs=session?['exec','resume','--json','--skip-git-repo-check',session,'-']:['exec','--json','--skip-git-repo-check','-'];
+  if(provider==='codex'&&process.platform==='win32'&&(process.env.AGENT_ROOM_CODEX_SANDBOX||cliSettings().codexSandbox)==='mxc')codexArgs.unshift('-c','windows.sandbox="mxc"');
   const claudeArgs=['--print','--output-format','json',...(session?['--resume',session]:[])];
   const agyArgs=['-p',prompt,'--output-format','json',...(session?['--conversation',session]:[]),'--print-timeout','285s'];
   if(model){codexArgs.splice(-1,0,'--model',model);claudeArgs.push('--model',model);agyArgs.push('--model',model);}

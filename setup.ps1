@@ -5,7 +5,8 @@ param(
   [switch]$SelectProject,
   [switch]$Connect,
   [switch]$Test,
-  [string]$CodexCli
+  [string]$CodexCli,
+  [ValidateSet('mxc')][string]$CodexSandbox
 )
 $ErrorActionPreference = 'Stop'
 $projectPath = (Resolve-Path -LiteralPath $Project).Path
@@ -96,6 +97,12 @@ if ($CodexCli) {
 }
 if ($Connect -or $SelectProject) {
   $roomLocal = Join-Path $PSScriptRoot 'local'
+  $savedSettingsPath=Join-Path $roomLocal 'cli.json'
+  if($CodexSandbox){$cliSettings.codexSandbox=$CodexSandbox}
+  elseif(Test-Path -LiteralPath $savedSettingsPath){
+    $previous=Get-Content -LiteralPath $savedSettingsPath -Raw|ConvertFrom-Json
+    if($previous.codexSandbox -eq 'mxc'){$cliSettings.codexSandbox='mxc'}
+  }
   [void][IO.Directory]::CreateDirectory($roomLocal)
   [IO.File]::WriteAllText((Join-Path $roomLocal 'cli.json'), ($cliSettings | ConvertTo-Json -Compress))
   [IO.File]::WriteAllText((Join-Path $roomLocal 'project.txt'), $projectPath)
