@@ -24,20 +24,51 @@ function cliCommand(provider) {
   return [executable || provider];
 }
 
+function sumUsage(target,source,fallbackTurns=0){
+  const input=Number(source?.input_tokens??source?.inputTokens??0)+(Number(source?.cache_read_input_tokens??source?.cached_input_tokens??0))+(Number(source?.cache_creation_input_tokens??0));
+  const output=Number(source?.output_tokens??source?.outputTokens??0);
+  const cost=Number(source?.total_cost_usd??source?.cost_usd??0);
+  const turns=Number(source?.num_turns??fallbackTurns);
+  target.turns+=Number.isFinite(turns)?turns:fallbackTurns;
+  target.inputTokens+=Number.isFinite(input)?input:0;
+  target.outputTokens+=Number.isFinite(output)?output:0;
+  target.costUsd+=Number.isFinite(cost)?cost:0;
+}
+function summarizeDiagnostic(diagnostic){
+  const lines=String(diagnostic||'').split(/\r?\n/).map(line=>line.trim()).filter(Boolean);
+  for(let i=lines.length-1;i>=0;i--){
+    const line=lines[i];
+    if(line.startsWith('{')){
+      try{
+        const obj=JSON.parse(line);
+        const msg=obj.error?.message||obj.error||obj.message||obj.result||obj.response;
+        if(typeof msg==='string'&&msg.trim())return msg.trim().replace(/\s+/g,' ').slice(0,220);
+      }catch{}
+    }
+    if(/error|fail|exception|denied|invalid|refused|limit|expired|not found|unknown/i.test(line))
+      return line.replace(/\s+/g,' ').slice(0,220);
+  }
+  return lines.length?lines.at(-1).replace(/\s+/g,' ').slice(0,220):'';
+}
 function parseCodex(stdout, session) {
   const events = stdout.split('\n').flatMap(line => {
     try { return [JSON.parse(line)]; } catch { return []; }
   });
+  const usage={turns:0,inputTokens:0,outputTokens:0,costUsd:0};
+  for(const event of events)if(event.type==='turn.completed'&&event.usage)sumUsage(usage,event.usage,1);
+  if(!usage.turns)usage.turns=1;
   return {
     toolDiagnostics: events.filter(event=>event.type==='item.completed'&&event.item?.type==='command_execution'&&event.item.exit_code!==0).map(event=>event.item.aggregated_output||'').join('\n'),
     id: session || events.find(event => event.type === 'thread.started')?.thread_id,
     reply: events.filter(event => event.type === 'item.completed' && event.item?.type === 'agent_message')
-      .map(event => event.item.text).filter(Boolean).at(-1)
+      .map(event => event.item.text).filter(Boolean).at(-1),
+    usage
   };
 }
 
 function diagnoseCliFailure(provider,error,diagnostic){
   const name={codex:'Codex',claude:'Claude Code',agy:'Antigravity'}[provider]||'CLI';
+  const detail=summarizeDiagnostic(diagnostic);
   const failure=(code,message,action)=>Object.assign(new Error(name+' · '+message+' '+action),{cliCode:code});
   if(/app runtime provisioning service|failed to create unified exec process|appx.*provision/i.test(diagnostic))
     return failure('windows_runtime','Windows에서 작업 명령을 실행하는 환경이 시작되지 않았어요.','기존 데스크톱 대화를 연결하거나 독립 CLI 설치를 확인하세요.');
@@ -49,13 +80,14 @@ function diagnoseCliFailure(provider,error,diagnostic){
     return failure('model_unavailable','선택한 모델을 사용할 수 없어요.','모델 목록에서 다른 모델을 선택하세요.');
   if(error?.code==='ENOENT')return failure('cli_missing','실행 파일이나 작업 폴더를 찾지 못했어요.','CLI를 설치하고 시작 화면에서 프로젝트를 다시 선택하세요.');
   if(['EACCES','EPERM'].includes(error?.code))return failure('access_denied','Windows가 CLI 실행을 차단했어요.','실행 파일과 프로젝트 폴더의 접근 권한을 확인하세요.');
-  if(error?.killed||/timed out|timeout/i.test(diagnostic))return failure('timeout','제한 시간 안에 응답이 오지 않았어요.','CLI에서 네트워크와 장시간 작업 여부를 확인한 뒤 다시 시도하세요.');
+  if(error?.killed||/timed out|timeout/i.test(diagnostic))
+    return failure('timeout','제한 시간 안에 응답이 오지 않았어요'+(detail?' ('+detail+')':'')+'.','CLI에서 네트워크와 장시간 작업 여부를 확인한 뒤 다시 시도하세요.');
   if(/econn|enotfound|tls handshake|network connection|unable to connect/i.test(diagnostic))
     return failure('network','CLI가 서비스에 연결하지 못했어요.','인터넷 연결을 확인한 뒤 다시 시도하세요.');
   if(/untrusted|trust this (?:project|folder)|workspace trust/i.test(diagnostic))
     return failure('project_trust','CLI가 프로젝트 신뢰 확인을 요청했어요.','터미널에서 같은 폴더를 열고 신뢰 여부를 확인하세요.');
   const suffix=typeof error?.code==='number'?' (종료 코드 '+error.code+')':'';
-  return failure('unknown','CLI에서 완성된 응답을 받지 못했어요'+suffix+'.','같은 프로젝트에서 CLI를 직접 열어 오류를 확인하세요.');
+  return failure('unknown','CLI에서 완성된 응답을 받지 못했어요'+suffix+(detail?': '+detail:'')+'.','같은 프로젝트에서 CLI를 직접 열어 오류를 확인하세요.');
 }
 
 const devCommands=['node','npm','pytest','cargo test','cargo build','go test','go build','dotnet test','dotnet build','git status','git diff','git log','git show','git add','git commit','git branch','git fetch','git remote','git rev-parse','git ls-files','git blame','ls','pwd','cat','head','tail','wc','grep'];
@@ -73,11 +105,70 @@ function mergeLiveReplies(parts){
   }
   return [...calls,bodies.join('\n\n')].join('\n');
 }
-function runClaudeLive(file,prefix,args,project,prompt,session,inboxFile){
+function createProgressWriter(progressFile){
+  if(!progressFile)return()=>{};
+  let lastStep='', preview='', lastChunk='', lastAt=0;
+  const cleanPreview=text=>String(text||'').replace(/^(?:\[\[(?:CALL|TO):[^\]\r\n]+\]\]\s*)+/,'').trim();
+  return (step,chunk)=>{
+    const clean=chunk?cleanPreview(chunk):'';
+    const nextChunk=clean&&clean!=='[[AGENT_ROOM_NO_REPLY]]'&&clean!==lastChunk?clean:'';
+    if(nextChunk){
+      lastChunk=nextChunk;
+      preview=(preview?preview+'\n\n'+nextChunk:nextChunk).slice(-4000);
+    }
+    if(!step&&!nextChunk)return;
+    const nextStep=step||lastStep||'작업 진행 중…';
+    const now=Date.now();
+    if(!nextChunk&&nextStep===lastStep&&now-lastAt<250)return;
+    lastStep=nextStep; lastAt=now;
+    try{fs.writeFileSync(progressFile,JSON.stringify({step:nextStep,preview,updatedAt:now}));}catch{}
+  };
+}
+function toolLabel(name,input){
+  const n=String(name||'');
+  const rawPath=input?.file_path||input?.path||input?.Path||input?.TargetFile||'';
+  const base=rawPath?path.basename(String(rawPath)):'';
+  if(/^(read|read_file|view_file)$/i.test(n))return base?'파일 읽는 중: '+base:'파일 읽는 중…';
+  if(/^(edit|write|edit_file|write_file|replace_file_content|multi_replace_file_content)$/i.test(n))return base?'파일 수정 중: '+base:'파일 수정 중…';
+  if(/^(bash|powershell|run_command|exec)$/i.test(n))return '명령 실행 중…';
+  if(/search|grep|find/i.test(n))return '코드 검색 중…';
+  return n?n+' 실행 중…':'작업 진행 중…';
+}
+function describeStreamProgress(event){
+  if(!event||typeof event!=='object')return null;
+  if(event.type==='assistant'&&Array.isArray(event.message?.content)){
+    let step='', text='';
+    for(const b of event.message.content){
+      if(b?.type==='tool_use')step=toolLabel(b.name,b.input);
+      else if(b?.type==='thinking'&&!step)step='생각 중…';
+      else if(b?.type==='text'&&b.text){text+=(text?'\n':'')+b.text;if(!step)step='답변 작성 중…';}
+    }
+    return step||text?{step,text}:null;
+  }
+  if(event.type==='step_update'){
+    const text=typeof event.text==='string'?event.text:typeof event.content==='string'?event.content:typeof event.response==='string'?event.response:'';
+    if(event.tool_info?.name)return {step:toolLabel(event.tool_info.name,event.tool_info.parameters||event.tool_info.input),text};
+    const st=String(event.step_type||'').toLowerCase();
+    const step=st.includes('think')||st.includes('reason')?'생각 중…':st.includes('tool')||st.includes('command')?'도구 실행 중…':st.includes('resp')||st.includes('text')||st.includes('answer')?'답변 작성 중…':'작업 진행 중…';
+    return {step,text};
+  }
+  if(event.type==='item.started'||event.type==='item.completed'){
+    const t=event.item?.type;
+    const text=event.type==='item.completed'&&t==='agent_message'&&typeof event.item?.text==='string'?event.item.text:'';
+    const step=t==='command_execution'?'명령 실행 중…':t==='file_change'?'파일 수정 중…':t==='reasoning'?'생각 중…':t==='agent_message'?'답변 작성 중…':'';
+    return step||text?{step,text}:null;
+  }
+  if(event.type==='init'||event.type==='system')return {step:'세션 초기화 중…',text:''};
+  return null;
+}
+function runStreamLive(provider,file,prefix,args,project,prompt,session,inboxFile,progressFile){
   return new Promise((resolve,reject)=>{
+    const writeProgress=createProgressWriter(progressFile);
+    writeProgress('CLI 시작 중…');
     const child=spawn(file,[...prefix,...args],{cwd:project,windowsHide:true});
     const closingFile=inboxFile+'.closing', liveFile=inboxFile+'.live';
     const parts=[];
+    const usage={turns:0,inputTokens:0,outputTokens:0,costUsd:0};
     let sent=0,done=0,offset=0,buffer='',stderr='',failure='',id=session,closing=false,timedOut=false,lastEvent=Date.now();
     const send=text=>{sent++;child.stdin.write(JSON.stringify({type:'user',message:{role:'user',content:[{type:'text',text}]}})+'\n');};
     const pull=source=>{
@@ -109,21 +200,28 @@ function runClaudeLive(file,prefix,args,project,prompt,session,inboxFile){
         const line=buffer.slice(0,at);buffer=buffer.slice(at+1);
         let event;try{event=JSON.parse(line);}catch{continue;}
         lastEvent=Date.now();
-        if(event.session_id)id=event.session_id;
+        const info=describeStreamProgress(event);
+        if(info)writeProgress(info.step,info.text);
+        if(event.conversation_id||event.session_id)id=event.conversation_id||event.session_id;
+        if(event.type==='error'||event.error)failure+='\n'+(event.error?.message||event.error||event.message||'');
         if(event.type==='result'){
           done++;
-          if(event.is_error)failure+='\n'+(event.result||event.subtype||'');
-          else parts.push(event.result);
+          sumUsage(usage,event.usage||event.token_usage||{total_cost_usd:event.total_cost_usd},1);
+          if(event.total_cost_usd&&!event.usage?.total_cost_usd)usage.costUsd+=Number(event.total_cost_usd)||0;
+          const ok=event.status?(event.status==='SUCCESS'||event.status==='success'):!event.is_error;
+          const reply=event.response??event.result;
+          if(ok&&typeof reply==='string')parts.push(reply);
+          else failure+='\n'+(Array.isArray(event.errors)?event.errors.join('; '):'')+' '+(event.error||event.message||event.result||event.response||event.status||event.subtype||'');
           poll();
         }
       }
     });
     const cleanup=()=>{clearInterval(poller);clearTimeout(killer);for(const item of [inboxFile,closingFile,liveFile])fs.rmSync(item,{force:true});};
-    child.once('error',error=>{cleanup();reject(diagnoseCliFailure('claude',error,stderr));});
+    child.once('error',error=>{cleanup();reject(diagnoseCliFailure(provider,error,stderr));});
     child.once('close',code=>{
       cleanup();
-      if(id&&parts.length)return resolve({id,reply:mergeLiveReplies(parts)});
-      reject(diagnoseCliFailure('claude',timedOut?{killed:true}:{code},stderr+failure));
+      if(id&&parts.length)return resolve({id,reply:mergeLiveReplies(parts),usage});
+      reject(diagnoseCliFailure(provider,timedOut?{killed:true}:{code},stderr+failure));
     });
     fs.writeFileSync(liveFile,'1');
     send(prompt);
@@ -144,7 +242,8 @@ function runCodex(project, prompt, session, provider='codex',model=null,effort=n
     if(permission==='dev')claudeArgs.push('--allowedTools',devAllowedTools);
     if(permission!=='full'&&options.approvalConfig)claudeArgs.push('--mcp-config',options.approvalConfig,'--permission-prompt-tool','mcp__agent-room-approval__permission_prompt');
   }
-  const agyArgs=['-p',prompt,'--output-format','json',...(session?['--conversation',session]:[]),'--print-timeout','285s'];
+  const agyPerm=options.rank?['--mode','plan']:permission==='full'?['--dangerously-skip-permissions']:['--mode',permission==='edit'?'accept-edits':'auto'];
+  const agyArgs=['-p',prompt,'--output-format','json',...agyPerm,...(session?['--conversation',session]:[]),'--print-timeout','285s'];
   if(model){codexArgs.splice(-1,0,'--model',model);claudeArgs.push('--model',model);agyArgs.push('--model',model);}
   if(effort){
     codexArgs.splice(-1,0,'-c','model_reasoning_effort='+JSON.stringify(effort));
@@ -154,8 +253,16 @@ function runCodex(project, prompt, session, provider='codex',model=null,effort=n
   if(claude&&!options.rank&&options.inboxFile){
     claudeArgs[2]='stream-json';
     claudeArgs.push('--input-format','stream-json','--verbose');
-    return runClaudeLive(file,prefix,claudeArgs,project,prompt,session,options.inboxFile);
+    return runStreamLive('claude',file,prefix,claudeArgs,project,prompt,session,options.inboxFile,options.progressFile);
   }
+  if(agy&&!options.rank&&options.inboxFile){
+    const liveArgs=['--input-format','stream-json','--output-format','stream-json','-p=',...agyPerm,...(session?['--conversation',session]:[]),'--print-timeout','1800s'];
+    if(model)liveArgs.push('--model',model);
+    if(effort)liveArgs.push('--effort',effort);
+    return runStreamLive('agy',file,prefix,liveArgs,project,prompt,session,options.inboxFile,options.progressFile);
+  }
+  const writeProgress=createProgressWriter(options.progressFile);
+  writeProgress('CLI 실행 중…');
   return new Promise((resolve,reject)=>{
     const child=execFile(file,[...prefix,...(agy?agyArgs:claude?claudeArgs:codexArgs)],{
       cwd:project,windowsHide:true,timeout:options.rank?25000:agy?300000:1800000,maxBuffer:8*1024*1024
@@ -164,10 +271,15 @@ function runCodex(project, prompt, session, provider='codex',model=null,effort=n
       try {
         if(agy){
           const response=JSON.parse(stdout);
-          if(response.status==='SUCCESS'||response.status==='success')result={id:response.conversation_id,reply:response.response};
+          const usage={turns:0,inputTokens:0,outputTokens:0,costUsd:0};
+          sumUsage(usage,response.usage||response.token_usage||{total_cost_usd:response.total_cost_usd},1);
+          if(response.status==='SUCCESS'||response.status==='success')result={id:response.conversation_id,reply:response.response,usage};
         }else if(claude){
           const response=JSON.parse(stdout);
-          if(!response.is_error)result={id:response.session_id,reply:response.result};
+          const usage={turns:0,inputTokens:0,outputTokens:0,costUsd:0};
+          sumUsage(usage,response.usage||{total_cost_usd:response.total_cost_usd},1);
+          if(response.total_cost_usd&&!response.usage?.total_cost_usd)usage.costUsd+=Number(response.total_cost_usd)||0;
+          if(!response.is_error)result={id:response.session_id,reply:response.result,usage};
         }else result=parseCodex(stdout,session);
       }catch{}
       const diagnostic=(stderr||'')+'\n'+stdout;
@@ -185,6 +297,16 @@ function runCodex(project, prompt, session, provider='codex',model=null,effort=n
       delete result.toolDiagnostics;
       resolve(result);
     });
+    if(provider==='codex'&&options.progressFile){
+      let codexBuf='';
+      child.stdout?.on('data',chunk=>{
+        codexBuf+=chunk;
+        for(let at=codexBuf.indexOf('\n');at>=0;at=codexBuf.indexOf('\n')){
+          const line=codexBuf.slice(0,at);codexBuf=codexBuf.slice(at+1);
+          try{const info=describeStreamProgress(JSON.parse(line));if(info)writeProgress(info.step,info.text);}catch{}
+        }
+      });
+    }
     child.stdin.on('error',()=>{});
     child.stdin.end(agy?undefined:prompt);
   });
@@ -245,4 +367,4 @@ function discoverModels(project,provider){
   });
 }
 
-module.exports={runCodex,discoverModels,diagnoseCliFailure};
+module.exports={runCodex,discoverModels,diagnoseCliFailure,cliCommand};

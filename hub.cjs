@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
 const {createHandoff}=require('./handoff.cjs');
-const {runCodex,discoverModels} = require('./managed-codex.cjs');
+const {runCodex,discoverModels,cliCommand} = require('./managed-codex.cjs');
 const {spawn,execFile}=require('node:child_process');
 const version=fs.readFileSync(path.join(__dirname,'VERSION'),'utf8').trim();
 const {randomUUID, randomBytes, timingSafeEqual} = require('node:crypto');
@@ -32,6 +32,9 @@ if(!all('PRAGMA table_info(cli_sessions)').some(column=>column.name==='effort'))
 if(!all('PRAGMA table_info(cli_sessions)').some(column=>column.name==='last_cli_error'))db.exec('ALTER TABLE cli_sessions ADD COLUMN last_cli_error TEXT');
 const normalizeEffort=value=>{if(!value)return null;if(!['low','medium','high'].includes(value))throw Error('Unsupported reasoning effort.');return value;};
 if(!all('PRAGMA table_info(cli_sessions)').some(column=>column.name==='permission_profile'))db.exec("ALTER TABLE cli_sessions ADD COLUMN permission_profile TEXT NOT NULL DEFAULT 'dev'");
+for(const [column,type] of [['turns','INTEGER NOT NULL DEFAULT 0'],['input_tokens','INTEGER NOT NULL DEFAULT 0'],['output_tokens','INTEGER NOT NULL DEFAULT 0'],['cost_usd','REAL NOT NULL DEFAULT 0']]){
+  if(!all('PRAGMA table_info(cli_sessions)').some(col=>col.name===column))db.exec('ALTER TABLE cli_sessions ADD COLUMN '+column+' '+type);
+}
 const normalizePermission=value=>{if(value===undefined||value===null||value==='')return 'dev';if(!['edit','dev','full'].includes(value))throw Error('Unsupported permission level.');return value;};
 const approvals=new Map(), approvalTurns=new Map();
 db.exec('CREATE TABLE IF NOT EXISTS approval_rules(member TEXT NOT NULL,rule TEXT NOT NULL,PRIMARY KEY(member,rule))');
@@ -191,8 +194,10 @@ function queueForRoom(room,author,seq,recipient=null,root=null){
 }
 const spool=path.join(local,'spool');
 fs.mkdirSync(spool,{recursive:true});
-const spoolPaths=id=>({job:path.join(spool,id+'.job.json'),result:path.join(spool,id+'.result.json'),pid:path.join(spool,id+'.pid'),inbox:path.join(spool,id+'.inbox'),closing:path.join(spool,id+'.inbox.closing'),live:path.join(spool,id+'.inbox.live')});
+const spoolPaths=id=>({job:path.join(spool,id+'.job.json'),result:path.join(spool,id+'.result.json'),pid:path.join(spool,id+'.pid'),inbox:path.join(spool,id+'.inbox'),closing:path.join(spool,id+'.inbox.closing'),live:path.join(spool,id+'.inbox.live'),progress:path.join(spool,id+'.progress.json')});
 const liveTurns=new Map();
+const liveProgress=new Map();
+const readProgress=participant=>{const f=liveProgress.get(participant);if(!f)return null;try{return JSON.parse(fs.readFileSync(f,'utf8'));}catch{return null;}};
 function deliverLive(participant,row){
   const inbox=liveTurns.get(participant);
   if(!inbox||!fs.existsSync(inbox+'.live'))return false;
@@ -266,7 +271,12 @@ async function cliTurn(participant, prompt, inputSeq){
     const origin=input?one('SELECT request FROM messages WHERE seq=?',input.relay_root??inputSeq):null;
     const permission=session.permission_profile==='full'&&origin?.request?.startsWith('remote:')?'dev':session.permission_profile;
     const turnOptions={permission};
-    if(session.provider==='claude'&&jobId){
+    if(jobId){
+      const progress=spoolPaths(jobId).progress;
+      turnOptions.progressFile=progress;
+      liveProgress.set(participant,progress);
+    }
+    if((session.provider==='claude'||session.provider==='agy')&&jobId){
       const inbox=spoolPaths(jobId).inbox;
       if(!priorJob)fs.writeFileSync(inbox,'',{flag:'wx',mode:0o600});
       turnOptions.inboxFile=inbox;
@@ -281,7 +291,7 @@ async function cliTurn(participant, prompt, inputSeq){
     const peers=all("SELECT id,name FROM members WHERE room=? AND state='approved' AND id<>?",row.room,participant);
     const context='Your display name in Agent Room is '+JSON.stringify(row.name)+'. Your agent provider is '+session.provider+'. Use this name when interpreting mentions and identifying yourself. You are in a shared Agent Room chat. Your normal response goes to the whole room. Keep the default so other agents can follow progress. Only when a specific reply really needs a single recipient, put [[TO:participant-id]] on its own first line, using an exact ID from this room roster: '+JSON.stringify(peers)+'. Never invent a reply from another agent.';
     const audience=!input?'This is the first turn.':input.author.startsWith('human:')?'The user posted to the whole room.':'Another agent posted to the whole room.';
-    const replyPolicy='This room works like a real conversation: speak when you have something useful to add, and everyone can read what you post. If you need another agent to act or answer, put [[CALL:participant-id]] on its own line at the very start of your reply, one line per agent, using an exact roster ID; only called agents are woken. If no reply is needed, respond exactly [[AGENT_ROOM_NO_REPLY]]. Avoid courtesy acknowledgments and unnecessary agent-to-agent chatter.';
+    const replyPolicy='This room works like a real conversation: speak when you have something useful to add, and everyone can read what you post. Before starting non-trivial work (editing files, running commands or tests, investigating), briefly state what you plan to do and which files you will touch. If you need another agent to act or answer, put [[CALL:participant-id]] on its own line at the very start of your reply, one line per agent, using an exact roster ID; only called agents are woken. If no reply is needed, respond exactly [[AGENT_ROOM_NO_REPLY]]. Avoid courtesy acknowledgments and unnecessary agent-to-agent chatter.';
     const history=all("SELECT members.name,messages.body FROM messages JOIN members ON members.id=messages.author WHERE messages.room=? AND (messages.recipient IS NULL OR messages.recipient=? OR messages.author=?) AND messages.request NOT LIKE 'receipt:%' AND messages.seq<>? ORDER BY messages.seq DESC LIMIT 12",row.room,participant,participant,inputSeq??0).reverse();
     const received=inputSeq?all("SELECT messages.seq,members.name,messages.body FROM deliveries JOIN messages USING(seq) JOIN members ON members.id=messages.author WHERE deliveries.member=? AND deliveries.state='context_only' AND messages.seq<? ORDER BY messages.seq DESC LIMIT 10",participant,inputSeq).reverse():[];
     const alert=inputSeq?one('SELECT task,revision FROM handoff_alerts WHERE seq=?',inputSeq):null;
@@ -308,8 +318,8 @@ async function cliTurn(participant, prompt, inputSeq){
     const recipient=match&&peers.some(peer=>peer.id===match[1])?match[1]:null;
     const body=recipient?match[2].trim():replyText.trim();
     const silent=!body||body==='[[AGENT_ROOM_NO_REPLY]]';
-    run('UPDATE cli_sessions SET thread=? WHERE member=?',result.id,participant);
-    run('UPDATE cli_sessions SET last_cli_error=? WHERE member=?',result.issue?JSON.stringify(result.issue):null,participant);
+    run('UPDATE cli_sessions SET thread=?, last_cli_error=?, turns=turns+?, input_tokens=input_tokens+?, output_tokens=output_tokens+?, cost_usd=cost_usd+? WHERE member=?',
+      result.id,result.issue?JSON.stringify(result.issue):null,result.usage?.turns||1,result.usage?.inputTokens||0,result.usage?.outputTokens||0,result.usage?.costUsd||0,participant);
     if(row.state==='starting')run("UPDATE members SET state='approved' WHERE id=? AND state='starting'",participant);
     if(!silent&&one("SELECT id FROM members WHERE id=? AND state='approved'",participant)){
       const root=input?.relay_root??inputSeq??null;
@@ -340,6 +350,7 @@ async function cliTurn(participant, prompt, inputSeq){
   }finally{
     cliBusy.delete(participant);
     liveTurns.delete(participant);
+    liveProgress.delete(participant);
     approvalTurns.delete(approvalTurn);
     for(const item of approvals.values())if(item.member===participant)approvals.delete(item.id);
     fs.rmSync(approvalConfig,{force:true});
@@ -377,10 +388,31 @@ function member(id,room){
   if(result.parent&&!one("SELECT id FROM members WHERE id=? AND room=? AND state='approved'",result.parent,room)) throw Error('The parent participant is disconnected.');
   return result;
 }
-function recordUserMessage(room,text,request=randomUUID()){
+const uploads=path.join(local,'uploads');
+fs.mkdirSync(uploads,{recursive:true});
+function saveAttachments(items){
+  if(!Array.isArray(items)||!items.length)return [];
+  if(items.length>10)throw Error('파일은 한 번에 10개까지 첨부할 수 있어요.');
+  return items.map(item=>{
+    const rawName=typeof item?.name==='string'?path.basename(item.name).replace(/[^\w.\-\u3131-\uD7A3 ]+/g,'_').trim():'';
+    const safeName=(rawName||'file').slice(0,80);
+    const data=typeof item?.data==='string'?item.data:'';
+    const buf=Buffer.from(data,'base64');
+    if(!buf.length||buf.length>8*1024*1024)throw Error('첨부 파일 크기는 8MB 이하여야 해요.');
+    const stored=randomUUID().slice(0,8)+'-'+safeName;
+    const fullPath=path.join(uploads,stored);
+    fs.writeFileSync(fullPath,buf,{mode:0o600});
+    return {name:safeName,stored,fullPath};
+  });
+}
+function recordUserMessage(room,text,request=randomUUID(),attachments=[]){
   if(!one('SELECT id FROM rooms WHERE id=?',room))throw Error('Room not found.');
   if(draining)throw Error('Hub is restarting.');
-  const body=str(text,8000), human='human:'+room;
+  const saved=saveAttachments(attachments);
+  const raw=typeof text==='string'?text.trim():'';
+  const baseText=raw||(saved.length?'첨부 파일을 보냈습니다.':'');
+  const suffix=saved.length?'\n\n[첨부 파일]\n'+saved.map(f=>'- '+f.name+': '+f.fullPath).join('\n'):'';
+  const body=str(baseText+suffix,8000), human='human:'+room;
   const existing=one('SELECT seq,body FROM messages WHERE author=? AND request=?',human,request);
   if(existing){if(existing.body!==body)throw Error('Message request already used.');return existing.seq;}
   db.exec('BEGIN');
@@ -470,7 +502,7 @@ function task({action,room,participant,name,text,request,replyTo,after=0,...extr
 }
 function state(){
   return {version,approvals:[...approvals.values()].filter(item=>item.state==='pending').map(({id,room,name,tool,input,rule,created})=>({id,room,name,tool,input,rule,created})),approvalRules:all('SELECT member,rule FROM approval_rules'),ranking:all('SELECT room,enabled,judge_provider,judge_model,judge_effort FROM room_ranking'),replyPlans:all('SELECT seq,state FROM reply_plans'),remoteConfigured:remoteConfigured(),remoteRooms:selectedRemoteRooms(),tasks:handoff.list(),updateStatus:fs.existsSync(updateLog)?fs.readFileSync(updateLog,'utf8').trim().split(/\r?\n/).at(-1):null,rooms:all('SELECT * FROM rooms ORDER BY rowid'),
-    members:all("SELECT members.id,room,name,state,parent,cli_sessions.provider,cli_sessions.model,cli_sessions.effort,cli_sessions.permission_profile,cli_sessions.last_cli_error FROM members LEFT JOIN cli_sessions ON cli_sessions.member=members.id WHERE state<>'human'").map(row=>({...row,busy:cliBusy.has(row.id),cliError:row.last_cli_error?JSON.parse(row.last_cli_error):null})),
+    members:all("SELECT members.id,room,name,state,parent,cli_sessions.provider,cli_sessions.model,cli_sessions.effort,cli_sessions.permission_profile,cli_sessions.last_cli_error,cli_sessions.thread,cli_sessions.turns,cli_sessions.input_tokens,cli_sessions.output_tokens,cli_sessions.cost_usd FROM members LEFT JOIN cli_sessions ON cli_sessions.member=members.id WHERE state<>'human'").map(({thread,...row})=>({...row,hasSession:Boolean(thread),busy:cliBusy.has(row.id),progress:cliBusy.has(row.id)?readProgress(row.id):null,cliError:row.last_cli_error?JSON.parse(row.last_cli_error):null})),
     messages:all("SELECT messages.*,members.name FROM messages JOIN members ON messages.author=members.id WHERE messages.request NOT LIKE 'receipt:%' ORDER BY seq"),
     deliveries:all('SELECT deliveries.seq,deliveries.member,members.name,deliveries.state,deliveries.priority FROM deliveries JOIN members ON deliveries.member=members.id')};
 }
@@ -540,12 +572,17 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==='GET'&&req.url==='/state'){
     return res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'}).end(JSON.stringify(state()));
   }
+  if(req.method==='GET'&&req.url.startsWith('/uploads/')){
+    const file=path.join(uploads,path.basename(decodeURIComponent(req.url.slice('/uploads/'.length).split('?')[0])));
+    if(!fs.existsSync(file))return res.writeHead(404).end();
+    return res.writeHead(200,{'Cache-Control':'no-store'}).end(fs.readFileSync(file));
+  }
   const browser = req.url==='/control';
   if(req.method!=='POST'||(!browser&&!['/tool','/delivery','/shutdown_for_update'].includes(req.url))) return res.writeHead(404).end();
   if(browser?req.headers.origin!==origin:!authorized(req)) return res.writeHead(403).end();
   try{
-    const chunks=[]; let size=0;
-    for await(const chunk of req){size+=chunk.length;if(size>32768)return res.writeHead(413).end();chunks.push(chunk);}
+    const chunks=[]; let size=0; const limit=browser?12*1024*1024:65536;
+    for await(const chunk of req){size+=chunk.length;if(size>limit)return res.writeHead(413).end();chunks.push(chunk);}
     const args=JSON.parse(Buffer.concat(chunks).toString('utf8'));
     if(req.url==='/shutdown_for_update'){
       if(draining||desktopBusy.size||rankingRooms.size)return res.writeHead(409,{'Content-Type':'application/json'}).end(JSON.stringify({error:'Agent Room is busy. Wait for the active reply before updating.'}));
@@ -642,10 +679,22 @@ const server=http.createServer(async(req,res)=>{
         if(args.clearRules===true)run('DELETE FROM approval_rules WHERE member=?',args.participant);
         run('UPDATE members SET name=? WHERE id=?',name,args.participant);
       }
+      else if(args.action==='open_cli'){
+        if(process.platform!=='win32')throw Error('CLI 바로 열기는 Windows에서 사용할 수 있어요.');
+        const agent=one("SELECT cli_sessions.provider,cli_sessions.project,cli_sessions.thread FROM cli_sessions JOIN members ON members.id=cli_sessions.member WHERE member=? AND room=? AND state='approved'",args.participant,args.room);
+        if(!agent?.thread)throw Error('열 수 있는 CLI 세션이 아직 없어요.');
+        if(!agent.project||!fs.existsSync(agent.project))throw Error('프로젝트 폴더를 찾을 수 없어요.');
+        const [file,...prefix]=cliCommand(agent.provider);
+        const resume=agent.provider==='claude'?['--resume',agent.thread]:agent.provider==='agy'?['--conversation',agent.thread]:['resume',agent.thread];
+        const quote=v=>'"'+String(v).replace(/"/g,'""')+'"';
+        const cmd=[file,...prefix,...resume].map(quote).join(' ');
+        const child=spawn('cmd.exe',['/c','start','Agent Room CLI','/D',agent.project,'cmd.exe','/k',cmd],{detached:true,stdio:'ignore',windowsHide:false});
+        child.unref();
+      }
       else if(args.action==='user_message'){
         if(draining)throw Error('업데이트 중이에요. 잠시 후 다시 시도하세요.');
         if(!one('SELECT id FROM rooms WHERE id=?',args.room))throw Error('Room not found.');
-        recordUserMessage(args.room,args.text);
+        recordUserMessage(args.room,args.text,undefined,args.attachments);
         dispatchQueuedTurns();
       }
       else if(args.action==='room_code'){

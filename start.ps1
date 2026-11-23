@@ -77,7 +77,18 @@ $install.add_Click({
         if($Native){
             $nativePath=Join-Path $PSScriptRoot 'native-chat.ps1'
             Start-Process -FilePath 'powershell.exe' -ArgumentList ('-NoProfile -STA -ExecutionPolicy Bypass -File "'+$nativePath+'"') -WindowStyle Hidden
-        }else{Start-Process 'http://127.0.0.1:4317'}
+        }else{
+            $appBrowser=@(
+                (Get-Command msedge.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1),
+                "$env:ProgramFiles(x86)\Microsoft\Edge\Application\msedge.exe",
+                "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe",
+                (Get-Command chrome.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1),
+                "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+                "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
+            ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
+            if($appBrowser){Start-Process -FilePath $appBrowser -ArgumentList '--app=http://127.0.0.1:4317'}
+            else{Start-Process 'http://127.0.0.1:4317'}
+        }
         $form.Close()
     } catch {
         $status.Text = 'Setup needs attention.'
