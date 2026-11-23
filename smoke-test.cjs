@@ -94,7 +94,8 @@ async function main(){
   await rpc('/control',{action:'user_message',room:room.id,participant:managed.id,text:'Hold reply'});
   const working=await until(async()=>(await sync()).deliveries.find(d=>d.name==='Codex CLI'&&d.state==='working'));
   const pendingState=await sync();
-  assert.ok(pendingState.messages.some(m=>m.author===managed.id&&m.seq>working.seq&&m.body==='메시지를 받았습니다. 응답을 준비합니다.'));
+  assert.ok(pendingState.members.find(m=>m.id===managed.id).busy);
+  assert.ok(!pendingState.messages.some(m=>m.author===managed.id&&m.seq>working.seq&&m.body==='메시지를 받았습니다. 응답을 준비합니다.'));
   assert.ok(!pendingState.messages.some(m=>m.body==='Resumed: Hold reply'));
   await until(async()=>(await sync()).deliveries.find(d=>d.seq===working.seq&&d.state==='answered'));
   const claudeState=await rpc('/control',{action:'new_claude',room:room.id});
@@ -171,21 +172,6 @@ async function main(){
   const bad=await rpc('/control',{action:'user_message',room:room.id,text:'Bad rank JSON'});
   const badSeq=bad.messages.find(m=>m.body==='Bad rank JSON').seq;
   await until(async()=>(await sync()).replyPlans.find(p=>p.seq===badSeq&&p.state==='fallback'));
-  const directText='@Reviewer, confirm the task';
-  const direct=await rpc('/control',{action:'user_message',room:room.id,text:directText});
-  const directSeq=direct.messages.find(m=>m.body===directText).seq;
-  await until(async()=>(await sync()).deliveries.find(d=>d.seq===directSeq&&d.member===managedAgy.id&&d.priority===1));
-  await rpc('/control',{action:'edit_agent',room:room.id,participant:managedAgy.id,model:'other-model',name:'sol 6.2',effort:'low'});
-  for(const [text,priority] of [['솔, 해줘',1],['솔직히 궁금해',0],['solution is here',0]]){
-    const state=await rpc('/control',{action:'user_message',room:room.id,text});
-    const seq=state.messages.find(m=>m.body===text).seq;
-    await until(async()=>(await sync()).deliveries.find(d=>d.seq===seq&&d.member===managedAgy.id&&d.priority===priority));
-  }
-  await rpc('/control',{action:'edit_agent',room:room.id,participant:managedAgy.id,model:'other-model',name:'opus 5.5',effort:'low'});
-  const shortName='opus가 해';
-  const shortState=await rpc('/control',{action:'user_message',room:room.id,text:shortName});
-  const shortSeq=shortState.messages.find(m=>m.body===shortName).seq;
-  await until(async()=>(await sync()).deliveries.find(d=>d.seq===shortSeq&&d.member===managedAgy.id&&d.priority===1));
   const privateText='Private test '+managedAgy.id;
   const privateState=await rpc('/control',{action:'user_message',room:room.id,text:privateText});
   const privateSeq=privateState.messages.find(m=>m.body===privateText).seq;

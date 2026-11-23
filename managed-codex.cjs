@@ -58,6 +58,8 @@ function diagnoseCliFailure(provider,error,diagnostic){
   return failure('unknown','CLI에서 완성된 응답을 받지 못했어요'+suffix+'.','같은 프로젝트에서 CLI를 직접 열어 오류를 확인하세요.');
 }
 
+const devCommands=['node','npm','git status','git diff','git log','git show','git add','git commit','git branch','git fetch'];
+const devAllowedTools=['Bash','PowerShell'].flatMap(tool=>devCommands.map(command=>tool+'('+command+':*)')).join(',');
 function runCodex(project, prompt, session, provider='codex',model=null,effort=null,options={}) {
   const claude=provider==='claude';
   const agy=provider==='agy';
@@ -66,8 +68,13 @@ function runCodex(project, prompt, session, provider='codex',model=null,effort=n
   const codexArgs=session?['exec','resume','--json','--skip-git-repo-check',session,'-']:['exec','--json','--skip-git-repo-check','-'];
   if(provider==='codex'&&process.platform==='win32'&&(process.env.AGENT_ROOM_CODEX_SANDBOX||cliSettings().codexSandbox)==='mxc')codexArgs.unshift('-c','windows.sandbox="mxc"');
   if(options.rank)codexArgs.splice(-1,0,'--sandbox','read-only');
-  const claudeArgs=['--print','--output-format','json','--permission-mode',options.rank?'plan':'acceptEdits',...(session?['--resume',session]:[])];
+  const permission=options.permission||'dev';
+  const claudeArgs=['--print','--output-format','json','--permission-mode',options.rank?'plan':permission==='full'?'bypassPermissions':'acceptEdits',...(session?['--resume',session]:[])];
   if(options.rank)claudeArgs.push('--tools','','--no-session-persistence','--strict-mcp-config');
+  else{
+    if(permission==='dev')claudeArgs.push('--allowedTools',devAllowedTools);
+    if(permission!=='full'&&options.approvalConfig)claudeArgs.push('--mcp-config',options.approvalConfig,'--permission-prompt-tool','mcp__agent-room-approval__permission_prompt');
+  }
   const agyArgs=['-p',prompt,'--output-format','json',...(session?['--conversation',session]:[]),'--print-timeout','285s'];
   if(model){codexArgs.splice(-1,0,'--model',model);claudeArgs.push('--model',model);agyArgs.push('--model',model);}
   if(effort){

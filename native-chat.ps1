@@ -26,7 +26,7 @@ Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
       </ScrollViewer>
       <DockPanel Grid.Row="2" Margin="0,10,0,0" LastChildFill="True">
         <Button Name="Send" DockPanel.Dock="Right" Content="보내기" MinWidth="84" Margin="8,0,0,0"/>
-        <TextBox Name="Draft" MaxLength="8000" MinHeight="35" TextWrapping="Wrap" VerticalContentAlignment="Center"/>
+        <TextBox Name="Draft" MaxLength="8000" MinHeight="35" MaxHeight="160" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap" VerticalContentAlignment="Center"/>
       </DockPanel>
       <TextBlock Name="Status" Grid.Row="3" Foreground="#FFC797" Margin="0,5,0,0" TextWrapping="Wrap"/>
     </Grid>

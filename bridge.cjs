@@ -8,7 +8,7 @@ const local=path.join(__dirname,'local');
 const provider=process.argv[2];
 const thread=process.argv[3];
 const claude=provider==='claude';
-if(!['claude','codex','work'].includes(provider))throw Error('Specify claude, codex, or work.');
+if(!['claude','codex','work','approval'].includes(provider))throw Error('Specify claude, codex, or work.');
 let joined, timer, busy=false, joining=false;
 const emit=payload=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',...payload})+'\n');
 async function hub(route,data){
@@ -92,7 +92,33 @@ const tools=[
   setup('read_messages','Read room messages after a sequence number.',{after:{type:'integer',minimum:0}}),
   setup('send_message','Send a message to the approved room. Reuse request ID on retry.',{request:str,text:str})
 ];
+async function askApproval({tool_name:tool,input={}}){
+  const turn=process.env.AGENT_ROOM_APPROVAL_TURN;
+  const deny=message=>({behavior:'deny',message});
+  try{
+    const {id}=await hub('/tool',{action:'approval_request',turn,tool:String(tool),input:JSON.stringify(input).slice(0,2000)});
+    const deadline=Date.now()+240000;
+    while(Date.now()<deadline){
+      await new Promise(resolve=>setTimeout(resolve,1000));
+      const {state}=await hub('/tool',{action:'approval_status',turn,id});
+      if(state==='allowed')return {behavior:'allow',updatedInput:input};
+      if(state!=='pending')return deny('The user denied this action in Agent Room.');
+    }
+    await hub('/tool',{action:'approval_status',turn,id,expire:true});
+    return deny('The approval request timed out in Agent Room.');
+  }catch(error){return deny('Agent Room approval failed: '+error.message);}
+}
+async function invokeApproval(req){
+  if(req.id===undefined)return;
+  const result=value=>emit({id:req.id,result:value});
+  if(req.method==='initialize')return result({protocolVersion:req.params.protocolVersion,serverInfo:{name:'agent-room-approval',version:'0.1.0'},capabilities:{tools:{}}});
+  if(req.method==='ping')return result({});
+  if(req.method==='tools/list')return result({tools:[{name:'permission_prompt',description:'Ask the Agent Room user to allow or deny a tool call.',inputSchema:{type:'object',properties:{tool_name:{type:'string'},input:{type:'object'},tool_use_id:{type:'string'}},required:['tool_name','input']}}]});
+  if(req.method==='tools/call'&&req.params.name==='permission_prompt')return result({content:[{type:'text',text:JSON.stringify(await askApproval(req.params.arguments||{}))}]});
+  return emit({id:req.id,error:{code:-32601,message:'Method not found'}});
+}
 async function invoke(req){
+  if(provider==='approval')return invokeApproval(req);
   if(req.method==='notifications/initialized'){
     timer??=setInterval(receive,1600);
     return;
