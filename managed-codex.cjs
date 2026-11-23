@@ -251,6 +251,15 @@ function runStreamLive(provider,file,prefix,args,project,prompt,session,inboxFil
             else if(block?.type==='tool_use')flushInterim();
           }
         }
+        if(provider==='agy'&&(event.type==='step_update'||event.event==='step_update')){
+          const su=(event.event==='step_update'&&event.step_update&&typeof event.step_update==='object')?event.step_update:event;
+          const st=String(su.step_type||'').toLowerCase();
+          if(su.tool_info?.name||su.tool_name||st.includes('tool')||st.includes('command'))flushInterim();
+          else if(info?.text&&!st.includes('think')&&!st.includes('reason')){
+            if(info.delta)pendingInterim+=info.text;
+            else{if(pendingInterim&&info.text!==pendingInterim)flushInterim();pendingInterim=info.text;}
+          }
+        }
         if(kind==='result')pendingInterim='';
         const cid=event.conversation_id||event.session_id||event.result?.conversation_id||event.step_update?.conversation_id;
         if(cid)id=cid;

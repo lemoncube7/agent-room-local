@@ -45,11 +45,28 @@ async function main(){
       const floors=new Map(selection.map(x=>[x.room,Math.max(x.since,cursor[key(x.room)]||0)]));
       const batch=state.messages.filter(m=>allowed.has(m.room)&&m.seq>floors.get(m.room)).slice(0,35);
       const events=batch.filter(m=>!m.recipient).map(m=>({room:m.room,seq:m.seq,name:m.name,text:m.body.slice(0,30000),created:m.created}));
-      const response=await request(relay,post(headers,{rooms,legacyRoom:initialRoom,acknowledged,events}));
+      const snapshot={
+        members:(state.members||[]).filter(m=>allowed.has(m.room)&&m.state!=='disconnected').map(({id,room,name,state:st,provider,busy,progress,conflict,cliError})=>({id,room,name,state:st,provider,busy,progress,conflict,cliError})),
+        approvals:(state.approvals||[]).filter(a=>allowed.has(a.room)).map(({id,room,name,tool,input,created})=>({id,room,name,tool,input:String(input||'').slice(0,800),created})),
+        limits:state.limits||{},
+        ranking:(state.ranking||[]).filter(r=>allowed.has(r.room))
+      };
+      const response=await request(relay,post(headers,{rooms,legacyRoom:initialRoom,acknowledged,events,snapshot}));
       acknowledged=[];
       for(const item of batch)cursor[key(item.room)]=item.seq;
       if(batch.length)save();
       for(const command of response.commands){
+        let ctrl=null;
+        if(typeof command.text==='string'&&command.text.startsWith('{"__control":true,')){
+          try{ctrl=JSON.parse(command.text);}catch{}
+        }
+        if(ctrl?.__control){
+          if(ctrl.control==='create'||allowed.has(command.room)){
+            try{await request(hub.url+'/tool',post({Authorization:'Bearer '+hub.token},{action:'remote_control',room:command.room,...ctrl}));}catch{}
+          }
+          acknowledged.push(command.id);
+          continue;
+        }
         if(!allowed.has(command.room))continue;
         await request(hub.url+'/tool',post({Authorization:'Bearer '+hub.token},{action:'remote_user_message',room:command.room,request:command.id,text:command.text}));
         acknowledged.push(command.id);

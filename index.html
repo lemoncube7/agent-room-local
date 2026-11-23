@@ -49,7 +49,7 @@ dialog{background:var(--panel);color:var(--text);border-color:var(--line);border
 @media(max-width:640px){body{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}aside{max-height:34vh;border-right:0;border-bottom:1px solid var(--line)}article{max-width:94%}}
 </style>
 <aside><h1>Agent Room <small id="current-version" aria-label="현재 버전">버전 확인 중</small></h1><p id="remote-status">모든 채팅 원격 사용 설정</p> <button id="notify-toggle" type="button">완료 알림 꺼짐</button> <button id="update">업데이트 확인</button><p id="update-result" role="status"></p><form id="new" autocomplete="off"><input name="name" autocomplete="off" aria-label="채팅방 이름" placeholder="새 채팅방 이름" required maxlength="70"><button aria-label="채팅방 만들기">+</button></form><div id="error" role="status"></div><nav id="rooms"></nav></aside>
-<main><header><h2 id="title">채팅방을 선택하세요</h2><div id="room-actions"><button id="pair" hidden>기존 대화 연결 코드 만들기</button><button id="add-agent" hidden>에이전트 추가</button><button id="open-handoff" hidden>작업 인계</button><button id="reply-priority" hidden aria-pressed="false" title="먼저 답할 에이전트를 고르는 기능과 판단 모델을 설정합니다.">답변 순위</button></div><p id="pair-guide" hidden></p><section id="people" aria-label="참가자"></section><section id="activity" aria-label="에이전트 작업 현황"></section></header><section class="history" id="messages" aria-label="공용 대화"></section><section id="approvals" aria-label="허용 요청" aria-live="polite"></section><div id="attach-list" aria-label="첨부 파일 목록"></div><form id="compose" autocomplete="off" hidden style="padding: 12px 25px"><input id="attach" type="file" multiple hidden><button id="attach-btn" type="button" title="파일 첨부 (드래그·붙여넣기 가능)">+ 파일</button><textarea id="draft" rows="1" autocomplete="off" aria-label="메시지" placeholder="방 전체에 메시지 보내기 (Shift+Enter 줄바꿈, 파일 드래그/붙여넣기)" maxlength="8000"></textarea><button type="submit">보내기</button></form></main><dialog id="ranking-dialog"><form id="ranking-form"><h2>답변 순위 설정</h2><p>먼저 답할 에이전트 1명을 고릅니다. 나머지는 메시지를 읽고 대기하다가 필요할 때 호출됩니다.</p><label class="check"><input name="enabled" type="checkbox"> 이 방에서 사용</label><label>판단 CLI<select name="provider"><option value="codex">Codex</option><option value="claude">Claude Code</option></select></label><label>모델<select name="model"><option value="">CLI 기본 모델</option></select></label><label>추론 강도<select name="effort"><option value="low">낮음</option><option value="medium">보통</option><option value="high">높음</option></select></label><small id="ranking-status" role="status"></small><p id="ranking-error" role="status"></p><footer><button id="ranking-cancel" type="button">취소</button><button type="submit">저장</button></footer></form></dialog><dialog id="agent-dialog"><form id="agent-form" autocomplete="off"><h2 id="agent-title">에이전트 추가</h2><input type="hidden" name="provider" value="codex"><div id="provider-buttons" role="group" aria-label="CLI 종류"><button type="button" data-provider="codex">Codex</button><button type="button" data-provider="claude">Claude Code</button><button type="button" data-provider="agy">Antigravity</button></div><label>모델<select name="model"><option value="">CLI 기본 모델</option></select></label><label>추론 강도<select name="effort"><option value="">CLI 기본값</option><option value="low">낮음</option><option value="medium">보통</option><option value="high">높음</option></select></label><label>권한 (Claude · Antigravity)<select name="permission"><option value="edit">편집: 파일 수정만 자동 허용</option><option value="dev" selected>개발: 편집, 조회, 테스트·빌드, git 커밋</option><option value="full">전체: 모든 명령 자동 허용 (주의)</option></select></label><label id="clear-rules-label" class="check" hidden><input type="checkbox" name="clearRules"> <span id="clear-rules-text">항상 허용 목록 지우기</span></label><label>이름<input name="name" autocomplete="off" placeholder="비워 두면 모델명 사용" maxlength="120"></label><small id="model-status" role="status"></small><small id="agent-error" role="status"></small><footer><button type="button" id="agent-cancel">취소</button><button type="submit">저장</button></footer></form></dialog>
+<main><header><h2 id="title">채팅방을 선택하세요</h2><div id="room-actions"><button id="pair" hidden>기존 대화 연결 코드 만들기</button><button id="add-agent" hidden>에이전트 추가</button><button id="open-handoff" hidden>작업 인계</button><button id="reply-priority" hidden aria-pressed="false" title="방 구조 모드(자유/순위/계층형)와 메인 에이전트를 설정합니다.">구조 모드</button></div><p id="pair-guide" hidden></p><section id="people" aria-label="참가자"></section><section id="activity" aria-label="에이전트 작업 현황"></section></header><section class="history" id="messages" aria-label="공용 대화"></section><section id="approvals" aria-label="허용 요청" aria-live="polite"></section><div id="attach-list" aria-label="첨부 파일 목록"></div><form id="compose" autocomplete="off" hidden style="padding: 12px 25px"><input id="attach" type="file" multiple hidden><button id="attach-btn" type="button" title="파일 첨부 (드래그·붙여넣기 가능)">+ 파일</button><textarea id="draft" rows="1" autocomplete="off" aria-label="메시지" placeholder="방 전체에 메시지 보내기 (Shift+Enter 줄바꿈, 파일 드래그/붙여넣기)" maxlength="8000"></textarea><button type="submit">보내기</button></form></main><dialog id="ranking-dialog"><form id="ranking-form"><h2>방 구조 모드 설정</h2><p id="mode-desc">사용자 메시지가 에이전트들에게 전달되는 방식을 선택합니다.</p><label>구조 모드<select name="mode"><option value="broadcast">자유 · 동시 응답 (모든 에이전트에게 전달)</option><option value="ranking">자동 · 순위 판정 (판단 모델이 담당자 선택)</option><option value="hierarchy">계층형 · 메인 → 하위 → 서브에이전트</option></select></label><label id="main-member-label" hidden>메인 에이전트<select name="mainMember"></select></label><div id="judge-fields" style="display:grid;gap:10px"><label>판단 CLI<select name="provider"><option value="codex">Codex</option><option value="claude">Claude Code</option></select></label><label>모델<select name="model"><option value="">CLI 기본 모델</option></select></label><label>추론 강도<select name="effort"><option value="low">낮음</option><option value="medium">보통</option><option value="high">높음</option></select></label></div><small id="ranking-status" role="status"></small><p id="ranking-error" role="status"></p><footer><button id="ranking-cancel" type="button">취소</button><button type="submit">저장</button></footer></form></dialog><dialog id="agent-dialog"><form id="agent-form" autocomplete="off"><h2 id="agent-title">에이전트 추가</h2><input type="hidden" name="provider" value="codex"><div id="provider-buttons" role="group" aria-label="CLI 종류"><button type="button" data-provider="codex">Codex</button><button type="button" data-provider="claude">Claude Code</button><button type="button" data-provider="agy">Antigravity</button></div><label>모델<select name="model"><option value="">CLI 기본 모델</option></select></label><label>추론 강도<select name="effort"><option value="">CLI 기본값</option><option value="low">낮음</option><option value="medium">보통</option><option value="high">높음</option></select></label><label>권한 (Claude · Antigravity)<select name="permission"><option value="edit">편집: 파일 수정만 자동 허용</option><option value="dev" selected>개발: 편집, 조회, 테스트·빌드, git 커밋</option><option value="full">전체: 모든 명령 자동 허용 (주의)</option></select></label><label id="clear-rules-label" class="check" hidden><input type="checkbox" name="clearRules"> <span id="clear-rules-text">항상 허용 목록 지우기</span></label><label>이름<input name="name" autocomplete="off" placeholder="비워 두면 모델명 사용" maxlength="120"></label><small id="model-status" role="status"></small><small id="agent-error" role="status"></small><footer><button type="button" id="agent-cancel">취소</button><button type="submit">저장</button></footer></form></dialog>
 <dialog id="handoff-dialog"><h2>작업 인계</h2><div id="task-list"></div><form id="task-form" autocomplete="off"><input type="hidden" name="id"><input type="hidden" name="revision"><label>작업 제목<input name="title" required maxlength="120"></label><label>작업 내용·검증 결과<textarea name="summary" rows="3" maxlength="8000"></textarea></label><label>다음 행동<textarea name="next" rows="2" required maxlength="2000"></textarea></label><label id="task-owner-label">첫 담당자<select name="target"></select></label><button type="submit" id="save-task">작업 만들기</button><button id="reset-task" type="button" hidden>새 작업 쓰기</button></form><p id="handoff-error" role="status"></p><button id="close-handoff">닫기</button></dialog>
 <script>
 const byId=id=>document.getElementById(id);
@@ -174,16 +174,18 @@ function render(){
  lastRendered=selected;
  byId('title').textContent=room?.name||'채팅방을 선택하세요';
  const ranking=snapshot.ranking?.find(item=>item.room===selected);
- const ranked=Boolean(ranking?.enabled);
- byId('reply-priority').textContent=ranked?'답변 순위 켜짐 · '+(ranking.judge_model||({codex:'Codex',claude:'Claude Code'})[ranking.judge_provider||'codex']):'답변 순위 꺼짐';
- byId('reply-priority').setAttribute('aria-pressed',String(ranked));
+ const roomMode=ranking?.mode||(ranking?.enabled?'ranking':'broadcast');
+ const mainMember=roomMode==='hierarchy'?(snapshot.members.find(m=>m.id===ranking?.main_member&&m.room===selected&&m.state==='approved')||snapshot.members.find(m=>m.room===selected&&m.state==='approved'&&m.provider)):null;
+ byId('reply-priority').textContent=roomMode==='hierarchy'?'계층형 · 메인: '+(mainMember?.name||'미지정'):roomMode==='ranking'?'자동 순위 · '+(ranking.judge_model||({codex:'Codex',claude:'Claude Code'})[ranking.judge_provider||'codex']):'자유 · 동시 응답';
+ byId('reply-priority').setAttribute('aria-pressed',String(roomMode!=='broadcast'));
  for(const id of ['pair','add-agent','open-handoff','reply-priority'])byId(id).hidden=!room; byId('pair-guide').hidden=pairRoom!==selected;
  byId('rooms').replaceChildren(...snapshot.rooms.map(r=>{const b=el('button',r.name);b.setAttribute('aria-current',String(r.id===selected));b.onclick=()=>{selected=r.id;render();};return b;}));
  byId('people').replaceChildren(...snapshot.members.filter(m=>m.room===selected&&m.state!=='disconnected').map(m=>{
  const parent=snapshot.members.find(p=>p.id===m.parent);
  const labels={pending:'승인 대기',starting:'CLI 실행 확인 중',start_failed:'실행 실패',approved:'연결됨'};
- const stateText=m.busy&&m.progress?.step?m.progress.step:labels[m.state];
- const badge=el('span',m.name+(parent?' · '+parent.name+'의 서브에이전트':'')+' · '+stateText);
+ const stateText=m.paused?'일시정지됨':m.busy&&m.progress?.step?m.progress.step:labels[m.state];
+ const mainTag=mainMember?.id===m.id?' [메인]':'';
+ const badge=el('span',m.name+mainTag+(parent?' · '+parent.name+'의 서브에이전트':'')+' · '+stateText);
  if(m.state==='starting')return badge;
  if(m.cliError){
   const diagnostic=el('button','오류 원인');diagnostic.title=m.cliError.message;
@@ -194,6 +196,11 @@ function render(){
   const retry=el('button','다시 실행');
   retry.onclick=()=>control({action:'retry_agent',room:selected,participant:m.id});
   badge.append(retry);
+ }
+ if(m.provider&&(m.state==='approved'||m.state==='start_failed')){
+  const pauseBtn=el('button',m.paused?'재개':'일시정지');
+  pauseBtn.onclick=()=>control({action:'pause_agent',room:selected,participant:m.id,paused:!m.paused});
+  badge.append(pauseBtn);
  }
  const b=el('button',m.state==='pending'?'승인':m.state==='start_failed'?'목록에서 제거':'연결 해제');
  b.onclick=()=>control({action:m.state==='pending'?'approve':'disconnect',participant:m.id});
@@ -238,7 +245,7 @@ function renderActivity(members,messages){
   card.className='act-card'+(cls?' '+cls:'');
   const pendingApproval=(snapshot.approvals||[]).find(a=>a.room===selected&&a.name===m.name);
   const dot=document.createElement('span');
-  dot.className='act-dot'+(pendingApproval?' approval':m.busy?' busy':m.cliError||m.state==='start_failed'?' error':'');
+  dot.className='act-dot'+(pendingApproval||m.conflict?' approval':m.busy?' busy':m.cliError||m.state==='start_failed'?' error':'');
   const name=el('span',m.name);name.className='act-name';name.prepend(dot);
   const lim=m.provider?snapshot.limits?.[m.provider]:null;
   const entries=lim?.windows&&typeof lim.windows==='object'?Object.entries(lim.windows).filter(([,w])=>w&&typeof w==='object'):[];
@@ -246,6 +253,8 @@ function renderActivity(members,messages){
   const head=document.createElement('div');head.className='act-head';head.append(name,meta);
   const elapsed=m.busy&&m.progress?.updatedAt?Math.max(0,Math.floor((Date.now()-m.progress.updatedAt)/1000)):0;
   const stepText=pendingApproval?'허용 요청 대기: '+pendingApproval.tool
+   :m.conflict?'⚠ 동시 수정 주의: '+m.conflict
+   :m.paused?'일시정지됨 (호출·응답 중지)'
    :m.busy?(m.progress?.step||'작업 진행 중…')+(elapsed>=2?' ('+elapsed+'초)':'')
    :m.cliError?m.cliError.message
    :m.state==='pending'?'방 승인 대기 중'
@@ -509,22 +518,38 @@ async function loadRankingModels(value=''){
  }catch(error){if(request===rankingModelsRequest){byId('ranking-status').textContent='';byId('ranking-error').textContent=error.message;}}
  finally{if(request===rankingModelsRequest)select.disabled=false;}
 }
+function syncModeFields(){
+ const mode=rankingForm.elements.mode.value;
+ byId('main-member-label').hidden=mode!=='hierarchy';
+ byId('judge-fields').hidden=mode!=='ranking';
+ byId('mode-desc').textContent=mode==='hierarchy'
+  ?'내 메시지가 메인 에이전트에게 먼저 전달됩니다. 메인 에이전트가 다른 담당자 몫이라고 판단하면 [[FORWARD:...]]로 바로 넘깁니다.'
+  :mode==='ranking'?'판단 모델이 먼저 답할 에이전트 1명을 고르고 나머지는 문맥만 읽고 대기합니다.'
+  :'방의 모든 에이전트에게 동시에 메시지를 전달합니다.';
+}
 byId('reply-priority').onclick=()=>{
  rankingRoom=selected;
  const current=snapshot.ranking?.find(item=>item.room===rankingRoom);
- rankingForm.elements.enabled.checked=Boolean(current?.enabled);
+ const mode=current?.mode||(current?.enabled?'ranking':'broadcast');
+ const approved=snapshot.members.filter(m=>m.room===rankingRoom&&m.state==='approved');
+ const mainSel=rankingForm.elements.mainMember;
+ mainSel.replaceChildren(...approved.map(m=>new Option(m.name,m.id)));
+ if(current?.main_member&&approved.some(m=>m.id===current.main_member))mainSel.value=current.main_member;
+ rankingForm.elements.mode.value=mode;
  rankingForm.elements.provider.value=current?.judge_provider||'codex';
  rankingForm.elements.effort.value=current?.judge_effort||'low';
+ syncModeFields();
  byId('ranking-error').textContent='';
  byId('ranking-dialog').showModal();
  void loadRankingModels(current?.judge_model||'');
 };
+rankingForm.elements.mode.onchange=syncModeFields;
 rankingForm.elements.provider.onchange=()=>void loadRankingModels();
 byId('ranking-cancel').onclick=()=>byId('ranking-dialog').close();
 rankingForm.onsubmit=async event=>{
  event.preventDefault();
- const {enabled,provider,model,effort}=rankingForm.elements;
- if(await control({action:'room_ranking',room:rankingRoom,enabled:enabled.checked,provider:provider.value,model:model.value,effort:effort.value}))byId('ranking-dialog').close();
+ const {mode,mainMember,provider,model,effort}=rankingForm.elements;
+ if(await control({action:'room_ranking',room:rankingRoom,mode:mode.value,enabled:mode.value==='ranking',mainMember:mainMember.value||null,provider:provider.value,model:model.value,effort:effort.value}))byId('ranking-dialog').close();
  else byId('ranking-error').textContent=byId('error').textContent;
 };
 let pendingFiles=[];

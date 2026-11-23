@@ -2,60 +2,309 @@
 <style>
 :root{color-scheme:dark;--bg:#0f1117;--panel:#161922;--raised:#1e222d;--hover:#282d3a;--line:#2a2f3b;--text:#e8eaf0;--muted:#9aa1b0;--accent:#7c9cff;background:var(--bg);color:var(--text);font-family:"Pretendard","Malgun Gothic","Segoe UI",sans-serif;font-size:14px;line-height:1.55}
 *{box-sizing:border-box}
-body{margin:0;display:flex;flex-direction:column;height:100vh;height:100dvh;overflow:hidden;background:var(--bg);color:var(--text)}
-header{flex:none;padding:12px max(22px,calc((100% - 860px)/2));border-bottom:1px solid var(--line);background:var(--bg);display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px}
-.brand{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+body{margin:0;display:grid;grid-template-columns:clamp(190px,21vw,250px) minmax(0,1fr);grid-template-rows:minmax(0,1fr);height:100vh;height:100dvh;overflow:hidden;background:var(--bg);color:var(--text)}
+aside{display:flex;flex-direction:column;gap:10px;background:var(--panel);border-right:1px solid var(--line);padding:16px 12px;overflow:auto}
+.brand{display:flex;align-items:center;justify-content:space-between;gap:8px}
 h1{font-size:17px;margin:0}
-.subtitle{margin:0;font-size:12px;color:var(--muted)}
-.room-picker{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
-select,textarea,button{font:inherit;border-radius:8px;border:1px solid var(--line);background:var(--raised);color:var(--text);padding:7px 11px}
-:is(select,textarea,button):focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-#history{flex:1 1 0;min-height:0;overflow:auto;overscroll-behavior:contain;padding:20px max(22px,calc((100% - 860px)/2));display:flex;flex-direction:column;gap:14px}
-article{flex-shrink:0;max-width:min(82%,720px);min-width:0;align-self:flex-start;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 14px}
-article strong{display:block;font-size:13px;color:#ffbf9e}
-article p{margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--text)}
-article.own{align-self:flex-end;background:#1f2a4a;border-color:#2f3f6e}
-article.own strong{color:#b6c8ff}
-footer{flex:none;border-top:1px solid var(--line);background:var(--bg);padding:12px max(22px,calc((100% - 860px)/2))}
-form{display:flex;gap:8px;align-items:flex-end}
-textarea{flex:1;min-width:0;max-height:180px;resize:none;overflow-y:auto;line-height:1.45;background:var(--panel);border-color:var(--line);border-radius:10px;padding:10px 14px}
-button{flex:none;background:var(--accent);border-color:var(--accent);color:#0f1117;font-weight:600;padding:10px 18px;border-radius:10px;cursor:pointer}
-button:hover{background:#98b2ff}
-button:disabled{opacity:.5;cursor:default}
-#status{margin:6px 0 0;min-height:1.2em;font-size:12px;color:var(--muted)}
-#status:empty{display:none}
-@media(max-width:640px){header,#history,footer{padding-left:14px;padding-right:14px}article{max-width:94%}}
+.pill{font-size:11px;font-weight:500;padding:2px 8px;border-radius:999px;background:var(--bg);border:1px solid var(--line);color:var(--muted);display:inline-flex;align-items:center;gap:5px}
+.pill i{width:7px;height:7px;border-radius:50%;background:#4fd1a5;display:inline-block}
+.pill.err i{background:#ff7b72}
+#new-room{display:flex;gap:5px}
+#new-room input{flex:1;min-width:0;font:inherit;border-radius:8px;border:1px solid var(--line);background:var(--raised);color:var(--text);padding:6px 10px}
+#rooms{display:grid;gap:3px}
+#rooms button{display:flex;align-items:center;justify-content:space-between;gap:6px;text-align:left;font:inherit;border-radius:8px;border:1px solid transparent;background:transparent;color:var(--muted);padding:7px 10px;cursor:pointer;overflow:hidden}
+#rooms button span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#rooms button:hover{background:var(--raised);color:var(--text)}
+#rooms button[aria-current=true]{background:var(--hover);color:var(--text);font-weight:600}
+#rooms .dot{width:7px;height:7px;border-radius:50%;background:#4fd1a5;flex:none}
+main{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}
+header{flex:none;padding:12px 22px;border-bottom:1px solid var(--line);background:var(--bg)}
+.head-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+header h2{margin:0;font-size:16px}
+.head-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+button,select,textarea{font:inherit;border-radius:8px;border:1px solid var(--line);background:var(--raised);color:var(--text);padding:6px 11px}
+button{cursor:pointer}button:hover{background:var(--hover)}button:disabled{opacity:.5;cursor:default}
+button[aria-pressed=true]{border-color:var(--accent);color:var(--accent)}
+:is(button,input,select,textarea,a):focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+#activity{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-top:10px;max-height:22vh;overflow:auto}
+#activity:empty{display:none}
+.act-card{background:var(--panel);border:1px solid var(--line);border-inline-start-width:3px;border-radius:10px;padding:8px 10px;display:grid;gap:3px;min-width:0}
+.act-card.codex{border-inline-start-color:#6ea8ff}.act-card.claude{border-inline-start-color:#f0a27a}.act-card.agy{border-inline-start-color:#8fd16f}
+.act-head{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:12px}
+.act-name{display:inline-flex;align-items:center;gap:6px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.act-dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--muted)}
+.act-dot.busy{background:#4fd1a5;animation:act-pulse 1.4s ease-in-out infinite}.act-dot.approval{background:#f5c451}.act-dot.error{background:#ff7b72}
+@keyframes act-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.82)}}
+.act-meta{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.act-step{font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.act-preview{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.act-limits{display:grid;gap:4px;margin-top:3px}.act-limit{display:grid;gap:2px;font-size:11px;color:var(--muted)}
+.act-limit-row{display:flex;justify-content:space-between;gap:6px;font-variant-numeric:tabular-nums}
+.act-bar{height:4px;border-radius:999px;background:var(--raised);overflow:hidden}.act-bar>i{display:block;height:100%;border-radius:999px;background:#4fd1a5}
+.act-bar>i.low{background:#f5c451}.act-bar>i.critical{background:#ff7b72}
+.act-retry{justify-self:start;padding:2px 8px;font-size:11px;margin-top:2px}
+#history{flex:1 1 0;min-height:0;overflow:auto;overscroll-behavior:contain;padding:18px max(22px,calc((100% - 860px)/2));display:flex;flex-direction:column;gap:12px}
+.empty{margin:auto;text-align:center;color:var(--muted);font-size:13px;padding:24px}
+article{flex-shrink:0;max-width:min(84%,720px);min-width:0;align-self:flex-start;background:var(--panel);border:1px solid var(--line);border-inline-start-width:3px;border-radius:12px;padding:10px 14px}
+article.codex{border-inline-start-color:#6ea8ff}article.claude{border-inline-start-color:#f0a27a}article.agy{border-inline-start-color:#8fd16f}
+article.own{align-self:flex-end;background:#1f2a4a;border-color:#2f3f6e;border-inline-start-width:1px}
+article>strong{display:block;font-size:13px;color:#ffbf9e;margin-bottom:4px}
+article.own>strong{color:#b6c8ff}article.codex>strong{color:#a9c8ff}article.claude>strong{color:#ffc2a2}article.agy>strong{color:#bdeca2}
+article.typing small{display:block;margin-top:4px;color:#ffcf90;font-size:11px}
+.md{color:var(--text);overflow-wrap:anywhere}.md>*{margin:0 0 6px}.md>*:last-child{margin-bottom:0}
+.md p{white-space:pre-wrap;overflow-wrap:anywhere}
+.md pre{position:relative;overflow:auto;max-width:100%;padding:30px 10px 10px;background:var(--bg);border:1px solid var(--line);border-radius:8px}
+.md pre code{white-space:pre;font-family:ui-monospace,Consolas,monospace;font-size:12.5px}
+.md .copy-btn{position:absolute;top:5px;right:6px;padding:2px 8px;font-size:11px;border-radius:6px;background:var(--raised);border:1px solid var(--line);color:var(--text)}
+.md :not(pre)>code{background:var(--raised);border-radius:4px;padding:1px 5px;font-size:.92em}
+.md a{color:var(--accent)}.md blockquote{margin:0 0 6px;padding-left:10px;border-left:2px solid #596584;color:var(--muted)}.md ul,.md ol{padding-left:20px}.md hr{border:0;border-top:1px solid var(--line);margin:8px 0}.md table{border-collapse:collapse;max-width:100%;font-size:13px;overflow:auto;display:block}.md th,.md td{border:1px solid var(--line);padding:4px 8px;text-align:left}.md th{background:var(--raised)}
+.head-actions select{font:inherit;font-size:12px;padding:4px 8px;border-radius:8px;border:1px solid var(--line);background:var(--raised);color:var(--text)}
+#approvals{flex:none;display:grid;gap:8px;max-height:36vh;overflow:auto;padding:0 max(22px,calc((100% - 860px)/2))}
+#approvals:empty{display:none}
+#approvals>div{margin:6px 0;padding:10px 12px;background:#2c2a1f;border:1px solid #8a7433;border-radius:10px}
+#approvals pre{max-height:110px;overflow:auto;margin:6px 0;padding:8px;background:#14192a;border-radius:6px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}
+#approvals footer{display:flex;gap:6px;justify-content:flex-end}
+#compose-wrap{flex:none;border-top:1px solid var(--line);background:var(--bg);padding:12px max(22px,calc((100% - 860px)/2))}
+#compose{display:flex;gap:8px;align-items:flex-end}
+#draft{flex:1;min-width:0;max-height:180px;resize:none;overflow-y:auto;line-height:1.45;background:var(--panel);border-color:var(--line);border-radius:10px;padding:10px 14px}
+#compose button{flex:none;background:var(--accent);border-color:var(--accent);color:#0f1117;font-weight:600;padding:10px 18px;border-radius:10px}
+#compose button:hover{background:#98b2ff}
+#status{margin:6px 0 0;min-height:1.2em;font-size:12px;color:var(--muted)}#status:empty{display:none}
+@media(max-width:720px){
+ body{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}
+ aside{border-right:0;border-bottom:1px solid var(--line);padding:10px 12px;gap:8px;max-height:32vh}
+ #rooms{display:flex;overflow-x:auto;gap:6px}#rooms button{flex:none;border-color:var(--line);background:var(--bg);padding:5px 10px}
+ header,#history,#approvals,#compose-wrap{padding-left:14px;padding-right:14px}
+ article{max-width:94%}
+}
 </style>
-<header>
- <div class="brand"><h1>Agent Room</h1><p class="subtitle">공유된 방만 표시됩니다.</p></div>
- <label class="room-picker">채팅방 <select id="rooms"></select></label>
-</header>
-<main id="history" aria-label="공용 대화"></main>
-<footer>
- <form id="compose" autocomplete="off"><textarea id="draft" rows="1" aria-label="메시지" placeholder="메시지 보내기 (Shift+Enter 줄바꿈)" maxlength="8000" required></textarea><button>보내기</button></form>
- <p id="status" role="status"></p>
-</footer>
+<aside>
+ <div class="brand"><h1>Agent Room</h1><span id="conn" class="pill"><i></i>연결 중</span></div>
+ <form id="new-room" autocomplete="off"><input name="name" placeholder="새 채팅방 이름" maxlength="70" required><button type="submit" aria-label="방 만들기">+</button></form>
+ <nav id="rooms" aria-label="채팅방 목록"></nav>
+</aside>
+<main>
+ <header>
+  <div class="head-row">
+   <h2 id="title">채팅방을 선택하세요</h2>
+   <div class="head-actions">
+    <button id="toggle-act" type="button" aria-pressed="true">현황판</button>
+    <select id="mode-sel" aria-label="구조 모드" hidden><option value="broadcast">자유 · 동시</option><option value="ranking">자동 · 순위</option><option value="hierarchy">계층형 · 메인→하위</option></select>
+    <select id="main-sel" aria-label="메인 에이전트" hidden></select>
+   </div>
+  </div>
+  <section id="activity" aria-label="에이전트 작업 현황"></section>
+ </header>
+ <section id="history" aria-label="공용 대화"></section>
+ <section id="approvals" aria-label="허용 요청" aria-live="polite"></section>
+ <div id="compose-wrap">
+  <form id="compose" autocomplete="off"><textarea id="draft" rows="1" aria-label="메시지" placeholder="메시지 보내기 (Shift+Enter 줄바꿈)" maxlength="8000" required></textarea><button type="submit">보내기</button></form>
+  <p id="status" role="status"></p>
+ </div>
+</main>
 <script>
 const historyView=document.querySelector('#history'),statusLine=document.querySelector('#status'),draft=document.querySelector('#draft'),form=document.querySelector('#compose');
-const picker=document.querySelector('#rooms');
-let cursor='',pending,selected='',request=0;
-picker.onchange=()=>{selected=picker.value;cursor='';pending=null;draft.value='';fitDraft();historyView.replaceChildren();void refresh();};
+const conn=document.querySelector('#conn'),roomsNav=document.querySelector('#rooms'),actBox=document.querySelector('#activity'),appBox=document.querySelector('#approvals');
+const modeSel=document.querySelector('#mode-sel'),mainSel=document.querySelector('#main-sel'),toggleAct=document.querySelector('#toggle-act'),titleEl=document.querySelector('#title');
+let cursor='',pending,selected='',request=0,lastSnap=null,lastRooms=[],showAct=true;
+function el(tag,text){const e=document.createElement(tag);e.textContent=text;return e;}
+function agentCls(name,provider){
+ if(name==='나')return 'own';
+ if(provider==='agy'||/^(agy|antigravity)/i.test(name||'')||name?.includes('수소'))return 'agy';
+ if(provider==='codex'||/^(codex|gpt|chatgpt|sol)\b/i.test(name||'')||name?.includes('솔'))return 'codex';
+ if(provider==='claude'||/^(claude|opus|sonnet|haiku)/i.test(name||'')||name?.includes('오푸스'))return 'claude';
+ return '';
+}
+function inlineMd(target,text){
+ const pattern=/`([^`\n]+)`|\*\*([^*\n]+)\*\*|\*([^*\n]+)\*|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g;
+ let start=0;
+ for(const match of text.matchAll(pattern)){
+  target.append(document.createTextNode(text.slice(start,match.index)));
+  if(match[5]){
+   try{const url=new URL(match[5]);const a=el('a',match[4]);a.href=url.href;a.target='_blank';a.rel='noopener noreferrer';target.append(a);}
+   catch{target.append(document.createTextNode(match[0]));}
+  }else target.append(el(match[1]?'code':match[2]?'strong':'em',match[1]||match[2]||match[3]));
+  start=match.index+match[0].length;
+ }
+ target.append(document.createTextNode(text.slice(start)));
+}
+function renderMd(text){
+ const root=el('div','');root.className='md';
+ let p,list,code,table,tbody;
+ const lines=String(text||'').split(/\r?\n/);
+ for(let idx=0;idx<lines.length;idx++){
+  const line=lines[idx];
+  if(code){if(/^\s*```\s*$/.test(line))code=null;else code.append(document.createTextNode(line+'\n'));continue;}
+  const item=line.match(/^\s*([-+*]|\d+\.)\s+(.+)$/), heading=line.match(/^(#{1,6})\s+(.+)$/);
+  if(!item)list=null;
+  if(!/^\s*\|.*\|\s*$/.test(line)){table=null;tbody=null;}
+  if(/^\s*```/.test(line)){
+   const pre=el('pre',''), copy=el('button','복사');code=el('code','');
+   copy.type='button';copy.className='copy-btn';
+   copy.onclick=async()=>{const t=code.textContent.replace(/\n$/,'');try{await navigator.clipboard.writeText(t);}catch{}copy.textContent='복사됨';setTimeout(()=>{copy.textContent='복사';},1400);};
+   pre.append(copy,code);root.append(pre);p=null;continue;
+  }
+  if(!line.trim()){p=null;continue;}
+  if(/^\s*([-*_])(?:\s*\1){2,}\s*$/.test(line)){root.append(document.createElement('hr'));p=null;continue;}
+  if(/^\s*\|.*\|\s*$/.test(line)){
+   const cells=line.trim().slice(1,-1).split('|').map(c=>c.trim());
+   if(!table&&lines[idx+1]&&/^\s*\|(?:\s*:?-{3,}:?\s*\|)+\s*$/.test(lines[idx+1])){
+    table=el('table','');const thead=el('thead',''),tr=el('tr','');
+    for(const c of cells){const th=el('th','');inlineMd(th,c);tr.append(th);}
+    thead.append(tr);tbody=el('tbody','');table.append(thead,tbody);root.append(table);idx++;p=null;continue;
+   }
+   if(tbody){const tr=el('tr','');for(const c of cells){const td=el('td','');inlineMd(td,c);tr.append(td);}tbody.append(tr);p=null;continue;}
+  }
+  if(item){const tag=/^\d/.test(item[1])?'OL':'UL';if(list?.tagName!==tag){list=el(tag,'');root.append(list);}const li=el('li','');inlineMd(li,item[2]);list.append(li);p=null;continue;}
+  if(heading||line.startsWith('> ')){const b=el(heading?'h'+Math.min(6,heading[1].length+2):'blockquote','');inlineMd(b,heading?heading[2]:line.slice(2));root.append(b);p=null;continue;}
+  if(!p){p=el('p','');root.append(p);}else p.append(document.createElement('br'));
+  inlineMd(p,line);
+ }
+ return root;
+}
+function fmtAge(ts){if(!ts)return '';const m=Math.max(0,Math.floor((Date.now()-ts)/60000));return m<1?'방금 기준':m+'분 전 기준';}
+function fmtReset(raw){
+ if(!raw)return '';
+ const ms=typeof raw==='number'?(raw<1e12?raw*1000:raw):Date.parse(raw);
+ if(!Number.isFinite(ms))return '';
+ const d=new Date(ms),now=new Date(),t=d.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false});
+ return (d.toDateString()===now.toDateString()?t:d.toLocaleDateString('ko-KR',{month:'numeric',day:'numeric'})+' '+t)+' 초기화';
+}
+async function sendControl(payload){
+ try{
+  const r=await fetch('/api/room/browser',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:crypto.randomUUID(),room:selected,...payload})});
+  if(!r.ok)throw Error('요청을 저장하지 못했어요.');
+  statusLine.textContent='PC로 제어 요청을 보냈어요 (약 2초 내 반영).';
+  return true;
+ }catch(e){statusLine.textContent=e.message;return false;}
+}
+function renderRooms(rooms){
+ roomsNav.replaceChildren(...rooms.map(r=>{
+  const b=document.createElement('button');b.type='button';
+  b.setAttribute('aria-current',String(r.id===selected));
+  b.append(el('span',r.name));
+  if(lastSnap?.members?.some(m=>m.room===r.id&&m.busy)){const d=document.createElement('i');d.className='dot';d.title='작업 중';b.append(d);}
+  b.onclick=()=>{selected=r.id;cursor='';pending=null;historyView.replaceChildren();void refresh();};
+  return b;
+ }));
+}
+function renderPanel(){
+ const roomObj=lastRooms.find(r=>r.id===selected);
+ titleEl.textContent=roomObj?.name||'채팅방을 선택하세요';
+ const ranking=lastSnap?.ranking?.find(r=>r.room===selected);
+ const roomMode=ranking?.mode||(ranking?.enabled?'ranking':'broadcast');
+ const members=(lastSnap?.members||[]).filter(m=>m.room===selected);
+ const mainMember=roomMode==='hierarchy'?(members.find(m=>m.id===ranking?.main_member&&m.state==='approved')||members.find(m=>m.state==='approved'&&m.provider)):null;
+ modeSel.hidden=!roomObj;
+ if(roomObj)modeSel.value=roomMode;
+ mainSel.hidden=!roomObj||roomMode!=='hierarchy'||!members.some(m=>m.state==='approved');
+ if(!mainSel.hidden){
+  const approved=members.filter(m=>m.state==='approved');
+  mainSel.replaceChildren(...approved.map(m=>new Option('메인: '+m.name,m.id)));
+  if(mainMember)mainSel.value=mainMember.id;
+ }
+ actBox.hidden=!showAct;
+ const labels={pending:'승인 대기',starting:'CLI 시작 중…',start_failed:'실행 실패',approved:'대기 중'};
+ const winNames={five_hour:'5시간',seven_day:'7일'};
+ actBox.replaceChildren(...members.map(m=>{
+  const card=document.createElement('div');
+  const cls=agentCls('',m.provider)||agentCls(m.name);
+  card.className='act-card'+(cls?' '+cls:'');
+  const pa=(lastSnap?.approvals||[]).find(a=>a.room===selected&&a.name===m.name);
+  const dot=document.createElement('span');
+  dot.className='act-dot'+(pa||m.conflict?' approval':m.busy?' busy':m.cliError||m.state==='start_failed'?' error':'');
+  const name=el('span',m.name+(mainMember?.id===m.id?' [메인]':''));name.className='act-name';name.prepend(dot);
+  const lim=m.provider?lastSnap?.limits?.[m.provider]:null;
+  const entries=lim?.windows&&typeof lim.windows==='object'?Object.entries(lim.windows).filter(([,w])=>w&&typeof w==='object'):[];
+  const meta=el('span',entries.length?(fmtAge(lim.updatedAt)||'잔여량'):'잔여량 정보 없음');meta.className='act-meta';
+  const head=document.createElement('div');head.className='act-head';head.append(name,meta);
+  const elapsed=m.busy&&m.progress?.updatedAt?Math.max(0,Math.floor((Date.now()-m.progress.updatedAt)/1000)):0;
+  const stepText=pa?'허용 요청 대기: '+pa.tool:m.conflict?'⚠ 동시 수정 주의: '+m.conflict:m.paused?'일시정지됨 (응답 중지)':m.busy?(m.progress?.step||'작업 진행 중…')+(elapsed>=2?' ('+elapsed+'초)':''):m.cliError?m.cliError.message:labels[m.state]||'대기 중';
+  const step=el('div',stepText);step.className='act-step';step.title=stepText;
+  card.append(head,step);
+  const prev=m.busy&&m.progress?.preview?m.progress.preview.trim().split(/\r?\n/).filter(Boolean).at(-1):'';
+  if(prev){const p=el('div',prev);p.className='act-preview';p.title=prev;card.append(p);}
+  if(m.provider&&(m.state==='approved'||m.state==='start_failed')){
+   const pause=el('button',m.paused?'재개':'일시정지');pause.type='button';pause.className='act-retry';
+   pause.onclick=()=>void sendControl({control:'pause_agent',participant:m.id,paused:!m.paused});
+   card.append(pause);
+  }
+  if(m.state==='start_failed'&&m.provider){
+   const retry=el('button','다시 실행');retry.type='button';retry.className='act-retry';
+   retry.onclick=()=>void sendControl({control:'retry_agent',participant:m.id});
+   card.append(retry);
+  }
+  if(entries.length){
+   const lb=document.createElement('div');lb.className='act-limits';
+   for(const [k,w] of entries){
+    const rem=Math.max(0,Math.min(100,Math.round(100-(Number(w.utilization)||0)*100)));
+    const row=document.createElement('div');row.className='act-limit';
+    const top=document.createElement('div');top.className='act-limit-row';
+    top.append(el('span',(winNames[k]||k)+' · 남음 '+rem+'%'),el('span',fmtReset(w.resets_at??w.resetsAt)));
+    const bar=document.createElement('div');bar.className='act-bar';
+    const fill=document.createElement('i');fill.style.width=rem+'%';
+    if(rem<=10)fill.className='critical';else if(rem<=25)fill.className='low';
+    bar.append(fill);row.append(top,bar);lb.append(row);
+   }
+   card.append(lb);
+  }
+  return card;
+ }));
+ appBox.replaceChildren(...(lastSnap?.approvals||[]).map(item=>{
+  const box=document.createElement('div'),roomName=lastRooms.find(r=>r.id===item.room)?.name||'',btns=document.createElement('footer');
+  const decide=allow=>async()=>{for(const b of btns.children)b.disabled=true;if(!await fetch('/api/room/browser',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:crypto.randomUUID(),room:item.room,control:'approval_decide',id_target:item.id,allow})}).then(r=>r.ok).catch(()=>false))for(const b of btns.children)b.disabled=false;else statusLine.textContent='허용 응답을 보냈어요.';};
+  const deny=el('button','거부'),allow=el('button','이번만 허용');deny.type='button';allow.type='button';
+  deny.onclick=decide(false);allow.onclick=decide(true);btns.append(deny,allow);
+  box.append(el('strong',item.name+' · '+item.tool+' 실행 허용 요청'),el('small',' '+roomName),el('pre',item.input),btns);
+  return box;
+ }));
+}
 async function refresh(){
  try{
   const turn=++request;
   const r=await fetch('/api/room/browser'+(selected?'?room='+encodeURIComponent(selected):''),{cache:'no-store'});
   if(turn!==request)return;
-  if(r.status===404&&selected){selected='';cursor='';historyView.replaceChildren();void refresh();return;}if(!r.ok)throw Error('소유자 계정으로 로그인해 주세요.');
-  const {events,rooms}=await r.json();
+  if(r.status===404&&selected){selected='';cursor='';historyView.replaceChildren();void refresh();return;}
+  if(!r.ok)throw Error('소유자 계정으로 로그인해 주세요.');
+  const {events,rooms,snapshot}=await r.json();
   if(turn!==request)return;
-  picker.replaceChildren(...rooms.map(room=>new Option(room.name,room.id)));
+  conn.className='pill';conn.lastChild.textContent='원격 연결됨';
+  lastRooms=rooms;lastSnap=snapshot||null;
   if(!selected&&rooms.length){selected=rooms[0].id;void refresh();return;}
-  picker.value=selected;draft.disabled=!selected;
-  const key=JSON.stringify(events.map(event=>event.seq));if(key===cursor)return;cursor=key;
-  historyView.replaceChildren(...events.map(event=>{const a=document.createElement('article'),n=document.createElement('strong'),p=document.createElement('p');if(event.name==='나')a.className='own';n.textContent=event.name;p.textContent=event.text;a.append(n,p);return a;}));
-  historyView.scrollTop=historyView.scrollHeight;
- }catch(e){statusLine.textContent=e.message;}
+  draft.disabled=!selected;
+  renderRooms(rooms);renderPanel();
+  const busy=(lastSnap?.members||[]).filter(m=>m.room===selected&&m.busy);
+  const key=JSON.stringify([events.map(e=>e.seq),busy.map(b=>[b.id,b.progress?.updatedAt,b.progress?.step])]);
+  if(key===cursor)return;
+  const nearBottom=historyView.scrollHeight-historyView.scrollTop-historyView.clientHeight<110||!cursor;
+  cursor=key;
+  const nodes=events.map(event=>{
+   const a=document.createElement('article'),m=lastSnap?.members?.find(x=>x.room===selected&&x.name===event.name),cls=agentCls(event.name,m?.provider);
+   if(cls)a.className=cls;
+   a.append(el('strong',event.name),renderMd(event.text));
+   return a;
+  });
+  for(const b of busy){
+   const a=document.createElement('article'),cls=agentCls(b.name,b.provider);
+   a.className=(cls?cls+' ':'')+'typing';
+   a.append(el('strong',b.name));
+   if(b.progress?.preview)a.append(renderMd(b.progress.preview));
+   const elapsed=b.progress?.updatedAt?Math.max(0,Math.floor((Date.now()-b.progress.updatedAt)/1000)):0;
+   a.append(el('small',(b.progress?.step||'작업 진행 중…')+(elapsed>=2?' ('+elapsed+'초)':'')));
+   nodes.push(a);
+  }
+  if(!nodes.length){const empty=el('div','아직 대화가 없어요. 아래에서 메시지를 보내 보세요.');empty.className='empty';nodes.push(empty);}
+  historyView.replaceChildren(...nodes);
+  if(nearBottom)historyView.scrollTop=historyView.scrollHeight;
+ }catch(e){conn.className='pill err';conn.lastChild.textContent='연결 확인 필요';statusLine.textContent=e.message;}
 }
+toggleAct.onclick=()=>{showAct=!showAct;toggleAct.setAttribute('aria-pressed',String(showAct));actBox.hidden=!showAct;};
+modeSel.onchange=()=>void sendControl({control:'room_ranking',mode:modeSel.value,enabled:modeSel.value==='ranking',mainMember:mainSel.value||null});
+mainSel.onchange=()=>void sendControl({control:'room_ranking',mode:'hierarchy',enabled:false,mainMember:mainSel.value||null});
+document.querySelector('#new-room').onsubmit=async e=>{
+ e.preventDefault();const inp=e.target.elements.name,name=inp.value.trim();if(!name)return;
+ if(await sendControl({control:'create',name}))inp.value='';
+};
 form.onsubmit=async event=>{
  event.preventDefault();if(!selected||!draft.value.trim())return;
  if(pending?.text!==draft.value||pending.room!==selected)pending={id:crypto.randomUUID(),room:selected,text:draft.value};
@@ -64,6 +313,7 @@ form.onsubmit=async event=>{
   const r=await fetch('/api/room/browser',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(pending)});
   if(!r.ok)throw Error('전송하지 못했어요. 다시 시도해 주세요.');
   draft.value='';fitDraft();pending=null;statusLine.textContent='PC로 보낼 메시지를 대기열에 넣었어요.';
+  void refresh();
  }catch(e){statusLine.textContent=e.message;}
  finally{button.disabled=false;}
 };
@@ -75,5 +325,6 @@ draft.onkeydown=event=>{
  const button=form.querySelector('button');
  if(draft.value.trim()&&!button.disabled)form.requestSubmit(button);
 };
-void refresh();setInterval(refresh,2500);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void refresh();});
+void refresh();setInterval(refresh,2000);
 </script></html>
