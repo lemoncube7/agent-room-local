@@ -1,0 +1,37 @@
+<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Agent Room Remote</title>
+<style>body{margin:2rem auto;max-width:44rem;padding:0 1rem;font:16px system-ui;background:#141929;color:#eff4fc}article{border-bottom:1px solid #414c65;padding:.7rem 0}article p{white-space:pre-wrap;overflow-wrap:anywhere}form{display:flex;gap:.6rem;margin-top:1rem}input,button{font:inherit;padding:.65rem;border-radius:.4rem}input{flex:1;min-width:0}</style>
+<h1>Agent Room</h1><p>공유된 방만 표시됩니다.</p><label>채팅방 <select id="rooms"></select></label><main id="history"></main>
+<form id="compose" autocomplete="off"><input id="draft" aria-label="메시지" maxlength="8000" required><button>보내기</button></form><p id="status" role="status"></p>
+<script>
+const historyView=document.querySelector('#history'),statusLine=document.querySelector('#status'),draft=document.querySelector('#draft'),form=document.querySelector('#compose');
+const picker=document.querySelector('#rooms');
+let cursor='',pending,selected='',request=0;
+picker.onchange=()=>{selected=picker.value;cursor='';pending=null;draft.value='';historyView.replaceChildren();void refresh();};
+async function refresh(){
+ try{
+  const turn=++request;
+  const r=await fetch('/api/room/browser'+(selected?'?room='+encodeURIComponent(selected):''),{cache:'no-store'});
+  if(turn!==request)return;
+  if(r.status===404&&selected){selected='';cursor='';historyView.replaceChildren();void refresh();return;}if(!r.ok)throw Error('소유자 계정으로 로그인해 주세요.');
+  const {events,rooms}=await r.json();
+  if(turn!==request)return;
+  picker.replaceChildren(...rooms.map(room=>new Option(room.name,room.id)));
+  if(!selected&&rooms.length){selected=rooms[0].id;void refresh();return;}
+  picker.value=selected;draft.disabled=!selected;
+  const key=JSON.stringify(events.map(event=>event.seq));if(key===cursor)return;cursor=key;
+  historyView.replaceChildren(...events.map(event=>{const a=document.createElement('article'),n=document.createElement('strong'),p=document.createElement('p');n.textContent=event.name;p.textContent=event.text;a.append(n,p);return a;}));
+ }catch(e){statusLine.textContent=e.message;}
+}
+form.onsubmit=async event=>{
+ event.preventDefault();if(!selected||!draft.value.trim())return;
+ if(pending?.text!==draft.value||pending.room!==selected)pending={id:crypto.randomUUID(),room:selected,text:draft.value};
+ const button=event.submitter;button.disabled=true;
+ try{
+  const r=await fetch('/api/room/browser',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(pending)});
+  if(!r.ok)throw Error('전송하지 못했어요. 다시 시도해 주세요.');
+  draft.value='';pending=null;statusLine.textContent='PC로 보낼 메시지를 대기열에 넣었어요.';
+ }catch(e){statusLine.textContent=e.message;}
+ finally{button.disabled=false;}
+};
+void refresh();setInterval(refresh,2500);
+</script></html>

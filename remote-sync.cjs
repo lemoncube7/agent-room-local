@@ -28,27 +28,30 @@ async function main(){
   const first=await request(readHub().url+'/state');
   const matches=first.rooms.filter(r=>r.name===roomName||r.id===roomName);
   if(matches.length!==1)throw Error('Choose exactly one room by its name or ID.');
-  const room=matches[0].id;
+  const initialRoom=matches[0].id;
   const cursorPath=path.join(localDir,'remote-cursor.json');
   const cursor=fs.existsSync(cursorPath)?JSON.parse(fs.readFileSync(cursorPath,'utf8')):{};
-  const key=site.origin+' '+room;
+  const key=room=>site.origin+' '+room;
   function save(){const temp=cursorPath+'.tmp';fs.writeFileSync(temp,JSON.stringify(cursor));fs.renameSync(temp,cursorPath);}
-  if(!Number.isSafeInteger(cursor[key])){
-    cursor[key]=Math.max(0,...first.messages.filter(m=>m.room===room).map(m=>m.seq));
-    save();
-  }
-  let acknowledged=[], lastError='';
-  console.log('Remote sync enabled for the selected room. Existing local history is excluded. Ctrl+C stops syncing.');
+  let acknowledged=[],lastError='';
+  console.log('Remote relay enabled. Room selection is controlled in Agent Room.');
   while(true){
     try{
       const hub=readHub();
       const state=await request(hub.url+'/state');
-      const batch=state.messages.filter(m=>m.room===room&&m.seq>cursor[key]).slice(0,40);
-      const response=await request(relay,post(headers,{acknowledged,events:batch.filter(m=>!m.recipient).map(m=>({seq:m.seq,name:m.name,text:m.body.length>30000?m.body.slice(0,29980)+'… [원격 표시 생략]':m.body,created:m.created}))}));
+      const selection=state.remoteConfigured?state.remoteRooms:[{room:initialRoom,since:Math.max(0,...first.messages.filter(m=>m.room===initialRoom).map(m=>m.seq))}];
+      const allowed=new Set(selection.map(item=>item.room));
+      const rooms=state.rooms.filter(room=>allowed.has(room.id));
+      const floors=new Map(selection.map(x=>[x.room,Math.max(x.since,cursor[key(x.room)]||0)]));
+      const batch=state.messages.filter(m=>allowed.has(m.room)&&m.seq>floors.get(m.room)).slice(0,35);
+      const events=batch.filter(m=>!m.recipient).map(m=>({room:m.room,seq:m.seq,name:m.name,text:m.body.slice(0,30000),created:m.created}));
+      const response=await request(relay,post(headers,{rooms,legacyRoom:initialRoom,acknowledged,events}));
       acknowledged=[];
-      if(batch.length){cursor[key]=batch.at(-1).seq;save();}
+      for(const item of batch)cursor[key(item.room)]=item.seq;
+      if(batch.length)save();
       for(const command of response.commands){
-        await request(hub.url+'/tool',post({Authorization:'Bearer '+hub.token},{action:'remote_user_message',room,request:command.id,text:command.text}));
+        if(!allowed.has(command.room))continue;
+        await request(hub.url+'/tool',post({Authorization:'Bearer '+hub.token},{action:'remote_user_message',room:command.room,request:command.id,text:command.text}));
         acknowledged.push(command.id);
       }
       if(lastError){console.log('Remote sync restored.');lastError='';}

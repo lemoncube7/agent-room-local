@@ -25,28 +25,41 @@ export async function handleRoom(request,env){
   if(route==='/api/room/device'&&request.method==='POST'){
     if(!await sameSecret(request.headers.get('x-agent-room-key'),env.REMOTE_DEVICE_KEY))return json({error:'Unauthorized'},403);
     let payload;try{payload=await readBody(request,1500000);}catch{return json({error:'Invalid payload'},400);}
-    if(!Array.isArray(payload.events)||payload.events.length>40||!Array.isArray(payload.acknowledged)||payload.acknowledged.length>20)return json({error:'Invalid batch'},400);
-    if(!payload.acknowledged.every(isId)||!payload.events.every(e=>Number.isSafeInteger(e?.seq)&&e.seq>0&&isText(e.name,120)&&isText(e.text,30000)&&isText(e.created,50)))return json({error:'Invalid event'},400);
-    const actions=[
-      ...payload.events.map(e=>env.DB.prepare('INSERT OR IGNORE INTO remote_events(seq,name,text,created) VALUES(?,?,?,?)').bind(e.seq,e.name,e.text,e.created)),
+    if(!Array.isArray(payload.rooms)||payload.rooms.length>25||!payload.rooms.every(room=>isId(room?.id)&&isText(room.name,70))||
+       !Array.isArray(payload.events)||payload.events.length>35||!Array.isArray(payload.acknowledged)||payload.acknowledged.length>20)return json({error:'Invalid batch'},400);
+    const ids=new Set(payload.rooms.map(room=>room.id));
+    if(!payload.acknowledged.every(isId)||!payload.events.every(e=>ids.has(e?.room)&&Number.isSafeInteger(e.seq)&&e.seq>0&&isText(e.name,120)&&isText(e.text,30000)&&isText(e.created,50)))return json({error:'Invalid event'},400);
+    const actions=[env.DB.prepare('DELETE FROM remote_rooms')];
+    for(const room of payload.rooms)actions.push(env.DB.prepare('INSERT OR IGNORE INTO remote_rooms(id,name) VALUES(?,?)').bind(room.id,room.name));
+    if(ids.has(payload.legacyRoom)){
+      actions.push(env.DB.prepare('UPDATE remote_events SET room=? WHERE room IS NULL').bind(payload.legacyRoom));
+      actions.push(env.DB.prepare('UPDATE remote_commands SET room=? WHERE room IS NULL').bind(payload.legacyRoom));
+    }
+    actions.push(
+      ...payload.events.map(e=>env.DB.prepare('INSERT OR IGNORE INTO remote_events(seq,name,text,created,room) VALUES(?,?,?,?,?)').bind(e.seq,e.name,e.text,e.created,e.room)),
       ...payload.acknowledged.map(id=>env.DB.prepare('UPDATE remote_commands SET delivered=1 WHERE id=?').bind(id)),
-    ];
-    if(actions.length)await env.DB.batch(actions);
-    const pending=await env.DB.prepare('SELECT id,text FROM remote_commands WHERE delivered=0 ORDER BY created,id LIMIT 20').all();
+      env.DB.prepare('DELETE FROM remote_commands WHERE delivered=0 AND room IS NOT NULL AND room NOT IN (SELECT id FROM remote_rooms)')
+    );
+    await env.DB.batch(actions);
+    const pending=await env.DB.prepare('SELECT id,text,room FROM remote_commands WHERE delivered=0 AND room IN (SELECT id FROM remote_rooms) ORDER BY created,id LIMIT 20').all();
     return json({commands:pending.results});
   }
   if(route==='/api/room/whoami'&&request.method==='GET')return owner?json({id:owner}):json({error:'Sign-in required'},403);
-  if(!owner||!env.REMOTE_OWNER_ID||owner!==env.REMOTE_OWNER_ID)return json({error:'Owner sign-in required'},403);
+  if(!owner||(env.REMOTE_OWNER_ID&&owner!==env.REMOTE_OWNER_ID))return json({error:'Owner sign-in required'},403);
   if(route!=='/api/room/browser')return json({error:'Not found'},404);
   if(request.method==='GET'){
-    const recent=await env.DB.prepare('SELECT seq,name,text,created FROM remote_events ORDER BY seq DESC LIMIT 100').all();
-    return json({events:recent.results.reverse()});
+    const rooms=(await env.DB.prepare('SELECT id,name FROM remote_rooms ORDER BY name,id').all()).results;
+    const room=new URL(request.url).searchParams.get('room');
+    if(room&&!rooms.some(item=>item.id===room))return json({error:'Room is not shared'},404);
+    const recent=room?await env.DB.prepare('SELECT seq,name,text,created FROM remote_events WHERE room=? ORDER BY seq DESC LIMIT 100').bind(room).all():{results:[]};
+    return json({rooms,events:recent.results.reverse()});
   }
   if(request.method!=='POST'||request.headers.get('origin')!==new URL(request.url).origin)return json({error:'Forbidden'},403);
   let payload;try{payload=await readBody(request,40000);}catch{return json({error:'Invalid payload'},400);}
   if(!isId(payload.id)||!isText(payload.text,8000))return json({error:'Invalid message'},400);
-  const old=await env.DB.prepare('SELECT text FROM remote_commands WHERE id=?').bind(payload.id).first();
-  if(old&&old.text!==payload.text)return json({error:'Request ID already used'},409);
-  await env.DB.prepare('INSERT OR IGNORE INTO remote_commands(id,text,created) VALUES(?,?,?)').bind(payload.id,payload.text,Date.now()).run();
+  if(!isId(payload.room)||!await env.DB.prepare('SELECT id FROM remote_rooms WHERE id=?').bind(payload.room).first())return json({error:'Room is not shared'},404);
+  const old=await env.DB.prepare('SELECT text,room FROM remote_commands WHERE id=?').bind(payload.id).first();
+  if(old&&(old.text!==payload.text||old.room!==payload.room))return json({error:'Request ID already used'},409);
+  await env.DB.prepare('INSERT OR IGNORE INTO remote_commands(id,text,created,room) VALUES(?,?,?,?)').bind(payload.id,payload.text,Date.now(),payload.room).run();
   return json({queued:true});
 }

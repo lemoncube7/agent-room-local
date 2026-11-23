@@ -37,6 +37,9 @@ run("UPDATE deliveries SET state='uncertain' WHERE state IN ('submitting','worki
 if(!all('PRAGMA table_info(messages)').some(column=>column.name==='relay_root'))db.exec('ALTER TABLE messages ADD COLUMN relay_root INTEGER');
 db.exec('CREATE TABLE IF NOT EXISTS desktop_bindings(member TEXT PRIMARY KEY, thread TEXT NOT NULL UNIQUE, pipe TEXT, since INTEGER NOT NULL)');
 run("UPDATE deliveries SET state='uncertain' WHERE state='submitting' AND member IN (SELECT member FROM desktop_bindings)");
+db.exec('CREATE TABLE IF NOT EXISTS remote_rooms (room TEXT PRIMARY KEY, since INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS remote_options (enabled INTEGER NOT NULL)');
+const selectedRemoteRooms=()=>all('SELECT room,since FROM remote_rooms');
+const remoteConfigured=()=>Boolean(one('SELECT enabled FROM remote_options'));
 const cliBusy=new Set();
 const desktopBusy=new Set();
 const desktopRetry=new Map();
@@ -197,6 +200,7 @@ function task({action,room,participant,name,text,request,replyTo,after=0,...extr
   if(typeof action==='string'&&action.startsWith('handoff_'))return handoff.change({action,name,text,request,...extra},participant,room);
   if(['bind_codex_desktop','test_codex_desktop'].includes(action))return desktopCommands({action,room,participant,...extra});
   if(action==='remote_user_message'){
+    if(remoteConfigured()&&!one('SELECT room FROM remote_rooms WHERE room=?',room))throw Error('Remote access is disabled for this room.');
     if(!/^[a-f0-9-]{36}$/i.test(request||''))throw Error('Invalid remote message identifier.');
     const seq=recordUserMessage(room,text,'remote:'+request);
     dispatchQueuedTurns();
@@ -255,7 +259,7 @@ function task({action,room,participant,name,text,request,replyTo,after=0,...extr
   }catch(error){db.exec('ROLLBACK');throw error;}
 }
 function state(){
-  return {version,tasks:handoff.list(),updateStatus:fs.existsSync(updateLog)?fs.readFileSync(updateLog,'utf8').trim().split(/\r?\n/).at(-1):null,rooms:all('SELECT * FROM rooms ORDER BY rowid'),
+  return {version,remoteConfigured:remoteConfigured(),remoteRooms:selectedRemoteRooms(),tasks:handoff.list(),updateStatus:fs.existsSync(updateLog)?fs.readFileSync(updateLog,'utf8').trim().split(/\r?\n/).at(-1):null,rooms:all('SELECT * FROM rooms ORDER BY rowid'),
     members:all("SELECT members.id,room,name,state,parent,cli_sessions.provider,cli_sessions.model,cli_sessions.effort,cli_sessions.last_cli_error FROM members LEFT JOIN cli_sessions ON cli_sessions.member=members.id WHERE state<>'human'").map(row=>({...row,busy:cliBusy.has(row.id),cliError:row.last_cli_error?JSON.parse(row.last_cli_error):null})),
     messages:all('SELECT messages.*,members.name FROM messages JOIN members ON messages.author=members.id ORDER BY seq'),
     deliveries:all('SELECT deliveries.seq,deliveries.member,members.name,deliveries.state FROM deliveries JOIN members ON deliveries.member=members.id')};
@@ -337,6 +341,17 @@ const server=http.createServer(async(req,res)=>{
       if(typeof args.action==='string'&&args.action.startsWith('handoff_')){
         const update=handoff.change(args,'human:'+args.room,args.room);
         if(args.action==='handoff_history')result=update;
+      }
+      else if(args.action==='remote_rooms'){
+        if(!Array.isArray(args.rooms)||args.rooms.length>25||args.rooms.some(id=>!one('SELECT id FROM rooms WHERE id=?',id)))throw Error('Invalid remote room selection.');
+        db.exec('BEGIN');
+        try{
+          const ids=new Set(args.rooms);
+          for(const row of selectedRemoteRooms())if(!ids.has(row.room))run('DELETE FROM remote_rooms WHERE room=?',row.room);
+          for(const id of ids)run('INSERT OR IGNORE INTO remote_rooms(room,since) VALUES(?,(SELECT COALESCE(MAX(seq),0) FROM messages WHERE room=?))',id,id);
+          if(!remoteConfigured())run('INSERT INTO remote_options VALUES(1)');
+          db.exec('COMMIT');
+        }catch(error){db.exec('ROLLBACK');throw error;}
       }
       else if(args.action==='create')run('INSERT INTO rooms VALUES(?,?)',randomUUID(),str(args.name,70));
       else if(args.action==='list_models'){
