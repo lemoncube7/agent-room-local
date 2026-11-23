@@ -154,14 +154,14 @@ async function main(){
   assert.deepEqual(targetState.deliveries.filter(d=>d.seq===targeted.seq).map(d=>d.member),[managedClaude.id]);
   await rpc('/control',{action:'room_ranking',room:room.id,enabled:true});
   const ranked=await rpc('/control',{action:'user_message',room:room.id,text:'Rank test'});
-  const rankedSeq=ranked.messages.at(-1).seq;
+  const rankedSeq=ranked.messages.find(m=>m.body==='Rank test').seq;
   await until(async()=>(await sync()).replyPlans.find(p=>p.seq===rankedSeq&&p.state==='ready'));
   const ranking=(await sync()).deliveries.filter(d=>d.seq===rankedSeq);
   assert.equal(ranking.find(d=>d.member===managedAgy.id).priority,0);
   assert.equal(ranking.find(d=>d.member===managedAgy.id).state,'context_only');
   assert.equal(ranking.find(d=>d.member===secondCodex.id).priority,1);
   const tie=await rpc('/control',{action:'user_message',room:room.id,text:'Tie test'});
-  const tieSeq=tie.messages.at(-1).seq;
+  const tieSeq=tie.messages.find(m=>m.body==='Tie test').seq;
   const simultaneous=await until(async()=>{
     const rows=(await sync()).deliveries.filter(d=>d.seq===tieSeq);
     return rows.filter(d=>d.priority===1&&d.state==='working').length>=2?rows:null;
@@ -169,8 +169,12 @@ async function main(){
   assert.ok(simultaneous.some(d=>d.priority===2&&d.state==='queued'));
   await until(async()=>(await sync()).deliveries.find(d=>d.seq===tieSeq&&d.priority===2&&d.state==='working'));
   const bad=await rpc('/control',{action:'user_message',room:room.id,text:'Bad rank JSON'});
-  const badSeq=bad.messages.at(-1).seq;
+  const badSeq=bad.messages.find(m=>m.body==='Bad rank JSON').seq;
   await until(async()=>(await sync()).replyPlans.find(p=>p.seq===badSeq&&p.state==='fallback'));
+  const directText='@Reviewer, confirm the task';
+  const direct=await rpc('/control',{action:'user_message',room:room.id,text:directText});
+  const directSeq=direct.messages.find(m=>m.body===directText).seq;
+  await until(async()=>(await sync()).deliveries.find(d=>d.seq===directSeq&&d.member===managedAgy.id&&d.priority===1));
   const stopped=once(hub,'exit');
   hub.kill();
   await stopped;
