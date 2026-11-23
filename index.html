@@ -127,6 +127,7 @@ async function control(body){
  }catch(e){err(e.message);return false;}
 }
 function update(next){
+ if(!Array.isArray(next?.rooms))return;
  byId('current-version').textContent=next.version?'v'+next.version:'버전 확인 불가';
  const finished=[];
  for(const m of next.members||[]){
