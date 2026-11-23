@@ -1,4 +1,9 @@
 const assert=require('node:assert/strict');
+const {diagnoseCliFailure}=require('./managed-codex.cjs');
+assert.equal(diagnoseCliFailure('claude',{},'Failed to authenticate: OAuth session expired and could not be refreshed').cliCode,'auth_expired');
+assert.equal(diagnoseCliFailure('codex',{},'Failed to create unified exec process: app runtime provisioning service is unavailable').cliCode,'windows_runtime');
+assert.equal(diagnoseCliFailure('agy',{code:'ENOENT'},'').cliCode,'cli_missing');
+
 const {spawn}=require('node:child_process');
 const {once}=require('node:events');
 const path=require('node:path');

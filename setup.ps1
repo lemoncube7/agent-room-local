@@ -4,7 +4,8 @@ param(
   [switch]$Apply,
   [switch]$SelectProject,
   [switch]$Connect,
-  [switch]$Test
+  [switch]$Test,
+  [string]$CodexCli
 )
 $ErrorActionPreference = 'Stop'
 $projectPath = (Resolve-Path -LiteralPath $Project).Path
@@ -83,6 +84,16 @@ if ($Apply) {
   if (-not $existingCodex) { Save-Config $codexPath ($codex.TrimEnd()+"`n`n"+$managedBlock+"`n") }
 }
 $cliSettings = @{codex=(Find-AgentCli 'codex');claude=(Find-AgentCli 'claude');agy=(Find-AgentCli 'agy')}
+if ($CodexCli) {
+  $cliSettings.codex=(Resolve-Path -LiteralPath $CodexCli).Path
+  if(-not (Test-Path -LiteralPath $cliSettings.codex -PathType Leaf)){throw 'Codex CLI must be a file.'}
+} else {
+  $savedCliPath=Join-Path $PSScriptRoot 'local/cli.json'
+  if(Test-Path -LiteralPath $savedCliPath){
+    $savedCli=Get-Content -LiteralPath $savedCliPath -Raw | ConvertFrom-Json
+    if($savedCli.codex -and (Test-Path -LiteralPath $savedCli.codex -PathType Leaf)){$cliSettings.codex=$savedCli.codex}
+  }
+}
 if ($Connect -or $SelectProject) {
   $roomLocal = Join-Path $PSScriptRoot 'local'
   [void][IO.Directory]::CreateDirectory($roomLocal)

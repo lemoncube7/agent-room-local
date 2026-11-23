@@ -26,10 +26,33 @@ function parseCodex(stdout, session) {
     try { return [JSON.parse(line)]; } catch { return []; }
   });
   return {
+    toolDiagnostics: events.filter(event=>event.type==='item.completed'&&event.item?.type==='command_execution'&&event.item.exit_code!==0).map(event=>event.item.aggregated_output||'').join('\n'),
     id: session || events.find(event => event.type === 'thread.started')?.thread_id,
     reply: events.filter(event => event.type === 'item.completed' && event.item?.type === 'agent_message')
       .map(event => event.item.text).filter(Boolean).at(-1)
   };
+}
+
+function diagnoseCliFailure(provider,error,diagnostic){
+  const name={codex:'Codex',claude:'Claude Code',agy:'Antigravity'}[provider]||'CLI';
+  const failure=(code,message,action)=>Object.assign(new Error(name+' · '+message+' '+action),{cliCode:code});
+  if(/app runtime provisioning service|failed to create unified exec process|appx.*provision/i.test(diagnostic))
+    return failure('windows_runtime','Windows에서 작업 명령을 실행하는 환경이 시작되지 않았어요.','기존 데스크톱 대화를 연결하거나 독립 CLI 설치를 확인하세요.');
+  if(/oauth.{0,35}(?:expired|refresh)|failed to authenticate|not logged in|please log in|authentication failed|not authenticated|login required/i.test(diagnostic))
+    return failure('auth_expired','로그인이 만료됐거나 인증에 실패했어요.',provider==='claude'?'터미널에서 claude auth login을 실행한 뒤 다시 보내세요.':provider==='codex'?'터미널에서 codex login을 실행한 뒤 다시 보내세요.':'Antigravity를 열어 로그인한 뒤 다시 보내세요.');
+  if(/rate limit|resource_exhausted|usage limit|quota exceeded|(?:http|status)s*429/i.test(diagnostic))
+    return failure('usage_limit','요청 또는 사용량 한도에 걸렸어요.','한도 초기화 후 다시 시도하거나 사용 가능한 모델을 선택하세요.');
+  if(/model.{0,100}(?:invalid|not available|not found|not supported)|invalid model/i.test(diagnostic))
+    return failure('model_unavailable','선택한 모델을 사용할 수 없어요.','모델 목록에서 다른 모델을 선택하세요.');
+  if(error?.code==='ENOENT')return failure('cli_missing','실행 파일이나 작업 폴더를 찾지 못했어요.','CLI를 설치하고 시작 화면에서 프로젝트를 다시 선택하세요.');
+  if(['EACCES','EPERM'].includes(error?.code))return failure('access_denied','Windows가 CLI 실행을 차단했어요.','실행 파일과 프로젝트 폴더의 접근 권한을 확인하세요.');
+  if(error?.killed||/timed out|timeout/i.test(diagnostic))return failure('timeout','제한 시간 안에 응답이 오지 않았어요.','CLI에서 네트워크와 장시간 작업 여부를 확인한 뒤 다시 시도하세요.');
+  if(/econn|enotfound|tls handshake|network connection|unable to connect/i.test(diagnostic))
+    return failure('network','CLI가 서비스에 연결하지 못했어요.','인터넷 연결을 확인한 뒤 다시 시도하세요.');
+  if(/untrusted|trust this (?:project|folder)|workspace trust/i.test(diagnostic))
+    return failure('project_trust','CLI가 프로젝트 신뢰 확인을 요청했어요.','터미널에서 같은 폴더를 열고 신뢰 여부를 확인하세요.');
+  const suffix=typeof error?.code==='number'?' (종료 코드 '+error.code+')':'';
+  return failure('unknown','CLI에서 완성된 응답을 받지 못했어요'+suffix+'.','같은 프로젝트에서 CLI를 직접 열어 오류를 확인하세요.');
 }
 
 function runCodex(project, prompt, session, provider='codex',model=null,effort=null) {
@@ -60,16 +83,19 @@ function runCodex(project, prompt, session, provider='codex',model=null,effort=n
           if(!response.is_error)result={id:response.session_id,reply:response.result};
         }else result=parseCodex(stdout,session);
       }catch{}
-      if(error||!result?.id||typeof result.reply!=='string'||!result.reply.trim()){
-        const diagnostic=(stderr||'')+'\n'+stdout;
-        if(/appx|app.?runtime|provisioning service/i.test(diagnostic))return reject(Error(name+' CLI의 Windows 앱 런타임을 시작하지 못했어요.'));
-        if(/not logged in|please log in|authentication failed|not authenticated|login required/i.test(diagnostic))return reject(Error(name+' CLI 로그인 확인이 필요해요.'));
-        if(/rate limit|resource_exhausted|usage limit|quota exceeded/i.test(diagnostic))return reject(Error(name+' CLI 사용량 한도에 도달했어요.'));
-        if(/model.*(?:invalid|not available|not found|not supported)/i.test(diagnostic))return reject(Error(name+' CLI에서 선택한 모델을 사용할 수 없어요.'));
-        return reject(new Error(['ENOENT','EACCES','EPERM'].includes(error?.code)
-          ? name+' CLI를 실행할 수 없어요. CLI를 설치한 뒤 Agent Room 시작 창에서 프로젝트를 다시 설정하세요.'
-          : name+' CLI가 답변을 완료하지 못했어요. CLI 로그인과 프로젝트 접근 설정을 확인하세요.'));
+      const diagnostic=(stderr||'')+'\n'+stdout;
+      const incomplete=error||!result?.id||typeof result.reply!=='string'||!result.reply.trim();
+      const detected=diagnoseCliFailure(provider,error,diagnostic);
+      if(incomplete)return reject(detected);
+      const toolFailure=provider==='codex'&&(
+        diagnoseCliFailure(provider,null,(stderr||'')+'\n'+(result.toolDiagnostics||'')).cliCode==='windows_runtime'||
+        /^Failed to create unified exec process: app runtime provisioning service/i.test(result.reply.trim())
+      );
+      if(toolFailure){
+        const issue=diagnoseCliFailure(provider,null,'app runtime provisioning service');
+        result.issue={code:issue.cliCode,message:issue.message};
       }
+      delete result.toolDiagnostics;
       resolve(result);
     });
     child.stdin.on('error',()=>{});
@@ -132,4 +158,4 @@ function discoverModels(project,provider){
   });
 }
 
-module.exports={runCodex,discoverModels};
+module.exports={runCodex,discoverModels,diagnoseCliFailure};

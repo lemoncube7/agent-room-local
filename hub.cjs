@@ -29,6 +29,7 @@ db.exec('CREATE TABLE IF NOT EXISTS cli_sessions(member TEXT PRIMARY KEY, projec
 if(!all('PRAGMA table_info(cli_sessions)').some(column=>column.name==='provider')) db.exec("ALTER TABLE cli_sessions ADD COLUMN provider TEXT NOT NULL DEFAULT 'codex'");
 if(!all('PRAGMA table_info(cli_sessions)').some(column=>column.name==='model'))db.exec('ALTER TABLE cli_sessions ADD COLUMN model TEXT');
 if(!all('PRAGMA table_info(cli_sessions)').some(column=>column.name==='effort'))db.exec('ALTER TABLE cli_sessions ADD COLUMN effort TEXT');
+if(!all('PRAGMA table_info(cli_sessions)').some(column=>column.name==='last_cli_error'))db.exec('ALTER TABLE cli_sessions ADD COLUMN last_cli_error TEXT');
 const normalizeEffort=value=>{if(!value)return null;if(!['low','medium','high'].includes(value))throw Error('Unsupported reasoning effort.');return value;};
 const providerNames={codex:'Codex CLI',claude:'Claude Code CLI',agy:'Antigravity'};
 run("UPDATE members SET state='start_failed' WHERE state IN ('starting','approved') AND id IN (SELECT member FROM cli_sessions WHERE thread IS NULL)");
@@ -123,6 +124,7 @@ async function cliTurn(participant, prompt, inputSeq){
     const body=recipient?match[2].trim():result.reply.trim();
     const silent=!body||body==='[[AGENT_ROOM_NO_REPLY]]';
     run('UPDATE cli_sessions SET thread=? WHERE member=?',result.id,participant);
+    run('UPDATE cli_sessions SET last_cli_error=? WHERE member=?',result.issue?JSON.stringify(result.issue):null,participant);
     if(row.state==='starting')run("UPDATE members SET state='approved' WHERE id=? AND state='starting'",participant);
     if(!silent&&one("SELECT id FROM members WHERE id=? AND state='approved'",participant)){
       const root=input?.relay_root??inputSeq??null;
@@ -134,8 +136,9 @@ async function cliTurn(participant, prompt, inputSeq){
         db.exec('COMMIT');
       }catch(error){db.exec('ROLLBACK');throw error;}
     }
-    if(inputSeq)run('UPDATE deliveries SET state=? WHERE seq=? AND member=?',silent?'no_reply':'answered',inputSeq,participant);
+    if(inputSeq)run('UPDATE deliveries SET state=? WHERE seq=? AND member=?',result.issue?'failed':silent?'no_reply':'answered',inputSeq,participant);
   }catch(error){
+    if(error.cliCode)run('UPDATE cli_sessions SET last_cli_error=? WHERE member=?',JSON.stringify({code:error.cliCode,message:error.message}),participant);
     if(row.state==='starting')run("UPDATE members SET state='start_failed' WHERE id=? AND state='starting'",participant);
     if(inputSeq)run("UPDATE deliveries SET state='failed' WHERE seq=? AND member=?",inputSeq,participant);
     storeMessage(row.room,participant,error.message);
@@ -253,7 +256,7 @@ function task({action,room,participant,name,text,request,replyTo,after=0,...extr
 }
 function state(){
   return {version,tasks:handoff.list(),updateStatus:fs.existsSync(updateLog)?fs.readFileSync(updateLog,'utf8').trim().split(/\r?\n/).at(-1):null,rooms:all('SELECT * FROM rooms ORDER BY rowid'),
-    members:all("SELECT members.id,room,name,state,parent,cli_sessions.provider,cli_sessions.model,cli_sessions.effort FROM members LEFT JOIN cli_sessions ON cli_sessions.member=members.id WHERE state<>'human'").map(row=>({...row,busy:cliBusy.has(row.id)})),
+    members:all("SELECT members.id,room,name,state,parent,cli_sessions.provider,cli_sessions.model,cli_sessions.effort,cli_sessions.last_cli_error FROM members LEFT JOIN cli_sessions ON cli_sessions.member=members.id WHERE state<>'human'").map(row=>({...row,busy:cliBusy.has(row.id),cliError:row.last_cli_error?JSON.parse(row.last_cli_error):null})),
     messages:all('SELECT messages.*,members.name FROM messages JOIN members ON messages.author=members.id ORDER BY seq'),
     deliveries:all('SELECT deliveries.seq,deliveries.member,members.name,deliveries.state FROM deliveries JOIN members ON deliveries.member=members.id')};
 }
@@ -381,6 +384,12 @@ const server=http.createServer(async(req,res)=>{
         run('INSERT INTO cli_sessions(member,project,provider,model,effort) VALUES(?,?,?,?,?)',id,project,provider,model,effort);
         run("INSERT OR IGNORE INTO members(id,room,name,state) VALUES(?,?,?,'human')",'human:'+args.room,args.room,'나');
         void cliTurn(id,'You are connected to Agent Room. Briefly say hello in Korean. Do not change any project files.');
+      }
+      else if(args.action==='retry_agent'){
+        const failed=one("SELECT members.id FROM members JOIN cli_sessions ON cli_sessions.member=members.id WHERE members.id=? AND room=? AND state='start_failed'",args.participant,args.room);
+        if(!failed||cliBusy.has(failed.id))throw Error('실행에 실패한 에이전트를 선택하세요.');
+        run("UPDATE members SET state='starting' WHERE id=?",failed.id);
+        void cliTurn(failed.id,'Briefly greet the room. Do not change any files.');
       }
       else if(args.action==='edit_agent'){
         if(cliBusy.has(args.participant))throw Error('답변이 끝난 뒤 에이전트 설정을 변경하세요.');
