@@ -40,7 +40,7 @@ header{padding:12px 22px;border-color:var(--line);background:var(--bg)}header h2
 article{max-width:min(82%,720px);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 14px}article>strong{font-size:13px}article>small{display:block;margin-top:4px;font-size:11px;color:var(--muted)}
 article.own{background:#1f2a4a;border-color:#2f3f6e}article.own strong{color:#b6c8ff}
 article.codex,article.claude,article.agy{background:var(--panel);border-color:var(--line);border-inline-start-width:3px}article.codex{border-inline-start-color:#6ea8ff}article.claude{border-inline-start-color:#f0a27a}article.agy{border-inline-start-color:#8fd16f}
-.markdown,article p{color:var(--text)}.markdown .code-wrap{position:relative}.markdown pre{background:var(--bg);border:1px solid var(--line);padding:30px 10px 10px;margin:0}.markdown .copy-btn{position:absolute;top:6px;right:6px;z-index:2;padding:2px 8px;font-size:11px;border-radius:6px;background:var(--raised)}.markdown :not(pre)>code{background:var(--raised);border-radius:4px;padding:1px 5px;font-size:.92em}.markdown a{color:var(--accent)}
+.markdown,article p{color:var(--text)}.markdown .code-wrap{position:relative}.markdown pre{background:var(--bg);border:1px solid var(--line);padding:30px 10px 10px;margin:0}.markdown .copy-btn{position:absolute;top:6px;right:6px;z-index:2;padding:2px 8px;font-size:11px;border-radius:6px;background:var(--raised)}.markdown :not(pre)>code{background:var(--raised);border-radius:4px;padding:1px 5px;font-size:.92em}.markdown a{color:var(--accent)}.flow-badge{display:inline-block;margin-left:6px;font-size:10px;font-weight:600;padding:1px 6px;border-radius:999px;background:var(--raised);border:1px solid var(--line);color:var(--muted);vertical-align:middle}
 #approvals{padding:0 max(22px,calc((100% - 1240px)/2))}
 #compose{gap:8px;border-color:var(--line);background:var(--bg);padding:12px max(22px,calc((100% - 1240px)/2))!important}#draft{background:var(--panel);border-color:var(--line);border-radius:10px;padding:10px 14px}#compose button{flex:none;padding:10px 18px;border-radius:10px}
 dialog{background:var(--panel);color:var(--text);border-color:var(--line);border-radius:14px;padding:22px;margin:auto;max-height:88vh;overflow:auto}dialog h2{margin:0 0 8px;font-size:17px}dialog p{color:var(--muted);font-size:13px}
@@ -384,12 +384,19 @@ function renderHistory(view,messages,typing,roomChanged){
   const sorted=snapshot.deliveries.filter(d=>d.seq===m.seq).sort((a,b)=>(a.priority||Infinity)-(b.priority||Infinity));
   const fallback=snapshot.replyPlans?.some(plan=>plan.seq===m.seq&&plan.state==='fallback');
   const delivery=sorted.map(d=>(d.priority===null||d.priority===undefined?'':d.priority+' · ')+d.name+' · '+status[d.state]).join(' / ')+(fallback?' · 기본 순서 사용':'');
-  const sig=JSON.stringify([m.retracted?1:0,delivery,target?.name||'',author?.provider||'']);
+  const sig=JSON.stringify([m.retracted?1:0,delivery,target?.name||'',author?.provider||'',m.relay_root||0]);
   const key='message:'+m.seq, prev=existing.get(key);
   if(prev&&prev.dataset.sig===sig)return prev;
   const card=agentCard(m.name,m.author==='human:'+selected,author?.provider);card.dataset.key=key;card.dataset.sig=sig;
   if(m.retracted)card.classList.add('retracted');
-  card.append(el('strong',m.name+(target?' → '+target.name:'')),m.retracted?el('p','철회한 메시지입니다.'):markdown(m.body),el('small',new Date(m.created).toLocaleTimeString('ko-KR')+' · '+(delivery||'방에 저장됨')));
+  const title=el('strong',m.name+(target?' → '+target.name:''));
+  if(m.relay_root&&author){
+   const rootDel=snapshot.deliveries.find(d=>d.seq===m.relay_root&&d.member===m.author);
+   const caller=messages.slice().reverse().find(p=>p.seq<m.seq&&p.seq>=m.relay_root&&p.author!==m.author&&p.author!=='human:'+selected&&snapshot.deliveries.some(d=>d.seq===p.seq&&d.member===m.author&&d.priority===1&&['queued','working','answered','accepted','submitting'].includes(d.state)));
+   const flowText=caller?caller.name+' → '+m.name+' 호출':rootDel?.priority?'자동 '+rootDel.priority+'순위':'';
+   if(flowText){const fb=el('span',flowText);fb.className='flow-badge';title.append(fb);}
+  }
+  card.append(title,m.retracted?el('p','철회한 메시지입니다.'):markdown(m.body),el('small',new Date(m.created).toLocaleTimeString('ko-KR')+' · '+(delivery||'방에 저장됨')));
   if(m.author==='human:'+selected&&!m.retracted){
    if(sorted.length&&sorted.every(d=>!d.priority)&&sorted.some(d=>['context_only','context_seen'].includes(d.state))){
     const wake=el('button','1순위로 깨우기');wake.type='button';wake.className='retract-btn';
@@ -409,6 +416,15 @@ function renderHistory(view,messages,typing,roomChanged){
   card.setAttribute('role','status');card.append(el('strong',agent.name));
   if(agent.progress?.preview)card.append(markdown(agent.progress.preview));
   card.append(el('small',statusText));
+  nodes.push(card);
+ }
+ const roomMsgSeqs=new Set(messages.map(m=>m.seq));
+ const nextQueued=snapshot.deliveries.filter(d=>roomMsgSeqs.has(d.seq)&&d.state==='queued'&&d.priority>=2&&!typing.some(t=>t.id===d.member));
+ for(const nq of nextQueued){
+  const ag=snapshot.members.find(m=>m.id===nq.member&&m.state==='approved'&&!m.paused);
+  if(!ag)continue;
+  const card=agentCard(ag.name,false,ag.provider);card.classList.add('typing');card.dataset.key='waiting:'+ag.id+':'+nq.seq;
+  card.setAttribute('role','status');card.append(el('strong',ag.name),el('small','⏳ 다음 차례 대기 중 ('+nq.priority+'순위 · 앞선 응답 완료 후 자동 실행)'));
   nodes.push(card);
  }
  if(!nodes.length)nodes.push(el('small','아직 메시지가 없어요.'));
