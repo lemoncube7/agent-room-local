@@ -63,16 +63,19 @@ function Sync-ClaudeMcp($file,$writeChanges) {
   }
   return $false
 }
-function Sync-CodexMcp($file,$writeChanges) {
+function Sync-CodexMcp($file,$writeChanges,$trustDir=$null) {
   $raw = if (Test-Path -LiteralPath $file) { [IO.File]::ReadAllText($file) } else { '' }
   $norm = $raw -replace "`r`n","`n"
   $hasManaged = $norm.Contains($managedBlock)
   if (([regex]::IsMatch($norm,'(?m)^\s*\[mcp_servers\.(?:agent-room|"agent-room"|''agent-room'')\s*\]')) -and -not $hasManaged) {
     throw "Existing Codex agent-room config differs in $file. Review it before applying setup."
   }
-  if (-not $hasManaged -and $writeChanges) {
-    $prefix = if ($raw.TrimEnd()) { $raw.TrimEnd()+"`n`n" } else { '' }
-    Save-Config $file ($prefix+$managedBlock+"`n")
+  $needsTrust = $trustDir -and -not [regex]::IsMatch($norm, ('(?mi)^\s*\[projects\.' + [regex]::Escape("'$trustDir'") + '\s*\]')) -and -not [regex]::IsMatch($norm, ('(?mi)^\s*\[projects\.' + [regex]::Escape('"' + $trustDir.Replace('\','\\') + '"') + '\s*\]'))
+  if ((-not $hasManaged -or $needsTrust) -and $writeChanges) {
+    $next = $raw.TrimEnd()
+    if (-not $hasManaged) { $next = if ($next) { $next + "`n`n" + $managedBlock } else { $managedBlock } }
+    if ($needsTrust) { $next = if ($next) { $next + "`n`n[projects.'$trustDir']`ntrust_level = `"trusted`"" } else { "[projects.'$trustDir']`ntrust_level = `"trusted`"" } }
+    Save-Config $file ($next + "`n")
     return $true
   }
   return $hasManaged
@@ -115,7 +118,7 @@ if ($CodexCli) {
 if ($Apply -and $Global) {
   $globalCodexPath = Join-Path $env:USERPROFILE '.codex/config.toml'
   $globalClaudePath = Join-Path $env:USERPROFILE '.claude.json'
-  [void](Sync-CodexMcp $globalCodexPath $true)
+  [void](Sync-CodexMcp $globalCodexPath $true $projectPath)
   [void](Sync-ClaudeMcp $globalClaudePath $true)
   if ($env:APPDATA -and (Test-Path -LiteralPath (Join-Path $env:APPDATA 'Claude') -PathType Container)) {
     [void](Sync-ClaudeMcp (Join-Path $env:APPDATA 'Claude/claude_desktop_config.json') $true)

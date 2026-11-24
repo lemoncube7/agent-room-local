@@ -333,6 +333,11 @@ function agentActions(m){
   const diagnostic=el('button','오류 원인');diagnostic.title=m.cliError.message;
   diagnostic.onclick=()=>err('['+m.cliError.code+'] '+m.cliError.message);
   box.append(diagnostic);
+  if(m.cliError.code==='auth_expired'&&m.provider){
+   const loginBtn=el('button','로그인 창 열기');
+   loginBtn.onclick=()=>control({action:'login_cli',room:selected,participant:m.id});
+   box.append(loginBtn);
+  }
  }
  if(m.state==='start_failed'&&m.provider){
   const retry=el('button','다시 실행');

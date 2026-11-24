@@ -97,6 +97,8 @@ function diagnoseCliFailure(provider,error,diagnostic){
     return failure('timeout','제한 시간 안에 응답이 오지 않았어요'+(detail?' ('+detail+')':'')+'.','CLI에서 네트워크와 장시간 작업 여부를 확인한 뒤 다시 시도하세요.');
   if(/econn|enotfound|tls handshake|network connection|unable to connect/i.test(diagnostic))
     return failure('network','CLI가 서비스에 연결하지 못했어요.','인터넷 연결을 확인한 뒤 다시 시도하세요.');
+  if(/already has an active writer/i.test(diagnostic))
+    return failure('active_writer','다른 Codex 창(데스크톱 앱 또는 터미널)이 이 대화를 열고 있어 잠겨 있어요.','Codex 앱에서 해당 대화를 닫거나 다른 대화로 이동한 뒤 다시 시도하세요.');
   if(/untrusted|trust this (?:project|folder)|workspace trust/i.test(diagnostic))
     return failure('project_trust','CLI가 프로젝트 신뢰 확인을 요청했어요.','터미널에서 같은 폴더를 열고 신뢰 여부를 확인하세요.');
   const suffix=typeof error?.code==='number'?' (종료 코드 '+error.code+')':'';

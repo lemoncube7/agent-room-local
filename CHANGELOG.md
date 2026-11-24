@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.50
+- **Codex `active_writer` 데스크톱 앱 pipe 폴백 (`hub.cjs`, `codex-ipc.cjs`):** 데스크톱 앱에 열린 Codex 스레드로 `codex exec resume`이 잠금 오류(`already has an active writer`)를 반환하면, `codex-app-tools-*` named pipe(`send_message_to_thread`)로 자동 우회 전달합니다.
+- **인증 만료 시 자동 로그인 창 & 버튼 (`hub.cjs`, `index.html`):** `claude`/`codex`/`agy`에서 `auth_expired` 발생 시 자동으로 로그인 터미널 창을 띄우고(5분 쿨다운), 카드에 `로그인 창 열기` 버튼을 추가했습니다.
+- **프로젝트 신뢰 자동 등록 (`setup.ps1`, `managed-codex.cjs`):** `-Global` 적용 시 선택한 프로젝트를 `~/.codex/config.toml`에 `trust_level = "trusted"`로 자동 등록하며, `active_writer` 진단 안내를 추가했습니다.
+
 ## v0.2.49
 - **Windows Store Codex 자동 탐색 (`managed-codex.cjs`):** `OpenAI.Codex` 앱이 자동 업데이트되어 `local/cli.json`의 구버전 경로가 사라져도 `Get-AppxPackage`로 최신 `codex.exe` 경로를 자동 탐색합니다.
 - **CLI 바로 열기 수정 (`hub.cjs`):** `open_cli`가 공백·따옴표가 포함된 경로에서도 깨지지 않도록 `-EncodedCommand`와 `cmd.exe /c start` 방식으로 PowerShell 새 창을 열도록 수정했습니다.

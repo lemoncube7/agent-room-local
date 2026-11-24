@@ -52,8 +52,8 @@ async function main() {
     const {DatabaseSync}=require('node:sqlite');
     const db=new DatabaseSync(path.join(base,'local','rooms.db'),{readOnly:true});
     try{
-      const registration=db.prepare("SELECT thread FROM desktop_bindings JOIN members ON members.id=desktop_bindings.member WHERE member=? AND members.state='approved'").get(input.participant);
-      if(registration?.thread!==input.threadId)throw new Error('Recipient is not an approved Codex desktop binding.');
+      const registration=db.prepare("SELECT CASE WHEN desktop_bindings.thread=? THEN desktop_bindings.thread WHEN cli_sessions.thread=? THEN cli_sessions.thread END AS thread FROM members LEFT JOIN desktop_bindings ON desktop_bindings.member=members.id LEFT JOIN cli_sessions ON cli_sessions.member=members.id AND cli_sessions.provider='codex' WHERE members.id=? AND members.state='approved'").get(input.threadId,input.threadId,input.participant);
+      if(registration?.thread!==input.threadId)throw new Error('Recipient is not an approved Codex thread.');
     }finally{db.close();}
   }else{
     const sessions=JSON.parse(fs.readFileSync(path.join(base,'local','sessions.json'),'utf8').replace(/^\uFEFF/,''));

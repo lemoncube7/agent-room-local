@@ -393,6 +393,7 @@ function getWarmApproval(participant,room,name,permission){
 async function cliTurn(participant, prompt, inputSeq){
   const session=one('SELECT * FROM cli_sessions WHERE member=?',participant);
   const row=one("SELECT room,name,state,role FROM members WHERE id=? AND state IN ('approved','starting')",participant);
+  let fullPrompt=prompt;
   if(!session||!row||cliBusy.has(participant))return;
   cliBusy.add(participant);
   const input=inputSeq?one('SELECT relay_root,author,recipient FROM messages WHERE seq=?',inputSeq):null;
@@ -471,7 +472,8 @@ async function cliTurn(participant, prompt, inputSeq){
     const memoBlock=roomMemo?'\nPinned room memo (shared rules & decisions): '+roomMemo:'';
     const activeTasks=all("SELECT t.id,t.title,t.next,t.status,o.name AS owner_name,f.name AS offered_name FROM handoff_tasks t LEFT JOIN members o ON o.id=t.owner LEFT JOIN members f ON f.id=t.offered_to WHERE t.room=? AND t.status<>'done' ORDER BY t.id DESC LIMIT 10",row.room);
     const tasksBlock=activeTasks.length?'\nActive room tasks: '+JSON.stringify(activeTasks.map(t=>({id:t.id,title:t.title,status:t.status,owner:t.owner_name||'unassigned',...(t.offered_name?{offeredTo:t.offered_name}:{}),next:t.next}))):'';
-    const result=await invokeCli(session.project,context+formatLimitsContext()+' '+audience+' '+replyPolicy+structurePolicy+multiP1Policy+handoffPolicy+(interruptedTurns.delete(jobId)?' Your previous turn on this message was interrupted by an app restart. Check what was already done (files, git status) before continuing, and do not repeat completed work.':'')+memoBlock+tasksBlock+deliveryBlock+activityBlock+historyBlock+retractBlock+receivedBlock+'\n\n'+prompt,session.thread,session.provider,session.model,session.effort,turnOptions);
+    fullPrompt=context+formatLimitsContext()+' '+audience+' '+replyPolicy+structurePolicy+multiP1Policy+handoffPolicy+(interruptedTurns.delete(jobId)?' Your previous turn on this message was interrupted by an app restart. Check what was already done (files, git status) before continuing, and do not repeat completed work.':'')+memoBlock+tasksBlock+deliveryBlock+activityBlock+historyBlock+retractBlock+receivedBlock+'\n\n'+prompt;
+    const result=await invokeCli(session.project,fullPrompt,session.thread,session.provider,session.model,session.effort,turnOptions);
     cliCooldown.delete(participant);limitNotified.delete(participant);cliRepeatErrors.delete(participant);
     for(const item of retractedNotices)run("UPDATE deliveries SET state='retracted' WHERE seq=? AND member=? AND state='retract_notice'",item.seq,participant);
     if(inputSeq&&one('SELECT retracted FROM messages WHERE seq=?',inputSeq)?.retracted){
@@ -507,6 +509,7 @@ async function cliTurn(participant, prompt, inputSeq){
     const silent=!body||body==='[[AGENT_ROOM_NO_REPLY]]';
     run('UPDATE cli_sessions SET thread=?, last_cli_error=?, turns=turns+?, input_tokens=input_tokens+?, output_tokens=output_tokens+?, cost_usd=cost_usd+? WHERE member=?',
       result.id,result.issue?JSON.stringify(result.issue):null,result.usage?.turns||1,result.usage?.inputTokens||0,result.usage?.outputTokens||0,result.usage?.costUsd||0,participant);
+    if(result.issue?.code==='auth_expired')openLoginTerminal(session.provider,session.project);
     if(session.provider==='codex')void refreshCodexLimits();
     if(row.state==='starting')run("UPDATE members SET state='approved' WHERE id=? AND state='starting'",participant);
     if(forwarded.size&&silent&&inputSeq){
@@ -544,7 +547,25 @@ async function cliTurn(participant, prompt, inputSeq){
       run("UPDATE deliveries SET state='retracted' WHERE seq=? AND member=?",inputSeq,participant);
       return;
     }
+    if(error.cliCode==='active_writer'&&session.provider==='codex'&&session.thread){
+      const ipcState=await new Promise(resolve=>{
+        const payload=path.join(local,randomUUID()+'.app-input.json');
+        try{fs.writeFileSync(payload,JSON.stringify({threadId:session.thread,participant,prompt:fullPrompt,eventId:String(inputSeq||randomUUID())}),{flag:'wx'});}
+        catch{return resolve('failed');}
+        execFile(process.execPath,[path.join(__dirname,'codex-ipc.cjs'),payload],{windowsHide:true,timeout:30000},(_err,stdout)=>{
+          try{fs.rmSync(payload,{force:true});}catch{}
+          resolve(stdout.includes('"phase":"accepted"')?'accepted':stdout.includes('"phase":"submitting"')?'uncertain':'failed');
+        });
+      });
+      if(ipcState==='accepted'||ipcState==='uncertain'){
+        run('UPDATE cli_sessions SET last_cli_error=NULL WHERE member=?',participant);
+        if(row.state==='starting')run("UPDATE members SET state='approved' WHERE id=? AND state='starting'",participant);
+        if(inputSeq)run('UPDATE deliveries SET state=? WHERE seq=? AND member=?',ipcState,inputSeq,participant);
+        return;
+      }
+    }
     if(error.cliCode)run('UPDATE cli_sessions SET last_cli_error=? WHERE member=?',JSON.stringify({code:error.cliCode,message:error.message}),participant);
+    if(error.cliCode==='auth_expired')openLoginTerminal(session.provider,session.project);
     if(error.cliCode==='usage_limit'&&inputSeq&&row.state==='approved'){
       const until=limitResetAt(session.provider)||Date.now()+usageCooldownMs;
       cliCooldown.set(participant,until);
@@ -593,6 +614,26 @@ async function cliTurn(participant, prompt, inputSeq){
     }
     if(!draining)setImmediate(dispatchQueuedTurns);
   }
+}
+const loginPromptedAt=new Map();
+function openPowerShellCommand(cwd,file,cmdArgs){
+  const psQuote=v=>"'"+String(v).replace(/'/g,"''")+"'";
+  const psCmd='& '+[file,...cmdArgs].map(psQuote).join(' ');
+  const encoded=Buffer.from(psCmd,'utf16le').toString('base64');
+  const powershell=path.join(process.env.SystemRoot||'C:/Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
+  const child=spawn('cmd.exe',['/c','start','""',powershell,'-NoExit','-EncodedCommand',encoded],{cwd:cwd&&fs.existsSync(cwd)?cwd:__dirname,detached:true,stdio:'ignore',windowsHide:true});
+  child.unref();
+}
+function openLoginTerminal(provider,project,force=false){
+  if(process.platform!=='win32'||draining||process.env.ROOM_PORT==='0')return false;
+  if(!['claude','codex','agy'].includes(provider))return false;
+  const now=Date.now();
+  if(!force&&now-(loginPromptedAt.get(provider)||0)<5*60*1000)return false;
+  const [file,...prefix]=cliCommand(provider);
+  const loginArgs=provider==='claude'?['auth','login']:provider==='codex'?['login']:[];
+  loginPromptedAt.set(provider,now);
+  openPowerShellCommand(project,file,[...prefix,...loginArgs]);
+  return true;
 }
 const token = randomBytes(32).toString('hex');
 const str = (value,max)=>{
@@ -1231,12 +1272,13 @@ const server=http.createServer(async(req,res)=>{
         if(!agent.project||!fs.existsSync(agent.project))throw Error('프로젝트 폴더를 찾을 수 없어요.');
         const [file,...prefix]=cliCommand(agent.provider);
         const resume=agent.provider==='claude'?['--resume',agent.thread]:agent.provider==='agy'?['--conversation',agent.thread]:['resume',agent.thread];
-        const psQuote=v=>"'"+String(v).replace(/'/g,"''")+"'";
-        const psCmd='& '+[file,...prefix,...resume].map(psQuote).join(' ');
-        const encoded=Buffer.from(psCmd,'utf16le').toString('base64');
-        const powershell=path.join(process.env.SystemRoot||'C:/Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
-        const child=spawn('cmd.exe',['/c','start','""',powershell,'-NoExit','-EncodedCommand',encoded],{cwd:agent.project,detached:true,stdio:'ignore',windowsHide:true});
-        child.unref();
+        openPowerShellCommand(agent.project,file,[...prefix,...resume]);
+      }
+      else if(args.action==='login_cli'){
+        if(process.platform!=='win32')throw Error('로그인 창 열기는 Windows에서 사용할 수 있어요.');
+        const agent=one("SELECT cli_sessions.provider,cli_sessions.project FROM cli_sessions JOIN members ON members.id=cli_sessions.member WHERE member=? AND room=? AND state IN ('approved','start_failed')",args.participant,args.room);
+        if(!agent)throw Error('로그인할 에이전트를 찾을 수 없어요.');
+        openLoginTerminal(agent.provider,agent.project,true);
       }
       else if(args.action==='user_message'){
         if(draining)throw Error('업데이트 중이에요. 잠시 후 다시 시도하세요.');
