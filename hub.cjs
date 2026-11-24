@@ -1233,9 +1233,9 @@ const server=http.createServer(async(req,res)=>{
         const resume=agent.provider==='claude'?['--resume',agent.thread]:agent.provider==='agy'?['--conversation',agent.thread]:['resume',agent.thread];
         const psQuote=v=>"'"+String(v).replace(/'/g,"''")+"'";
         const psCmd='& '+[file,...prefix,...resume].map(psQuote).join(' ');
-        const launcher='Start-Process -FilePath powershell.exe -WorkingDirectory '+psQuote(agent.project)+' -ArgumentList @("-NoExit","-Command",'+psQuote(psCmd)+')';
+        const encoded=Buffer.from(psCmd,'utf16le').toString('base64');
         const powershell=path.join(process.env.SystemRoot||'C:/Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
-        const child=spawn(powershell,['-NoProfile','-NonInteractive','-Command',launcher],{detached:true,stdio:'ignore',windowsHide:true});
+        const child=spawn('cmd.exe',['/c','start','""',powershell,'-NoExit','-EncodedCommand',encoded],{cwd:agent.project,detached:true,stdio:'ignore',windowsHide:true});
         child.unref();
       }
       else if(args.action==='user_message'){

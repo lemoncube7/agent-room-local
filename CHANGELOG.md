@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.49
+- **Windows Store Codex 자동 탐색 (`managed-codex.cjs`):** `OpenAI.Codex` 앱이 자동 업데이트되어 `local/cli.json`의 구버전 경로가 사라져도 `Get-AppxPackage`로 최신 `codex.exe` 경로를 자동 탐색합니다.
+- **CLI 바로 열기 수정 (`hub.cjs`):** `open_cli`가 공백·따옴표가 포함된 경로에서도 깨지지 않도록 `-EncodedCommand`와 `cmd.exe /c start` 방식으로 PowerShell 새 창을 열도록 수정했습니다.
+
 ## v0.2.46
 - **기존 대화 이어서 연결 (`+ 추가` 직접 세션 재개):** MCP 채널/파이프 제약 없이 허브가 최근 로컬 세션(Claude `~/.claude/projects`, Codex `~/.codex/sessions`, Antigravity `~/.gemini/antigravity-cli/brain`)을 자동 탐색해 `기존 대화 이어서 연결` 드롭다운에서 클릭 한 번으로 바로 연결·재개할 수 있습니다.
 - **설치·업데이트 시 전역 MCP 자동 적용 (`start.ps1`, `update.ps1`):** `Start Agent Room` 실행 및 자동 업데이트 시 `setup.ps1 -Apply -SelectProject -Global`을 자동 실행해 별도 수동 설정 없이도 Codex · Claude · Antigravity 전역 MCP가 유지됩니다.

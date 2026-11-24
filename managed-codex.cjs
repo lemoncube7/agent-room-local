@@ -1,5 +1,5 @@
 'use strict';
-const {execFile,spawn} = require('node:child_process');
+const {execFile,execFileSync,spawn} = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
@@ -13,13 +13,25 @@ function cliSettings(){
     return {};
   }
 }
+let cachedStoreCodex;
+function findWindowsStoreCodex() {
+  if (process.platform !== 'win32') return null;
+  if (cachedStoreCodex && fs.existsSync(cachedStoreCodex)) return cachedStoreCodex;
+  try {
+    const ps = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+    const loc = execFileSync(ps, ['-NoProfile', '-NonInteractive', '-Command', '(Get-AppxPackage -Name OpenAI.Codex | Select-Object -First 1).InstallLocation'], { encoding: 'utf8', windowsHide: true, timeout: 4000 }).trim();
+    const exe = loc ? path.join(loc, 'app', 'resources', 'codex.exe') : '';
+    if (exe && fs.existsSync(exe)) { cachedStoreCodex = exe; return exe; }
+  } catch {}
+  return null;
+}
 function cliCommand(provider) {
   const env=process.env['AGENT_ROOM_'+provider.toUpperCase()];
   const saved=cliSettings();
   const npm = process.env.APPDATA ? path.join(process.env.APPDATA,'npm','node_modules') : null;
   const defaults = provider==='claude'
     ? [path.join(os.homedir(),'.local','bin','claude.exe'), npm && path.join(npm,'@anthropic-ai','claude-code','cli.js')]
-    : provider==='agy'?[process.env.LOCALAPPDATA&&path.join(process.env.LOCALAPPDATA,'agy','bin','agy.exe')]:[npm && path.join(npm,'@openai','codex','bin','codex.js')];
+    : provider==='agy'?[process.env.LOCALAPPDATA&&path.join(process.env.LOCALAPPDATA,'agy','bin','agy.exe')]:[findWindowsStoreCodex(), npm && path.join(npm,'@openai','codex','bin','codex.js')];
   const executable = env || [saved?.[provider],...defaults].find(candidate=>candidate&&fs.existsSync(candidate));
   if(executable && /\.(?:cjs|mjs|js)$/i.test(executable))return [process.execPath, executable];
   return [executable || provider];
