@@ -40,7 +40,7 @@ header{padding:12px 22px;border-color:var(--line);background:var(--bg)}header h2
 article{max-width:min(82%,720px);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 14px}article>strong{font-size:13px}article>small{display:block;margin-top:4px;font-size:11px;color:var(--muted)}
 article.own{background:#1f2a4a;border-color:#2f3f6e}article.own strong{color:#b6c8ff}
 article.codex,article.claude,article.agy{background:var(--panel);border-color:var(--line);border-inline-start-width:3px}article.codex{border-inline-start-color:#6ea8ff}article.claude{border-inline-start-color:#f0a27a}article.agy{border-inline-start-color:#8fd16f}
-.markdown,article p{color:var(--text)}.markdown pre{position:relative;background:var(--bg);border:1px solid var(--line);padding:30px 10px 10px}.markdown pre .copy-btn{position:absolute;top:5px;right:6px;padding:2px 8px;font-size:11px;border-radius:6px;background:var(--raised)}.markdown :not(pre)>code{background:var(--raised);border-radius:4px;padding:1px 5px;font-size:.92em}.markdown a{color:var(--accent)}
+.markdown,article p{color:var(--text)}.markdown .code-wrap{position:relative}.markdown pre{background:var(--bg);border:1px solid var(--line);padding:30px 10px 10px;margin:0}.markdown .copy-btn{position:absolute;top:6px;right:6px;z-index:2;padding:2px 8px;font-size:11px;border-radius:6px;background:var(--raised)}.markdown :not(pre)>code{background:var(--raised);border-radius:4px;padding:1px 5px;font-size:.92em}.markdown a{color:var(--accent)}
 #approvals{padding:0 max(22px,calc((100% - 1240px)/2))}
 #compose{gap:8px;border-color:var(--line);background:var(--bg);padding:12px max(22px,calc((100% - 1240px)/2))!important}#draft{background:var(--panel);border-color:var(--line);border-radius:10px;padding:10px 14px}#compose button{flex:none;padding:10px 18px;border-radius:10px}
 dialog{background:var(--panel);color:var(--text);border-color:var(--line);border-radius:14px;padding:22px;margin:auto;max-height:88vh;overflow:auto}dialog h2{margin:0 0 8px;font-size:17px}dialog p{color:var(--muted);font-size:13px}
@@ -50,7 +50,7 @@ body{--left:248px;--right:320px;grid-template-columns:var(--left) minmax(0,1fr) 
 body>aside{grid-column:1;grid-row:1}main{grid-column:2;grid-row:1}#agent-panel{grid-column:3;grid-row:1}
 body.rooms-collapsed{--left:0px}body.rooms-collapsed>aside{display:none}
 body.agents-collapsed,body.no-room{--right:0px}body.agents-collapsed #agent-panel,body.no-room #agent-panel{display:none}
-aside{min-height:0;overflow:hidden}#rooms{flex:1;min-height:0;overflow:auto;align-content:start}#side-foot{flex:none;display:grid;gap:6px;padding-top:10px;border-top:1px solid var(--line)}#side-foot button{font-size:12px;color:var(--muted);background:transparent}#update-result:empty{display:none}
+aside{min-height:0;overflow:hidden}#rooms{flex:1;min-height:0;overflow:auto;align-content:start}#side-foot{flex:none;display:grid;gap:6px;padding-top:10px;border-top:1px solid var(--line)}#side-foot button{font-size:12px;color:var(--muted);background:transparent}#project-btn{text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-color:var(--line)!important;background:var(--raised)!important;color:var(--text)!important}#project-form{display:grid;gap:10px}#project-recent{display:grid;gap:4px}#project-recent button{text-align:left;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#project-form footer{display:flex;gap:8px;justify-content:flex-end}#project-error{color:#ffb9ad;margin:0;font-size:12px}#project-error:empty{display:none}#update-result:empty{display:none}
 header{position:relative;padding:9px 16px}.head-row{display:flex;align-items:center;gap:8px;min-width:0}.head-row button{margin:0}.head-row h2{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.icon-btn{flex:none;width:32px;height:32px;padding:0;display:inline-grid;place-items:center;background:transparent;border-color:transparent;color:var(--muted);font-size:16px;line-height:1}.icon-btn:hover,.icon-btn[aria-expanded=true]{background:var(--raised);color:var(--text)}#room-mode{flex:none;max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:1px 9px}#room-mode:empty{display:none}.head-space{flex:1}
 #room-actions{position:absolute;z-index:20;top:calc(100% - 4px);right:12px;width:230px;display:grid;gap:2px;margin:0;padding:5px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 28px #0008}#room-actions[hidden]{display:none}#room-actions button{width:100%;text-align:left;font-size:13px;padding:7px 10px;border-color:transparent;background:transparent}#room-actions button:hover{background:var(--hover)}#reply-priority[aria-pressed=true]{border-color:transparent}
 #agent-panel{min-height:0;display:flex;flex-direction:column;background:var(--panel);border-left:1px solid var(--line)}.panel-head{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 12px;border-bottom:1px solid var(--line);font-size:13px}.panel-head button{font-size:12px;padding:4px 10px}
@@ -59,40 +59,46 @@ header{position:relative;padding:9px 16px}.head-row{display:flex;align-items:cen
 .retract-btn{display:block;margin:4px 0 0 auto;padding:1px 8px;font-size:11px;color:var(--muted);background:transparent;border-color:transparent;opacity:0}article:hover>.retract-btn,.retract-btn:focus-visible{opacity:1}article.retracted{opacity:.6}article.retracted p{font-style:italic;color:var(--muted)}@media(hover:none){.retract-btn{opacity:1}}
 @media(max-width:1000px){body{grid-template-columns:minmax(0,1fr)}main{grid-column:1}body>aside,#agent-panel{position:fixed;z-index:30;top:0;bottom:0;width:min(300px,86vw);box-shadow:0 0 32px #000a}body>aside{left:0}#agent-panel{right:0}article{max-width:94%}#room-mode{display:none}}
 </style>
-<aside><h1>Agent Room <small id="current-version" aria-label="현재 버전">버전 확인 중</small></h1><form id="new" autocomplete="off"><input name="name" autocomplete="off" aria-label="채팅방 이름" placeholder="새 채팅방 이름" required maxlength="70"><button aria-label="채팅방 만들기">+</button></form><div id="error" role="status"></div><nav id="rooms"></nav><div id="side-foot"><p id="remote-status">모든 채팅 원격 사용 설정</p><button id="notify-toggle" type="button">완료 알림 꺼짐</button><button id="update">업데이트 확인</button><p id="update-result" role="status"></p></div></aside>
+<aside><h1>Agent Room <small id="current-version" aria-label="현재 버전">버전 확인 중</small></h1><button id="project-btn" type="button" title="작업 프로젝트 폴더 변경">프로젝트: 확인 중…</button><form id="new" autocomplete="off"><input name="name" autocomplete="off" aria-label="채팅방 이름" placeholder="새 채팅방 이름" required maxlength="70"><button aria-label="채팅방 만들기">+</button></form><div id="error" role="status"></div><nav id="rooms"></nav><div id="side-foot"><p id="remote-status">모든 채팅 원격 사용 설정</p><button id="notify-toggle" type="button">완료 알림 꺼짐</button><button id="update">업데이트 확인</button><p id="update-result" role="status"></p></div></aside>
 <main><header><div class="head-row"><button id="rooms-toggle" class="icon-btn" type="button" title="방 목록 접기/펴기" aria-label="방 목록 접기/펴기">☰</button><h2 id="title">채팅방을 선택하세요</h2><span id="room-mode"></span><span class="head-space"></span><button id="agents-toggle" class="icon-btn" type="button" hidden title="에이전트 패널 접기/펴기" aria-label="에이전트 패널 접기/펴기">◧</button><button id="room-menu-btn" class="icon-btn" type="button" hidden title="방 설정" aria-label="방 설정" aria-haspopup="menu" aria-expanded="false">⋯</button></div><div id="room-actions" role="menu" hidden><button id="reply-priority" hidden aria-pressed="false" title="방 구조 모드(자유/순위/계층형)와 메인 에이전트를 설정합니다.">구조 모드</button><button id="open-handoff" hidden>작업 인계</button><button id="pair" hidden>기존 대화 연결 코드 만들기</button><button id="external-say" hidden>외부 메시지 코드 만들기</button></div><p id="pair-guide" hidden></p></header><section class="history" id="messages" aria-label="공용 대화"></section><section id="approvals" aria-label="허용 요청" aria-live="polite"></section><div id="attach-list" aria-label="첨부 파일 목록"></div><form id="compose" autocomplete="off" hidden style="padding: 12px 25px"><input id="attach" type="file" multiple hidden><button id="attach-btn" type="button" title="파일 첨부 (드래그·붙여넣기 가능)">+ 파일</button><textarea id="draft" rows="1" autocomplete="off" aria-label="메시지" placeholder="방 전체에 메시지 보내기 (Shift+Enter 줄바꿈, 파일 드래그/붙여넣기)" maxlength="8000"></textarea><button type="submit">보내기</button></form></main><section id="agent-panel" aria-label="에이전트"><div class="panel-head"><strong>에이전트</strong><button id="add-agent" hidden>+ 추가</button></div><section id="activity" aria-label="에이전트 작업 현황"></section></section><dialog id="ranking-dialog"><form id="ranking-form"><h2>방 구조 모드 설정</h2><p id="mode-desc">사용자 메시지가 에이전트들에게 전달되는 방식을 선택합니다.</p><label>구조 모드<select name="mode"><option value="broadcast">자유 · 동시 응답 (모든 에이전트에게 전달)</option><option value="ranking">자동 · 순위 판정 (판단 모델이 담당자 선택)</option><option value="hierarchy">계층형 · 메인 → 하위 → 서브에이전트</option></select></label><label id="main-member-label" hidden>메인 에이전트<select name="mainMember"></select></label><div id="judge-fields" style="display:grid;gap:10px"><label>판단 CLI<select name="provider"><option value="codex">Codex</option><option value="claude">Claude Code</option><option value="agy">Antigravity</option></select></label><label>모델<select name="model"><option value="">CLI 기본 모델</option></select></label><label>추론 강도<select name="effort"><option value="low">낮음</option><option value="medium">보통</option><option value="high">높음</option></select></label><label>판단 CLI 추가 지침<textarea name="judgePrompt" rows="3" maxlength="2000" placeholder="예: 코드 수정은 수소 우선, UI/문서는 오퍼스 우선, 단순 인사에는 아무도 답하지 마"></textarea></label></div><small id="ranking-status" role="status"></small><p id="ranking-error" role="status"></p><footer><button id="ranking-cancel" type="button">취소</button><button type="submit">저장</button></footer></form></dialog><dialog id="agent-dialog"><form id="agent-form" autocomplete="off"><h2 id="agent-title">에이전트 추가</h2><input type="hidden" name="provider" value="codex"><div id="provider-buttons" role="group" aria-label="CLI 종류"><button type="button" data-provider="codex">Codex</button><button type="button" data-provider="claude">Claude Code</button><button type="button" data-provider="agy">Antigravity</button></div><label>모델<select name="model"><option value="">CLI 기본 모델</option></select></label><label>추론 강도<select name="effort"><option value="">CLI 기본값</option><option value="low">낮음</option><option value="medium">보통</option><option value="high">높음</option></select></label><label>권한 (Claude · Antigravity)<select name="permission"><option value="edit">편집: 파일 수정만 자동 허용</option><option value="dev" selected>개발: 편집, 조회, 테스트·빌드, git 커밋</option><option value="full">전체: 모든 명령 자동 허용 (주의)</option></select></label><label id="clear-rules-label" class="check" hidden><input type="checkbox" name="clearRules"> <span id="clear-rules-text">항상 허용 목록 지우기</span></label><label>이름<input name="name" autocomplete="off" placeholder="비워 두면 모델명 사용" maxlength="120"></label><small id="model-status" role="status"></small><small id="agent-error" role="status"></small><footer><button type="button" id="agent-cancel">취소</button><button type="submit">저장</button></footer></form></dialog>
+<dialog id="project-dialog"><form id="project-form" autocomplete="off"><h2>작업 프로젝트 변경</h2><p>새로 추가하는 CLI 에이전트가 사용할 프로젝트 폴더입니다.</p><label>프로젝트 경로<input name="project" required maxlength="500" placeholder="예: E:\my-project"></label><label class="check"><input type="checkbox" name="applyMcp" checked> 선택한 폴더에 Codex · Claude MCP 설정도 함께 적용</label><div id="project-recent"></div><p id="project-error" role="status"></p><footer><button id="project-cancel" type="button">취소</button><button type="submit">적용</button></footer></form></dialog>
 <dialog id="handoff-dialog"><h2>작업 인계</h2><div id="task-list"></div><form id="task-form" autocomplete="off"><input type="hidden" name="id"><input type="hidden" name="revision"><label>작업 제목<input name="title" required maxlength="120"></label><label>작업 내용·검증 결과<textarea name="summary" rows="3" maxlength="8000"></textarea></label><label>다음 행동<textarea name="next" rows="2" required maxlength="2000"></textarea></label><label id="task-owner-label">첫 담당자<select name="target"></select></label><button type="submit" id="save-task">작업 만들기</button><button id="reset-task" type="button" hidden>새 작업 쓰기</button></form><p id="handoff-error" role="status"></p><button id="close-handoff">닫기</button></dialog>
 <script>
 const byId=id=>document.getElementById(id);
 let composeRoom,selected,previous='',snapshot,refreshing=false,lastRendered,pairRoom;
-let notifyEnabled=localStorage.getItem('agentRoomNotify')!=='0', prevBusy=new Map(), titleTimer=null;
+let notifyEnabled=localStorage.getItem('agentRoomNotify')!=='0', prevBusy=new Map(), prevApprovals=new Set(), titleTimer=null;
 function syncNotifyButton(){
  const btn=byId('notify-toggle');
  if(!btn)return;
  const perm=typeof Notification!=='undefined'?Notification.permission:'unsupported';
  btn.textContent=!notifyEnabled?'완료 알림 꺼짐':perm==='granted'?'완료 알림 켜짐':perm==='denied'?'브라우저 알림 차단됨 (소리만)':'완료 알림 켜짐 (클릭해 권한 허용)';
 }
-function playDoneChime(){
+function playChime(f1=587.33,f2=880){
  try{
   const Ctx=window.AudioContext||window.webkitAudioContext;if(!Ctx)return;
   const ctx=new Ctx(), osc=ctx.createOscillator(), gain=ctx.createGain();
-  osc.type='sine';osc.frequency.setValueAtTime(587.33,ctx.currentTime);osc.frequency.setValueAtTime(880,ctx.currentTime+0.09);
+  osc.type='sine';osc.frequency.setValueAtTime(f1,ctx.currentTime);osc.frequency.setValueAtTime(f2,ctx.currentTime+0.09);
   gain.gain.setValueAtTime(0.08,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.28);
   osc.connect(gain);gain.connect(ctx.destination);osc.start();osc.stop(ctx.currentTime+0.29);
  }catch{}
 }
-function notifyCompletion(names){
- if(!notifyEnabled||!names.length)return;
- playDoneChime();
- const label=names.join(', ')+' 응답 완료';
+function notifyEvent(title,body,tag,f1,f2){
+ if(!notifyEnabled)return;
+ playChime(f1,f2);
  if(document.hidden){
   clearInterval(titleTimer);
   let flip=false;
-  titleTimer=setInterval(()=>{document.title=(flip=!flip)?'[완료] '+label:'Agent Room';},1000);
+  titleTimer=setInterval(()=>{document.title=(flip=!flip)?tag+' '+body:'Agent Room';},1000);
  }
  if(typeof Notification!=='undefined'&&Notification.permission==='granted'){
-  try{const n=new Notification('Agent Room · 작업 완료',{body:label});setTimeout(()=>n.close(),6000);}catch{}
+  try{const n=new Notification(title,{body});n.onclick=()=>{window.focus();n.close();};setTimeout(()=>n.close(),8000);}catch{}
  }
+}
+function notifyCompletion(names){
+ if(names.length)notifyEvent('Agent Room · 작업 완료',names.join(', ')+' 응답 완료','[완료]',587.33,880);
+}
+function notifyApprovals(items){
+ if(items.length)notifyEvent('Agent Room · 실행 허용 요청',items.map(i=>i.name+' · '+i.tool).join(', '),'[승인]',659.25,987.77);
 }
 window.addEventListener('focus',()=>{if(titleTimer){clearInterval(titleTimer);titleTimer=null;document.title='Agent Room';}});
 byId('notify-toggle').onclick=async()=>{
@@ -108,15 +114,16 @@ byId('notify-toggle').onclick=async()=>{
 syncNotifyButton();
 function el(tag,text){const e=document.createElement(tag);e.textContent=text;return e;}
 function inlineMarkdown(target,text,allowLinks=true){
- const pattern=/`([^`\n]+)`|\*\*([^*\n]+)\*\*|\*([^*\n]+)\*|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g;
+ const pattern=/`([^`\n]+)`|\*\*([^*\n]+)\*\*|\*([^*\n]+)\*|\[([^\]\n]+)\]\(((?:https?:\/\/|file:\/\/\/?)[^\s)]+)\)/g;
  let start=0;
  for(const match of text.matchAll(pattern)){
   target.append(document.createTextNode(text.slice(start,match.index)));
   if(match[5]&&allowLinks){
-   try{const url=new URL(match[5]);const link=el('a',match[4]);link.href=url.href;link.target='_blank';link.rel='noopener noreferrer';target.append(link);}
+   try{const url=new URL(match[5]);const link=el('a',match[4]);link.href=url.href;link.title=url.href;if(url.protocol==='file:'){const localPath=decodeURIComponent(url.pathname).replace(/^\/([A-Za-z]:)/,'$1').replace(/\//g,'\\');link.onclick=e=>{e.preventDefault();copyText(localPath);err('경로 복사됨: '+localPath);};}else{link.target='_blank';link.rel='noopener noreferrer';}target.append(link);}
    catch{target.append(document.createTextNode(match[0]));}
   }else if(match[5])target.append(document.createTextNode(match[0]));
-  else target.append(el(match[1]?'code':match[2]?'strong':'em',match[1]||match[2]||match[3]));
+  else if(match[1])target.append(el('code',match[1]));
+  else{const span=el(match[2]?'strong':'em','');inlineMarkdown(span,match[2]||match[3],allowLinks);target.append(span);}
   start=match.index+match[0].length;
  }
  target.append(document.createTextNode(text.slice(start)));
@@ -129,18 +136,19 @@ function copyText(text,btn){
 function markdown(text){
  const root=el('div','');root.className='markdown';
  let paragraph,list,code;
- for(const line of text.split(/\r?\n/)){
+ for(let line of text.split(/\r?\n/)){
   if(code){
-   if(/^\s*```\s*$/.test(line))code=null;else code.append(document.createTextNode(line+"\n"));
-   continue;
+   const end=line.match(/^\s*```+(.*)$/);
+   if(end){code=null;if(!end[1].trim())continue;line=end[1];}
+   else{code.append(document.createTextNode(line+"\n"));continue;}
   }
   const item=line.match(/^\s*([-+*]|\d+\.)\s+(.+)$/), heading=line.match(/^(#{1,6})\s+(.+)$/);
   if(!item)list=null;
-  if(/^\s*```/.test(line)){const pre=el("pre","");code=el("code","");const copy=el("button","복사");copy.type="button";copy.className="copy-btn";copy.onclick=()=>copyText(code.textContent.replace(/\n$/,''),copy);pre.append(copy,code);root.append(pre);paragraph=null;continue;}
+  if(/^\s*```/.test(line)){const wrap=el('div','');wrap.className='code-wrap';const pre=el("pre",""),codeEl=el("code","");code=codeEl;const copy=el("button","복사");copy.type="button";copy.className="copy-btn";copy.onclick=()=>copyText(codeEl.textContent.replace(/\n$/,''),copy);pre.append(codeEl);wrap.append(copy,pre);root.append(wrap);paragraph=null;continue;}
   if(!line.trim()){paragraph=null;continue;}
   if(item){
    const tag=/^\d/.test(item[1])?'OL':'UL';
-   if(list?.tagName!==tag){list=el(tag,'');root.append(list);}
+   if(list?.tagName!==tag){list=el(tag,'');if(tag==='OL'){const n=parseInt(item[1],10);if(n>1)list.start=n;}root.append(list);}
    const entry=el('li','');inlineMarkdown(entry,item[2]);list.append(entry);paragraph=null;continue;
   }
   if(heading||line.startsWith('> ')){
@@ -175,12 +183,23 @@ function update(next){
   if(next.rooms.some(room=>room.id===saved))selected=saved;
  }
  byId('current-version').textContent=next.version?'v'+next.version:'버전 확인 불가';
+ const projBtn=byId('project-btn');
+ if(projBtn){
+  const p=next.project||'';
+  const shortName=p?p.replace(/[\\/]+$/,'').split(/[\\/]/).at(-1)||p:'미설정 (클릭해 선택)';
+  projBtn.textContent='폴더: '+shortName;
+  projBtn.title=p?p+' (클릭해 프로젝트 변경)':'작업 프로젝트 폴더를 선택하세요';
+ }
  const finished=[];
  for(const m of next.members||[]){
   if(prevBusy.get(m.id)===true&&!m.busy&&m.state==='approved')finished.push(m.name);
   prevBusy.set(m.id,Boolean(m.busy));
  }
  if(previous&&finished.length)notifyCompletion(finished);
+ const curApprovals=next.approvals||[];
+ const newApprovals=curApprovals.filter(a=>!prevApprovals.has(a.id));
+ prevApprovals=new Set(curApprovals.map(a=>a.id));
+ if(previous&&newApprovals.length)notifyApprovals(newApprovals);
  const key=JSON.stringify(next);if(key===previous)return;previous=key;snapshot=next;
  if(!next.rooms.some(r=>r.id===selected))selected=next.rooms[0]?.id;
  render();
@@ -254,7 +273,7 @@ function render(){
  byId('room-mode').textContent=room?byId('reply-priority').textContent:'';
  for(const id of ['pair','external-say','add-agent','open-handoff','reply-priority','room-menu-btn','agents-toggle'])byId(id).hidden=!room; byId('pair-guide').hidden=pairRoom!==selected;
  document.body.classList.toggle('no-room',!room);if(!room)closeRoomMenu();
- byId('rooms').replaceChildren(...snapshot.rooms.map(r=>{const b=el('button',r.name);b.title=r.name;b.setAttribute('aria-current',String(r.id===selected));b.onclick=()=>{selected=r.id;if(narrowView()){document.body.classList.add('rooms-collapsed');localStorage.setItem('agentRoomRoomsCollapsed','1');}render();};return b;}));
+ byId('rooms').replaceChildren(...snapshot.rooms.map(r=>{const b=el('button',r.name);b.title=r.name;b.setAttribute('aria-current',String(r.id===selected));b.onclick=()=>{selected=r.id;if(narrowView()){document.body.classList.add('rooms-collapsed');localStorage.setItem('agentRoomRoomsCollapsed','1');}render();void refresh();};return b;}));
  if(composeRoom!==selected){byId('draft').value='';fitDraft();}
  composeRoom=selected;
  const people=snapshot.members.filter(m=>m.room===selected&&m.state==='approved');
@@ -268,7 +287,7 @@ function render(){
 function formatLimitAge(ts){
  if(!ts)return '';
  const mins=Math.max(0,Math.floor((Date.now()-ts)/60000));
- return mins<1?'방금 기준':mins+'분 전 기준';
+ return mins<1?'방금 기준':mins<60?mins+'분 전 기준':Math.floor(mins/60)+'시간 전 기준';
 }
 function formatResetTime(raw){
  if(!raw)return '';
@@ -283,18 +302,27 @@ function formatResetTime(raw){
 function renderActivity(members,messages,mainMember){
  const box=byId('activity');
  if(!box)return;
- const windowLabels={five_hour:'5시간',seven_day:'7일'};
+ const windowLabels={five_hour:'5시간',seven_day:'7일',primary:'5시간',secondary:'7일','gemini-5h':'5시간','gemini-weekly':'7일','3p-5h':'5시간','3p-weekly':'7일'};
+ const pickEntries=(m,lim)=>{
+  const raw=lim?.windows&&typeof lim.windows==='object'?lim.windows:null;
+  if(!raw)return [];
+  if(m.provider==='agy'){
+   const keys=(!m.model||/gemini/i.test(m.model))?['gemini-5h','gemini-weekly']:['3p-5h','3p-weekly'];
+   return keys.filter(k=>raw[k]&&typeof raw[k]==='object').map(k=>[k,raw[k]]);
+  }
+  return Object.entries(raw).filter(([,w])=>w&&typeof w==='object');
+ };
  box.replaceChildren(...members.map(m=>{
   const card=document.createElement('div');
   const cls=m.provider==='agy'?'agy':m.provider==='codex'||agentPane(m.name)==='gpt'?'codex':m.provider==='claude'||agentPane(m.name)==='claude'?'claude':'';
   card.className='act-card'+(cls?' '+cls:'');
   const pendingApproval=(snapshot.approvals||[]).find(a=>a.room===selected&&a.name===m.name);
   const dot=document.createElement('span');
-  dot.className='act-dot'+(pendingApproval||m.conflict?' approval':m.busy?' busy':m.cliError||m.state==='start_failed'?' error':'');
+  dot.className='act-dot'+(pendingApproval||m.conflict?' approval':m.paused?'':m.busy?' busy':m.cliError||m.state==='start_failed'?' error':'');
   const name=el('span',m.name);name.className='act-name';name.prepend(dot);
   if(mainMember?.id===m.id){const tag=el('span','메인');tag.className='act-main';name.append(tag);}
   const lim=m.provider?snapshot.limits?.[m.provider]:null;
-  const entries=lim?.windows&&typeof lim.windows==='object'?Object.entries(lim.windows).filter(([,w])=>w&&typeof w==='object'):[];
+  const entries=pickEntries(m,lim);
   const meta=el('span',entries.length?(formatLimitAge(lim.updatedAt)||'잔여량'):'잔여량 정보 없음');meta.className='act-meta';
   const head=document.createElement('div');head.className='act-head';head.append(name,meta);
   const elapsed=m.busy&&m.progress?.updatedAt?Math.max(0,Math.floor((Date.now()-m.progress.updatedAt)/1000)):0;
@@ -316,8 +344,10 @@ function renderActivity(members,messages,mainMember){
   if(entries.length){
    const limitsBox=document.createElement('div');limitsBox.className='act-limits';
    for(const [key,w] of entries){
-    const rem=Math.max(0,Math.min(100,Math.round(100-(Number(w.utilization)||0)*100)));
-    const reset=formatResetTime(w.resets_at??w.resetsAt);
+    const raw=w.resets_at??w.resetsAt, ms=typeof raw==='number'?(raw<1e12?raw*1000:raw):Date.parse(raw);
+    const expired=Number.isFinite(ms)&&ms<=Date.now();
+    const rem=expired?100:Math.max(0,Math.min(100,Math.round(100-(Number(w.utilization)||0)*100)));
+    const reset=expired?'초기화됨':formatResetTime(raw);
     const row=document.createElement('div');row.className='act-limit';
     const top=document.createElement('div');top.className='act-limit-row';
     top.append(el('span',(windowLabels[key]||key)+' · 남음 '+rem+'%'),el('span',reset));
@@ -361,6 +391,11 @@ function renderHistory(view,messages,typing,roomChanged){
   if(m.retracted)card.classList.add('retracted');
   card.append(el('strong',m.name+(target?' → '+target.name:'')),m.retracted?el('p','철회한 메시지입니다.'):markdown(m.body),el('small',new Date(m.created).toLocaleTimeString('ko-KR')+' · '+(delivery||'방에 저장됨')));
   if(m.author==='human:'+selected&&!m.retracted){
+   if(sorted.length&&sorted.every(d=>!d.priority)&&sorted.some(d=>['context_only','context_seen'].includes(d.state))){
+    const wake=el('button','1순위로 깨우기');wake.type='button';wake.className='retract-btn';
+    wake.onclick=()=>control({action:'promote_delivery',room:selected,seq:m.seq});
+    card.append(wake);
+   }
    const retract=el('button','철회');retract.type='button';retract.className='retract-btn';
    retract.onclick=()=>{if(confirm('이 메시지를 철회할까요? 아직 안 간 에이전트에게는 전달을 취소하고, 이미 받은 에이전트에게는 무시하라고 알립니다.'))control({action:'retract_message',room:selected,seq:m.seq});};
    card.append(retract);
@@ -384,9 +419,10 @@ function renderHistory(view,messages,typing,roomChanged){
 }
 async function refresh(){
  if(refreshing)return;refreshing=true;
- try{const res=await fetch('/state');if(!res.ok)throw Error('로컬 허브 연결을 확인하세요.');update(await res.json());}catch(e){if(e instanceof TypeError){serverLost=true;err(reconnectText);}else err(e.message);}finally{refreshing=false;}
+ const reqRoom=selected;
+ try{const target=reqRoom?'/state?room='+encodeURIComponent(reqRoom):'/state';const res=await fetch(target);if(!res.ok)throw Error('로컬 허브 연결을 확인하세요.');const data=await res.json();if(reqRoom===selected)update(data);}catch(e){if(e instanceof TypeError){serverLost=true;err(reconnectText);}else err(e.message);}finally{refreshing=false;if(reqRoom!==selected)void refresh();}
 }
-byId('new').onsubmit=async e=>{e.preventDefault();if(await control({action:'create',name:e.target.elements.name.value})){selected=snapshot.rooms.at(-1).id;render();e.target.reset();}};
+byId('new').onsubmit=async e=>{e.preventDefault();const roomName=e.target.elements.name.value.trim();if(await control({action:'create',name:roomName})){selected=(snapshot.rooms.find(r=>r.name===roomName)||snapshot.rooms[0])?.id;render();e.target.reset();}};
 async function makePair(instructions, launchCommand){
  const room=selected;
  const buttons=['pair','add-agent'].map(byId);
@@ -714,6 +750,27 @@ byId('update').onclick=async()=>{
    status.append(install,document.createTextNode(' '),link);
   }
  }catch(error){status.textContent=error.message;}finally{button.disabled=false;}
+};
+const projectForm=byId('project-form');
+byId('project-btn').onclick=()=>{
+ projectForm.elements.project.value=snapshot?.project||'';
+ byId('project-error').textContent='';
+ const recent=snapshot?.recentProjects||[];
+ const box=byId('project-recent');
+ box.replaceChildren(...(recent.length?[el('small','최근 프로젝트'),...recent.map(dir=>{const b=el('button',dir);b.type='button';b.title=dir;b.onclick=()=>{projectForm.elements.project.value=dir;};return b;})]:[]));
+ byId('project-dialog').showModal();
+};
+byId('project-cancel').onclick=()=>byId('project-dialog').close();
+projectForm.onsubmit=async event=>{
+ event.preventDefault();
+ const submit=event.submitter;
+ if(submit)submit.disabled=true;
+ byId('project-error').textContent='';
+ try{
+  const ok=await control({action:'set_project',room:selected,project:projectForm.elements.project.value.trim(),applyMcp:projectForm.elements.applyMcp.checked});
+  if(ok)byId('project-dialog').close();
+  else byId('project-error').textContent=byId('error').textContent;
+ }finally{if(submit)submit.disabled=false;}
 };
 window.addEventListener('pageshow',()=>{byId('new').reset();byId('compose').reset();});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void refresh();});

@@ -3,6 +3,7 @@ const {execFile,spawn} = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const appVersion = (()=>{try{return fs.readFileSync(path.join(__dirname,'VERSION'),'utf8').trim()||'0.0.0';}catch{return '0.0.0';}})();
 
 function cliSettings(){
   try {
@@ -182,7 +183,7 @@ function refreshCodexLimits(){
         }else if(msg.error)done(false);
       }
     });
-    send({id:1,method:'initialize',params:{clientInfo:{name:'agent-room',version:'0.2.39'}}});
+    send({id:1,method:'initialize',params:{clientInfo:{name:'agent-room',version:appVersion}}});
   });
 }
 function importAgyUsageFile(usageFile){
@@ -192,7 +193,7 @@ function importAgyUsageFile(usageFile){
     if(!Array.isArray(snap?.limits))return false;
     const windows={};
     for(const row of snap.limits){
-      if(row?.disabled)continue;
+      if(row?.disabled||/argon-wtu/i.test(row?.id||''))continue;
       if(typeof row?.remainingPercent==='number'&&Number.isFinite(row.remainingPercent)){
         windows[row.id||'quota']={utilization:Math.max(0,Math.min(1,(100-row.remainingPercent)/100)),resetsAt:row.resetsAt||null};
       }
@@ -202,7 +203,9 @@ function importAgyUsageFile(usageFile){
   }catch{return false;}
 }
 function refreshAgyLimits(spawnIfStale=true){
-  const usageFile=process.env.AGENT_ROOM_AGY_USAGE_FILE||'E:\\Codex\\2026-09-28\\1-1-id-pw-2-n\\work\\handoff\\usage\\agy.json';
+  const localUsage=path.join(__dirname,'local','agy-usage.json');
+  const usageFile=process.env.AGENT_ROOM_AGY_USAGE_FILE||(fs.existsSync(localUsage)?localUsage:'');
+  if(!usageFile)return Promise.resolve(false);
   const before=fs.existsSync(usageFile)?fs.statSync(usageFile).mtimeMs:0;
   if(before&&Date.now()-before<25*60*1000)return Promise.resolve(importAgyUsageFile(usageFile));
   if(!spawnIfStale)return Promise.resolve(before?importAgyUsageFile(usageFile):false);
@@ -424,6 +427,130 @@ function createStreamHost(provider,file,prefix,args,project,session,persistent=f
     }
   };
 }
+function createAcpHost(file,prefix,project,session,model,effort,options={},onExit=null){
+  const child=spawn(file,[...prefix,'acp','--stdio'],{cwd:project,windowsHide:true,env:cliEnv()});
+  let nextId=1, buf='', stderr='', alive=true, turnsCompleted=0, sessionId=session||null, active=null;
+  const pending=new Map();
+  const send=(msg)=>child.stdin.write(JSON.stringify({jsonrpc:'2.0',...msg})+'\n');
+  const rpc=(method,params)=>new Promise((resolve,reject)=>{
+    if(!alive)return reject(Error('ACP process closed.'));
+    const id=nextId++;
+    pending.set(id,{resolve,reject});
+    send({id,method,params});
+  });
+  const ready=(async()=>{
+    await rpc('initialize',{protocolVersion:1,clientCapabilities:{fs:{readTextFile:false,writeTextFile:false},terminal:false},clientInfo:{name:'agent-room',version:'0.2.40'}});
+    send({method:'initialized',params:{}});
+    let res=null;
+    if(sessionId){
+      try{res=await rpc('session/resume',{sessionId,cwd:project,mcpServers:[]});}catch{sessionId=null;}
+    }
+    if(!res){
+      res=await rpc('session/new',{cwd:project,mcpServers:[]});
+    }
+    sessionId=res?.sessionId||sessionId;
+    if(!sessionId)throw Error('ACP session initialization failed.');
+    const permission=options.permission||'dev';
+    const modeId=permission==='edit'?'accept-edits':'default';
+    try{await rpc('session/set_mode',{sessionId,modeId});}catch{}
+    if(model)try{await rpc('session/set_model',{sessionId,modelId:model});}catch{}
+    return sessionId;
+  })();
+  ready.catch(()=>{});
+  child.stdin.on('error',()=>{});
+  child.stderr.on('data',c=>{stderr=(stderr+c).slice(-8000);});
+  child.stdout.on('data',chunk=>{
+    buf+=chunk;
+    for(let at=buf.indexOf('\n');at>=0;at=buf.indexOf('\n')){
+      const line=buf.slice(0,at).trim();buf=buf.slice(at+1);
+      if(!line)continue;
+      let msg;try{msg=JSON.parse(line);}catch{continue;}
+      if(msg.id!==undefined&&!msg.method){
+        const req=pending.get(msg.id);
+        if(!req)continue;
+        pending.delete(msg.id);
+        if(msg.error)req.reject(Object.assign(Error(msg.error.message||'ACP error'),{acpCode:msg.error.code}));
+        else req.resolve(msg.result);
+        continue;
+      }
+      if(msg.method==='session/request_permission'&&msg.id!==undefined){
+        const p=msg.params||{}, tc=p.toolCall||{}, opts=Array.isArray(p.options)?p.options:[];
+        const handler=active?.onApproval||options.onApproval;
+        Promise.resolve(handler?handler({tool:tc.title||tc.kind||'Tool',kind:tc.kind||'other',input:tc.rawInput||{},locations:tc.locations||[]}):'allow_once')
+          .then(decision=>{
+            const pick=decision==='allow_always'
+              ?(opts.find(o=>o.kind==='allow_always')||opts.find(o=>o.kind==='allow_once'))
+              :decision==='allow_once'
+                ?(opts.find(o=>o.kind==='allow_once')||opts.find(o=>o.kind==='allow_always'))
+                :opts.find(o=>o.kind==='reject_once'||o.kind==='reject_always');
+            send({id:msg.id,result:{outcome:pick?{outcome:'selected',optionId:pick.optionId}:{outcome:'cancelled'}}});
+          })
+          .catch(()=>send({id:msg.id,result:{outcome:{outcome:'cancelled'}}}));
+        continue;
+      }
+      if(msg.method==='session/update'&&active){
+        const u=msg.params?.update||{};
+        const kind=u.sessionUpdate||u.type||'';
+        if(kind==='agent_thought_chunk')active.writeProgress('생각 중…');
+        else if(kind==='agent_message_chunk'){
+          const txt=u.content?.text||'';
+          if(txt){
+            if(active.needsGap&&active.text&&!/\n$/.test(active.text)&&!/^\n/.test(txt))active.text+='\n\n';
+            active.needsGap=false;
+            active.text+=txt;active.pendingInterim+=txt;active.writeProgress('답변 작성 중…',txt,true);
+          }
+        }else if(kind==='tool_call'||kind==='tool_call_update'){
+          if(active.text)active.needsGap=true;
+          active.flushInterim();
+          active.writeProgress(toolLabel(u.title||u.kind,u.rawInput));
+        }
+      }
+    }
+  });
+  const failAll=err=>{
+    for(const req of pending.values())req.reject(err);
+    pending.clear();
+  };
+  child.once('error',err=>{alive=false;failAll(Object.assign(diagnoseCliFailure('agy',err,stderr),{warmReused:turnsCompleted>0}));onExit?.();});
+  child.once('close',code=>{alive=false;failAll(Object.assign(diagnoseCliFailure('agy',{code},stderr),{warmReused:turnsCompleted>0}));onExit?.();});
+  return {
+    get alive(){return alive;},
+    get busy(){return Boolean(active);},
+    get session(){return sessionId;},
+    get turnsCompleted(){return turnsCompleted;},
+    close(){alive=false;try{child.stdin.end();}catch{}const t=setTimeout(()=>{try{child.kill();}catch{}},1500);t.unref?.();},
+    async runTurn(prompt,turnOpts={}){
+      if(!alive||active)throw Object.assign(Error('Warm ACP unavailable.'),{warmReused:true});
+      const writeProgress=createProgressWriter(turnOpts.progressFile);
+      writeProgress(turnsCompleted>0?'대기 세션에 전달 중…':'CLI 시작 중…');
+      await ready;
+      const liveFile=turnOpts.inboxFile?turnOpts.inboxFile+'.live':null;
+      const turn={
+        text:'',pendingInterim:'',writeProgress,onApproval:turnOpts.onApproval,
+        flushInterim(){
+          const t=cleanInterim(turn.pendingInterim);
+          turn.pendingInterim='';
+          if(!t)return;
+          if(turnOpts.onInterim)try{turnOpts.onInterim(t);}catch{}
+        }
+      };
+      active=turn;
+      if(liveFile)try{fs.writeFileSync(liveFile,'1');}catch{}
+      try{
+        const res=await rpc('session/prompt',{sessionId,prompt:[{type:'text',text:prompt}]});
+        turnsCompleted++;
+        const reply=turn.text.trim()||'[[AGENT_ROOM_NO_REPLY]]';
+        return {id:sessionId,reply,usage:{turns:1,inputTokens:0,outputTokens:0,costUsd:0},stopReason:res?.stopReason};
+      }catch(err){
+        throw Object.assign(err.cliCode?err:diagnoseCliFailure('agy',err,stderr),{warmReused:turnsCompleted>0});
+      }finally{
+        active=null;
+        if(liveFile)fs.rmSync(liveFile,{force:true});
+        if(turnOpts.inboxFile)fs.rmSync(turnOpts.inboxFile,{force:true});
+      }
+    }
+  };
+}
 function runStreamLive(provider,file,prefix,args,project,prompt,session,inboxFile,progressFile,interimFile){
   const host=createStreamHost(provider,file,prefix,args,project,session,false);
   return host.runTurn(prompt,{inboxFile,progressFile,interimFile});
@@ -443,7 +570,8 @@ function closeAllWarm(){
 }
 async function runWarmTurn(participant,project,prompt,session,provider,model=null,effort=null,options={}){
   if((provider!=='claude'&&provider!=='agy')||options.rank)return runCodex(project,prompt,session,provider,model,effort,options);
-  const cfgKey=JSON.stringify([project,provider,model||'',effort||'',options.permission||'dev']);
+  const useAcp=provider==='agy'&&(options.permission||'dev')!=='full'&&typeof options.onApproval==='function';
+  const cfgKey=JSON.stringify([project,provider,model||'',effort||'',options.permission||'dev',useAcp?'acp':'stream']);
   let entry=warmPool.get(participant);
   if(entry&&(!entry.host.alive||entry.host.busy||entry.cfgKey!==cfgKey||(session&&entry.host.session&&entry.host.session!==session))){
     invalidateWarm(participant);
@@ -451,15 +579,17 @@ async function runWarmTurn(participant,project,prompt,session,provider,model=nul
   }
   if(!entry){
     const [file,...prefix]=cliCommand(provider);
-    const args=buildStreamArgs(provider,session,model,effort,options);
-    const host=createStreamHost(provider,file,prefix,args,project,session,true,()=>{
+    const onClosed=()=>{
       const cur=warmPool.get(participant);
       if(cur&&cur.host===host){
         warmPool.delete(participant);
         clearTimeout(cur.idleTimer);
         if(cur.cleanupApproval)try{cur.cleanupApproval();}catch{}
       }
-    });
+    };
+    const host=useAcp
+      ?createAcpHost(file,prefix,project,session,model,effort,options,onClosed)
+      :createStreamHost(provider,file,prefix,buildStreamArgs(provider,session,model,effort,options),project,session,true,onClosed);
     entry={host,cfgKey,idleTimer:null,cleanupApproval:options.cleanupApproval||null};
     warmPool.set(participant,entry);
   }
@@ -614,7 +744,7 @@ function discoverModels(project,provider){
       }
     });
     if(claude)send({type:'control_request',request_id:'models',request:{subtype:'initialize'}});
-    else send({id:1,method:'initialize',params:{clientInfo:{name:'agent-room',version:'0.2.20'}}});
+    else send({id:1,method:'initialize',params:{clientInfo:{name:'agent-room',version:appVersion}}});
   });
 }
 

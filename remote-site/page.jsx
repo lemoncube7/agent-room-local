@@ -13,7 +13,7 @@ function accentFor(name,provider){
   if(provider==='claude'||/^(claude|opus|sonnet|haiku)/i.test(name||'')||name?.includes('오푸스'))return P.claude;
   return P.line;
 }
-function fmtAge(ts){if(!ts)return '';const m=Math.max(0,Math.floor((Date.now()-ts)/60000));return m<1?'방금 기준':m+'분 전 기준';}
+function fmtAge(ts){if(!ts)return '';const m=Math.max(0,Math.floor((Date.now()-ts)/60000));return m<1?'방금 기준':m<60?m+'분 전 기준':Math.floor(m/60)+'시간 전 기준';}
 function fmtReset(raw){
   if(!raw)return '';
   const ms=typeof raw==='number'?(raw<1e12?raw*1000:raw):Date.parse(raw);
@@ -22,14 +22,17 @@ function fmtReset(raw){
   return (d.toDateString()===now.toDateString()?t:d.toLocaleDateString('ko-KR',{month:'numeric',day:'numeric'})+' '+t)+' 초기화';
 }
 function renderInline(text){
-  const pattern=/`([^`\n]+)`|\*\*([^*\n]+)\*\*|\*([^*\n]+)\*|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g;
+  const pattern=/`([^`\n]+)`|\*\*([^*\n]+)\*\*|\*([^*\n]+)\*|\[([^\]\n]+)\]\(((?:https?:\/\/|file:\/\/\/?)[^\s)]+)\)/g;
   const out=[];let start=0,k=0;
   for(const m of String(text||'').matchAll(pattern)){
     if(m.index>start)out.push(text.slice(start,m.index));
-    if(m[5])out.push(<a key={k++} href={m[5]} target="_blank" rel="noopener noreferrer" style={{color:P.accent}}>{m[4]}</a>);
+    if(m[5]){
+      const isFile=m[5].startsWith('file:');
+      out.push(<a key={k++} href={m[5]} title={m[5]} target={isFile?undefined:'_blank'} rel={isFile?undefined:'noopener noreferrer'} onClick={isFile?e=>{e.preventDefault();try{const u=new URL(m[5]);navigator.clipboard?.writeText(decodeURIComponent(u.pathname).replace(/^\/([A-Za-z]:)/,'$1').replace(/\//g,'\\')).catch(()=>{});}catch{}}:undefined} style={{color:P.accent}}>{m[4]}</a>);
+    }
     else if(m[1])out.push(<code key={k++} style={{background:P.raised,borderRadius:4,padding:'1px 5px',fontSize:'0.92em'}}>{m[1]}</code>);
-    else if(m[2])out.push(<strong key={k++}>{m[2]}</strong>);
-    else out.push(<em key={k++}>{m[3]}</em>);
+    else if(m[2])out.push(<strong key={k++}>{renderInline(m[2])}</strong>);
+    else out.push(<em key={k++}>{renderInline(m[3])}</em>);
     start=m.index+m[0].length;
   }
   if(start<text.length)out.push(text.slice(start));
@@ -37,19 +40,27 @@ function renderInline(text){
 }
 function CodeBlock({code}){
   const [copied,setCopied]=useState(false);
-  return <pre style={{position:'relative',overflow:'auto',maxWidth:'100%',padding:'30px 10px 10px',margin:'0 0 6px',background:P.bg,border:`1px solid ${P.line}`,borderRadius:8}}>
-    <button type="button" onClick={()=>{navigator.clipboard?.writeText(code.replace(/\n$/,'')).catch(()=>{});setCopied(true);setTimeout(()=>setCopied(false),1400);}} style={{position:'absolute',top:5,right:6,padding:'2px 8px',fontSize:11,borderRadius:6,background:P.raised,border:`1px solid ${P.line}`,color:P.text,cursor:'pointer'}}>{copied?'복사됨':'복사'}</button>
-    <code style={{whiteSpace:'pre',fontFamily:'ui-monospace,Consolas,monospace',fontSize:12.5}}>{code}</code>
-  </pre>;
+  const onCopy=()=>{
+    const t=code.replace(/\n$/,'');
+    const done=()=>{setCopied(true);setTimeout(()=>setCopied(false),1400);};
+    const fb=()=>{const ta=document.createElement('textarea');ta.value=t;ta.style.position='fixed';ta.style.opacity='0';document.body.append(ta);ta.focus();ta.select();if(document.execCommand('copy'))done();ta.remove();};
+    if(navigator.clipboard?.writeText)navigator.clipboard.writeText(t).then(done).catch(fb);else fb();
+  };
+  return <div style={{position:'relative',margin:'0 0 6px'}}>
+    <button type="button" onClick={onCopy} style={{position:'absolute',top:6,right:6,zIndex:2,padding:'2px 8px',fontSize:11,borderRadius:6,background:P.raised,border:`1px solid ${P.line}`,color:P.text,cursor:'pointer'}}>{copied?'복사됨':'복사'}</button>
+    <pre style={{overflow:'auto',maxWidth:'100%',padding:'30px 10px 10px',margin:0,background:P.bg,border:`1px solid ${P.line}`,borderRadius:8}}>
+      <code style={{whiteSpace:'pre',fontFamily:'ui-monospace,Consolas,monospace',fontSize:12.5}}>{code}</code>
+    </pre>
+  </div>;
 }
 function MessageBody({text}){
-  const blocks=[];let code=null,para=[],list=null,listTag=null,k=0;
+  const blocks=[];let code=null,para=[],list=null,listTag=null,listStart=1,k=0;
   const flushPara=()=>{if(para.length){blocks.push(<p key={k++} style={{margin:'0 0 6px',whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{para.flatMap((line,i)=>i?[<br key={'br'+i}/>,...renderInline(line)]:renderInline(line))}</p>);para=[];}};
-  const flushList=()=>{if(list){blocks.push(listTag==='ol'?<ol key={k++} style={{margin:'0 0 6px',paddingLeft:20}}>{list}</ol>:<ul key={k++} style={{margin:'0 0 6px',paddingLeft:20}}>{list}</ul>);list=null;listTag=null;}};
+  const flushList=()=>{if(list){blocks.push(listTag==='ol'?<ol key={k++} start={listStart>1?listStart:undefined} style={{margin:'0 0 6px',paddingLeft:20}}>{list}</ol>:<ul key={k++} style={{margin:'0 0 6px',paddingLeft:20}}>{list}</ul>);list=null;listTag=null;listStart=1;}};
   const lines=String(text||'').split(/\r?\n/);
   for(let idx=0;idx<lines.length;idx++){
-    const line=lines[idx];
-    if(code!==null){if(/^\s*```\s*$/.test(line)){blocks.push(<CodeBlock key={k++} code={code}/>);code=null;}else code+=line+'\n';continue;}
+    let line=lines[idx];
+    if(code!==null){const end=line.match(/^\s*```+(.*)$/);if(end){blocks.push(<CodeBlock key={k++} code={code}/>);code=null;if(!end[1].trim())continue;line=end[1];}else{code+=line+'\n';continue;}}
     if(/^\s*```/.test(line)){flushPara();flushList();code='';continue;}
     if(!line.trim()){flushPara();flushList();continue;}
     if(/^\s*([-*_])(?:\s*\1){2,}\s*$/.test(line)){flushPara();flushList();blocks.push(<hr key={k++} style={{border:0,borderTop:`1px solid ${P.line}`,margin:'8px 0'}}/>);continue;}
@@ -66,7 +77,7 @@ function MessageBody({text}){
     if(item){
       flushPara();
       const tag=/^\d/.test(item[1])?'ol':'ul';
-      if(listTag!==tag){flushList();list=[];listTag=tag;}
+      if(listTag!==tag){flushList();list=[];listTag=tag;listStart=tag==='ol'?parseInt(item[1],10)||1:1;}
       list.push(<li key={list.length}>{renderInline(item[2])}</li>);
       continue;
     }
@@ -134,7 +145,7 @@ export default function RemoteRoom(){
   }
 
   const roomObj=rooms.find(r=>r.id===room);
-  const members=(snap?.members||[]).filter(m=>m.room===room);
+  const members=(snap?.members||[]).filter(m=>m.room===room&&m.state!=='disconnected');
   const busy=members.filter(m=>m.busy);
   const approvals=snap?.approvals||[];
   const ranking=snap?.ranking?.find(r=>r.room===room);
@@ -142,14 +153,14 @@ export default function RemoteRoom(){
   const approved=members.filter(m=>m.state==='approved');
   const mainMember=roomMode==='hierarchy'?(approved.find(m=>m.id===ranking?.main_member)||approved.find(m=>m.provider)):null;
   const labels={pending:'승인 대기',starting:'CLI 시작 중…',start_failed:'실행 실패',approved:'대기 중'};
-  const winNames={five_hour:'5시간',seven_day:'7일'};
+  const winNames={five_hour:'5시간',seven_day:'7일',primary:'5시간',secondary:'7일','gemini-5h':'5시간','gemini-weekly':'7일','3p-5h':'5시간','3p-weekly':'7일'};
 
   return <div style={{display:'flex',flexDirection:'column',height:'100dvh',overflow:'hidden',background:P.bg,color:P.text,fontFamily:'"Pretendard","Malgun Gothic","Segoe UI",sans-serif',fontSize:14,lineHeight:1.55}}>
     <header style={{flex:'none',padding:'12px 18px',borderBottom:`1px solid ${P.line}`,background:P.bg,display:'grid',gap:8}}>
       <div style={{display:'flex',flexWrap:'wrap',alignItems:'center',justifyContent:'space-between',gap:8}}>
         <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-          <h1 style={{fontSize:16,margin:0}}>Agent Room</h1>
-          <span style={{fontSize:11,padding:'2px 8px',borderRadius:999,background:P.panel,border:`1px solid ${P.line}`,color:P.muted,display:'inline-flex',alignItems:'center',gap:5}}>
+          <h1 style={{fontSize:16,margin:0,display:'inline-flex',alignItems:'center',gap:6,whiteSpace:'nowrap'}}>Agent Room <span style={{fontSize:11,fontWeight:600,padding:'1px 7px',borderRadius:6,background:'rgba(124,156,255,0.16)',border:`1px solid ${P.accent}`,color:P.accent,whiteSpace:'nowrap'}}>원격</span></h1>
+          <span style={{fontSize:11,padding:'2px 8px',borderRadius:999,background:P.panel,border:`1px solid ${P.line}`,color:P.muted,display:'inline-flex',alignItems:'center',gap:5,whiteSpace:'nowrap'}}>
             <i style={{width:7,height:7,borderRadius:'50%',background:connected?'#4fd1a5':'#ff7b72',display:'inline-block'}}/>
             {connected?'원격 연결됨':'연결 확인 필요'}
           </span>
@@ -176,7 +187,8 @@ export default function RemoteRoom(){
       {showAct&&members.length?<div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:8,maxHeight:'22vh',overflow:'auto'}}>
         {members.map(m=>{
           const pa=approvals.find(a=>a.room===room&&a.name===m.name);
-          const entries=m.provider&&snap?.limits?.[m.provider]?.windows?Object.entries(snap.limits[m.provider].windows).filter(([,w])=>w&&typeof w==='object'):[];
+          const rawW=m.provider&&snap?.limits?.[m.provider]?.windows;
+          const entries=!rawW?[]:m.provider==='agy'?((!m.model||/gemini/i.test(m.model))?['gemini-5h','gemini-weekly']:['3p-5h','3p-weekly']).filter(k=>rawW[k]&&typeof rawW[k]==='object').map(k=>[k,rawW[k]]):Object.entries(rawW).filter(([,w])=>w&&typeof w==='object');
           const elapsed=m.busy&&m.progress?.updatedAt?Math.max(0,Math.floor((Date.now()-m.progress.updatedAt)/1000)):0;
           const step=pa?'허용 요청 대기: '+pa.tool:m.conflict?'⚠ 동시 수정 주의: '+m.conflict:m.paused?'일시정지됨 (응답 중지)':m.busy?(m.progress?.step||'작업 진행 중…')+(elapsed>=2?` (${elapsed}초)`:''):m.cliError?m.cliError.message:labels[m.state]||'대기 중';
           return <div key={m.id} style={{background:P.panel,border:`1px solid ${P.line}`,borderInlineStart:`3px solid ${accentFor(m.name,m.provider)}`,borderRadius:10,padding:'8px 10px',display:'grid',gap:3,minWidth:0}}>
@@ -193,9 +205,11 @@ export default function RemoteRoom(){
               {m.state==='start_failed'&&m.provider?<button type="button" onClick={()=>void postBrowser({room,control:'retry_agent',participant:m.id})} style={{fontSize:11,padding:'2px 8px',borderRadius:6,border:`1px solid ${P.line}`,background:P.raised,color:P.text,cursor:'pointer'}}>다시 실행</button>:null}
             </div>
             {entries.map(([k,w])=>{
-              const rem=Math.max(0,Math.min(100,Math.round(100-(Number(w.utilization)||0)*100)));
+              const raw=w.resets_at??w.resetsAt, ms=typeof raw==='number'?(raw<1e12?raw*1000:raw):Date.parse(raw);
+              const expired=Number.isFinite(ms)&&ms<=Date.now();
+              const rem=expired?100:Math.max(0,Math.min(100,Math.round(100-(Number(w.utilization)||0)*100)));
               return <div key={k} style={{display:'grid',gap:2,fontSize:11,color:P.muted}}>
-                <div style={{display:'flex',justifyContent:'space-between'}}><span>{(winNames[k]||k)} · 남음 {rem}%</span><span>{fmtReset(w.resets_at??w.resetsAt)}</span></div>
+                <div style={{display:'flex',justifyContent:'space-between'}}><span>{(winNames[k]||k)} · 남음 {rem}%</span><span>{expired?'초기화됨':fmtReset(raw)}</span></div>
                 <div style={{height:4,borderRadius:999,background:P.raised,overflow:'hidden'}}><i style={{display:'block',height:'100%',width:rem+'%',background:rem<=10?'#ff7b72':rem<=25?'#f5c451':'#4fd1a5'}}/></div>
               </div>;
             })}

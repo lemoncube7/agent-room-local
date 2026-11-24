@@ -17,7 +17,7 @@
 
 1. ChatGPT Sites에서 서버 동작을 지원하는 Vinext 시작 프로젝트를 **소유자 비공개**로 만든다. 공개 URL로 전환하지 않는다.
 2. `remote-site/page.jsx`를 `app/page.jsx`에 복사한다. `remote-site/route.js`와 `handler.mjs`를 둘 다 `app/api/room/[...route]/`에 복사한다.
-3. Sites의 D1 바인딩 이름을 `DB`로 선언한다. `remote-site/schema.sql`과 `remote-site/0001_multiple_rooms.sql`의 테이블과 인덱스를 시작 프로젝트의 D1 마이그레이션에 반영한다. 시작 프로젝트에서 제공하는 Drizzle 마이그레이션 생성·검증 절차를 사용한다.
+3. Sites의 D1 바인딩 이름을 `DB`로 선언한다. `remote-site/schema.sql`, `remote-site/0001_multiple_rooms.sql`, `remote-site/0002_remote_state.sql`의 테이블과 인덱스를 시작 프로젝트의 D1 마이그레이션에 반영한다. 시작 프로젝트에서 제공하는 Drizzle 마이그레이션 생성·검증 절차를 사용한다.
 4. Site의 비밀 설정에 무작위 32바이트 이상의 `REMOTE_DEVICE_KEY`를 등록한다. ChatGPT 로그인 상태로 비공개 Site의 `/api/room/whoami`에서 확인한 소유자 ID를 `REMOTE_OWNER_ID`에 등록한다. 비밀은 브라우저 코드나 Git에 넣지 않는다.
 5. 해당 비공개 Site가 Windows에서 호출을 받을 수 있도록 Sites의 서비스 액세스를 준비한다. `siwc_bypass_bearer_token`이 제공되면 대상 Site 호출에만 사용한다. 이 토큰은 브라우저 방문자 신원이 아니다. 제공 여부나 유효 기간을 추측하지 말고 실제 설정과 기기 호출로 확인한다.
 

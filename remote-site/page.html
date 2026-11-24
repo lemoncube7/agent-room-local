@@ -1,12 +1,13 @@
-<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Agent Room Remote</title>
+<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Agent Room · 원격</title>
 <style>
 :root{color-scheme:dark;--bg:#0f1117;--panel:#161922;--raised:#1e222d;--hover:#282d3a;--line:#2a2f3b;--text:#e8eaf0;--muted:#9aa1b0;--accent:#7c9cff;background:var(--bg);color:var(--text);font-family:"Pretendard","Malgun Gothic","Segoe UI",sans-serif;font-size:14px;line-height:1.55}
 *{box-sizing:border-box}
 body{margin:0;display:grid;grid-template-columns:clamp(190px,21vw,250px) minmax(0,1fr);grid-template-rows:minmax(0,1fr);height:100vh;height:100dvh;overflow:hidden;background:var(--bg);color:var(--text)}
 aside{display:flex;flex-direction:column;gap:10px;background:var(--panel);border-right:1px solid var(--line);padding:16px 12px;overflow:auto}
-.brand{display:flex;align-items:center;justify-content:space-between;gap:8px}
-h1{font-size:17px;margin:0}
-.pill{font-size:11px;font-weight:500;padding:2px 8px;border-radius:999px;background:var(--bg);border:1px solid var(--line);color:var(--muted);display:inline-flex;align-items:center;gap:5px}
+.brand{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px}
+h1{font-size:15.5px;margin:0;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.remote-badge{font-size:11px;font-weight:600;padding:1px 7px;border-radius:6px;background:rgba(124,156,255,.16);border:1px solid var(--accent);color:var(--accent);white-space:nowrap;flex:none}
+.pill{font-size:11px;font-weight:500;padding:2px 8px;border-radius:999px;background:var(--bg);border:1px solid var(--line);color:var(--muted);display:inline-flex;align-items:center;gap:5px;white-space:nowrap;flex:none}
 .pill i{width:7px;height:7px;border-radius:50%;background:#4fd1a5;display:inline-block}
 .pill.err i{background:#ff7b72}
 #new-room{display:flex;gap:5px}
@@ -53,9 +54,10 @@ article.own>strong{color:#b6c8ff}article.codex>strong{color:#a9c8ff}article.clau
 article.typing small{display:block;margin-top:4px;color:#ffcf90;font-size:11px}
 .md{color:var(--text);overflow-wrap:anywhere}.md>*{margin:0 0 6px}.md>*:last-child{margin-bottom:0}
 .md p{white-space:pre-wrap;overflow-wrap:anywhere}
-.md pre{position:relative;overflow:auto;max-width:100%;padding:30px 10px 10px;background:var(--bg);border:1px solid var(--line);border-radius:8px}
+.md .code-wrap{position:relative}
+.md pre{overflow:auto;max-width:100%;padding:30px 10px 10px;margin:0;background:var(--bg);border:1px solid var(--line);border-radius:8px}
 .md pre code{white-space:pre;font-family:ui-monospace,Consolas,monospace;font-size:12.5px}
-.md .copy-btn{position:absolute;top:5px;right:6px;padding:2px 8px;font-size:11px;border-radius:6px;background:var(--raised);border:1px solid var(--line);color:var(--text)}
+.md .copy-btn{position:absolute;top:6px;right:6px;z-index:2;padding:2px 8px;font-size:11px;border-radius:6px;background:var(--raised);border:1px solid var(--line);color:var(--text)}
 .md :not(pre)>code{background:var(--raised);border-radius:4px;padding:1px 5px;font-size:.92em}
 .md a{color:var(--accent)}.md blockquote{margin:0 0 6px;padding-left:10px;border-left:2px solid #596584;color:var(--muted)}.md ul,.md ol{padding-left:20px}.md hr{border:0;border-top:1px solid var(--line);margin:8px 0}.md table{border-collapse:collapse;max-width:100%;font-size:13px;overflow:auto;display:block}.md th,.md td{border:1px solid var(--line);padding:4px 8px;text-align:left}.md th{background:var(--raised)}
 .head-actions select{font:inherit;font-size:12px;padding:4px 8px;border-radius:8px;border:1px solid var(--line);background:var(--raised);color:var(--text)}
@@ -79,7 +81,7 @@ article.typing small{display:block;margin-top:4px;color:#ffcf90;font-size:11px}
 }
 </style>
 <aside>
- <div class="brand"><h1>Agent Room</h1><span id="conn" class="pill"><i></i>연결 중</span></div>
+ <div class="brand"><h1>Agent Room <span class="remote-badge">원격</span></h1><span id="conn" class="pill"><i></i>연결 중</span></div>
  <form id="new-room" autocomplete="off"><input name="name" placeholder="새 채팅방 이름" maxlength="70" required><button type="submit" aria-label="방 만들기">+</button></form>
  <nav id="rooms" aria-label="채팅방 목록"></nav>
 </aside>
@@ -116,14 +118,15 @@ function agentCls(name,provider){
  return '';
 }
 function inlineMd(target,text){
- const pattern=/`([^`\n]+)`|\*\*([^*\n]+)\*\*|\*([^*\n]+)\*|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g;
+ const pattern=/`([^`\n]+)`|\*\*([^*\n]+)\*\*|\*([^*\n]+)\*|\[([^\]\n]+)\]\(((?:https?:\/\/|file:\/\/\/?)[^\s)]+)\)/g;
  let start=0;
  for(const match of text.matchAll(pattern)){
   target.append(document.createTextNode(text.slice(start,match.index)));
   if(match[5]){
-   try{const url=new URL(match[5]);const a=el('a',match[4]);a.href=url.href;a.target='_blank';a.rel='noopener noreferrer';target.append(a);}
+   try{const url=new URL(match[5]);const a=el('a',match[4]);a.href=url.href;a.title=url.href;if(url.protocol==='file:'){const lp=decodeURIComponent(url.pathname).replace(/^\/([A-Za-z]:)/,'$1').replace(/\//g,'\\');a.onclick=e=>{e.preventDefault();navigator.clipboard?.writeText(lp).catch(()=>{});statusLine.textContent='경로 복사됨: '+lp;};}else{a.target='_blank';a.rel='noopener noreferrer';}target.append(a);}
    catch{target.append(document.createTextNode(match[0]));}
-  }else target.append(el(match[1]?'code':match[2]?'strong':'em',match[1]||match[2]||match[3]));
+  }else if(match[1])target.append(el('code',match[1]));
+  else{const span=el(match[2]?'strong':'em','');inlineMd(span,match[2]||match[3]);target.append(span);}
   start=match.index+match[0].length;
  }
  target.append(document.createTextNode(text.slice(start)));
@@ -133,16 +136,18 @@ function renderMd(text){
  let p,list,code,table,tbody;
  const lines=String(text||'').split(/\r?\n/);
  for(let idx=0;idx<lines.length;idx++){
-  const line=lines[idx];
-  if(code){if(/^\s*```\s*$/.test(line))code=null;else code.append(document.createTextNode(line+'\n'));continue;}
+  let line=lines[idx];
+  if(code){const end=line.match(/^\s*```+(.*)$/);if(end){code=null;if(!end[1].trim())continue;line=end[1];}else{code.append(document.createTextNode(line+'\n'));continue;}}
   const item=line.match(/^\s*([-+*]|\d+\.)\s+(.+)$/), heading=line.match(/^(#{1,6})\s+(.+)$/);
   if(!item)list=null;
   if(!/^\s*\|.*\|\s*$/.test(line)){table=null;tbody=null;}
   if(/^\s*```/.test(line)){
-   const pre=el('pre',''), copy=el('button','복사');code=el('code','');
+   const wrap=el('div','');wrap.className='code-wrap';
+   const pre=el('pre',''), copy=el('button','복사'), codeEl=el('code','');
+   code=codeEl;
    copy.type='button';copy.className='copy-btn';
-   copy.onclick=async()=>{const t=code.textContent.replace(/\n$/,'');try{await navigator.clipboard.writeText(t);}catch{}copy.textContent='복사됨';setTimeout(()=>{copy.textContent='복사';},1400);};
-   pre.append(copy,code);root.append(pre);p=null;continue;
+   copy.onclick=()=>{const t=codeEl.textContent.replace(/\n$/,'');const done=()=>{copy.textContent='복사됨';setTimeout(()=>{copy.textContent='복사';},1400);};const fb=()=>{const ta=document.createElement('textarea');ta.value=t;ta.style.position='fixed';ta.style.opacity='0';document.body.append(ta);ta.focus();ta.select();if(document.execCommand('copy'))done();ta.remove();};if(navigator.clipboard?.writeText)navigator.clipboard.writeText(t).then(done).catch(fb);else fb();};
+   pre.append(codeEl);wrap.append(copy,pre);root.append(wrap);p=null;continue;
   }
   if(!line.trim()){p=null;continue;}
   if(/^\s*([-*_])(?:\s*\1){2,}\s*$/.test(line)){root.append(document.createElement('hr'));p=null;continue;}
@@ -155,14 +160,14 @@ function renderMd(text){
    }
    if(tbody){const tr=el('tr','');for(const c of cells){const td=el('td','');inlineMd(td,c);tr.append(td);}tbody.append(tr);p=null;continue;}
   }
-  if(item){const tag=/^\d/.test(item[1])?'OL':'UL';if(list?.tagName!==tag){list=el(tag,'');root.append(list);}const li=el('li','');inlineMd(li,item[2]);list.append(li);p=null;continue;}
+  if(item){const tag=/^\d/.test(item[1])?'OL':'UL';if(list?.tagName!==tag){list=el(tag,'');if(tag==='OL'){const n=parseInt(item[1],10);if(n>1)list.start=n;}root.append(list);}const li=el('li','');inlineMd(li,item[2]);list.append(li);p=null;continue;}
   if(heading||line.startsWith('> ')){const b=el(heading?'h'+Math.min(6,heading[1].length+2):'blockquote','');inlineMd(b,heading?heading[2]:line.slice(2));root.append(b);p=null;continue;}
   if(!p){p=el('p','');root.append(p);}else p.append(document.createElement('br'));
   inlineMd(p,line);
  }
  return root;
 }
-function fmtAge(ts){if(!ts)return '';const m=Math.max(0,Math.floor((Date.now()-ts)/60000));return m<1?'방금 기준':m+'분 전 기준';}
+function fmtAge(ts){if(!ts)return '';const m=Math.max(0,Math.floor((Date.now()-ts)/60000));return m<1?'방금 기준':m<60?m+'분 전 기준':Math.floor(m/60)+'시간 전 기준';}
 function fmtReset(raw){
  if(!raw)return '';
  const ms=typeof raw==='number'?(raw<1e12?raw*1000:raw):Date.parse(raw);
@@ -193,7 +198,7 @@ function renderPanel(){
  titleEl.textContent=roomObj?.name||'채팅방을 선택하세요';
  const ranking=lastSnap?.ranking?.find(r=>r.room===selected);
  const roomMode=ranking?.mode||(ranking?.enabled?'ranking':'broadcast');
- const members=(lastSnap?.members||[]).filter(m=>m.room===selected);
+ const members=(lastSnap?.members||[]).filter(m=>m.room===selected&&m.state!=='disconnected');
  const mainMember=roomMode==='hierarchy'?(members.find(m=>m.id===ranking?.main_member&&m.state==='approved')||members.find(m=>m.state==='approved'&&m.provider)):null;
  modeSel.hidden=!roomObj;
  if(roomObj)modeSel.value=roomMode;
@@ -205,7 +210,7 @@ function renderPanel(){
  }
  actBox.hidden=!showAct;
  const labels={pending:'승인 대기',starting:'CLI 시작 중…',start_failed:'실행 실패',approved:'대기 중'};
- const winNames={five_hour:'5시간',seven_day:'7일'};
+ const winNames={five_hour:'5시간',seven_day:'7일',primary:'5시간',secondary:'7일','gemini-5h':'5시간','gemini-weekly':'7일','3p-5h':'5시간','3p-weekly':'7일'};
  actBox.replaceChildren(...members.map(m=>{
   const card=document.createElement('div');
   const cls=agentCls('',m.provider)||agentCls(m.name);
@@ -215,7 +220,8 @@ function renderPanel(){
   dot.className='act-dot'+(pa||m.conflict?' approval':m.busy?' busy':m.cliError||m.state==='start_failed'?' error':'');
   const name=el('span',m.name+(mainMember?.id===m.id?' [메인]':''));name.className='act-name';name.prepend(dot);
   const lim=m.provider?lastSnap?.limits?.[m.provider]:null;
-  const entries=lim?.windows&&typeof lim.windows==='object'?Object.entries(lim.windows).filter(([,w])=>w&&typeof w==='object'):[];
+  const rawW=lim?.windows&&typeof lim.windows==='object'?lim.windows:null;
+  const entries=!rawW?[]:m.provider==='agy'?((!m.model||/gemini/i.test(m.model))?['gemini-5h','gemini-weekly']:['3p-5h','3p-weekly']).filter(k=>rawW[k]&&typeof rawW[k]==='object').map(k=>[k,rawW[k]]):Object.entries(rawW).filter(([,w])=>w&&typeof w==='object');
   const meta=el('span',entries.length?(fmtAge(lim.updatedAt)||'잔여량'):'잔여량 정보 없음');meta.className='act-meta';
   const head=document.createElement('div');head.className='act-head';head.append(name,meta);
   const elapsed=m.busy&&m.progress?.updatedAt?Math.max(0,Math.floor((Date.now()-m.progress.updatedAt)/1000)):0;
@@ -237,10 +243,12 @@ function renderPanel(){
   if(entries.length){
    const lb=document.createElement('div');lb.className='act-limits';
    for(const [k,w] of entries){
-    const rem=Math.max(0,Math.min(100,Math.round(100-(Number(w.utilization)||0)*100)));
+    const raw=w.resets_at??w.resetsAt, ms=typeof raw==='number'?(raw<1e12?raw*1000:raw):Date.parse(raw);
+    const expired=Number.isFinite(ms)&&ms<=Date.now();
+    const rem=expired?100:Math.max(0,Math.min(100,Math.round(100-(Number(w.utilization)||0)*100)));
     const row=document.createElement('div');row.className='act-limit';
     const top=document.createElement('div');top.className='act-limit-row';
-    top.append(el('span',(winNames[k]||k)+' · 남음 '+rem+'%'),el('span',fmtReset(w.resets_at??w.resetsAt)));
+    top.append(el('span',(winNames[k]||k)+' · 남음 '+rem+'%'),el('span',expired?'초기화됨':fmtReset(raw)));
     const bar=document.createElement('div');bar.className='act-bar';
     const fill=document.createElement('i');fill.style.width=rem+'%';
     if(rem<=10)fill.className='critical';else if(rem<=25)fill.className='low';

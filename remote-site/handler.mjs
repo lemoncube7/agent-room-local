@@ -74,14 +74,14 @@ export async function handleRoom(request,env){
   if(!isId(payload.id))return json({error:'Invalid message'},400);
   let storedText=payload.text, targetRoom=payload.room;
   if(payload.control){
-    if(!['approval_decide','retry_agent','room_ranking','create'].includes(payload.control))return json({error:'Unsupported control'},400);
+    if(!['approval_decide','retry_agent','pause_agent','room_ranking','create'].includes(payload.control))return json({error:'Unsupported control'},400);
     if(payload.control==='create'){
       if(!isText(payload.name,70))return json({error:'Invalid room name'},400);
       targetRoom=null;
       storedText=JSON.stringify({__control:true,control:'create',name:payload.name.trim()});
     }else{
       if(!isId(targetRoom)||!await env.DB.prepare('SELECT id FROM remote_rooms WHERE id=?').bind(targetRoom).first())return json({error:'Room is not shared'},404);
-      storedText=JSON.stringify({__control:true,control:payload.control,id:payload.id_target,allow:payload.allow,participant:payload.participant,enabled:payload.enabled});
+      storedText=JSON.stringify({__control:true,control:payload.control,id:payload.id_target,allow:payload.allow,participant:payload.participant,paused:payload.paused,enabled:payload.enabled,mode:payload.mode,mainMember:payload.mainMember});
     }
   }else{
     if(!isText(payload.text,8000))return json({error:'Invalid message'},400);
