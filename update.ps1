@@ -5,6 +5,7 @@
 )
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $stage = Join-Path ([IO.Path]::GetTempPath()) ('agent-room-update-' + [guid]::NewGuid())
 $files = @('hub.cjs','db.cjs','limits.cjs','updater.cjs','bridge.cjs','codex-ipc.cjs','managed-codex.cjs','index.html','setup.ps1','start.ps1','update.ps1','Start Agent Room.cmd','README.md','LICENSE','SECURITY.md','CHANGELOG.md','VERSION','smoke-test.cjs','native-chat.ps1','remote-sync.cjs','REMOTE-SETUP.md','HANDOFF.md','bind-desktop.cjs','handoff.cjs')

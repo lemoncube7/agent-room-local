@@ -5,7 +5,7 @@ const http = require('node:http');
 const {createHandoff}=require('./handoff.cjs');
 const {initDb,providerNames,normalizeEffort,normalizePermission}=require('./db.cjs');
 const {readLimits:readLimitsFrom,limitResetAt:limitResetAtFrom,agentQuotaSummary,formatLimitsContext:formatLimitsContextFrom}=require('./limits.cjs');
-const {updaterLaunchCommand:buildUpdaterLaunchCommand,checkUpdate:checkReleaseUpdate}=require('./updater.cjs');
+const {updaterLaunchCommand:buildUpdaterLaunchCommand,checkUpdate:checkReleaseUpdate,readUpdateLog}=require('./updater.cjs');
 const {runCodex,runWarmTurn=((_p,project,prompt,session,provider,model,effort,options)=>runCodex(project,prompt,session,provider,model,effort,options)),invalidateWarm=(()=>{}),closeAllWarm=(()=>{}),refreshCodexLimits=(async()=>false),refreshAgyLimits=(async()=>false),discoverModels,cliCommand} = require('./managed-codex.cjs');
 const {spawn,execFile}=require('node:child_process');
 const version=fs.readFileSync(path.join(__dirname,'VERSION'),'utf8').trim();
@@ -794,6 +794,7 @@ function task({action,room,participant,name,text,request,replyTo,after=0,...extr
     return {seq};
   }
   if(action==='list_rooms') return {rooms:all('SELECT * FROM rooms ORDER BY rowid')};
+  if(action==='pairing_status')return {state:one('SELECT state FROM members WHERE id=? AND room=?',participant,room)?.state||'missing'};
   if(action==='join_room_code'){
     const code=str(request,100).toUpperCase();
     const match=one('DELETE FROM room_codes WHERE code=? AND expires>? RETURNING room',code,Date.now());
@@ -953,7 +954,7 @@ function state(roomId=null){
   const editCounts=new Map();
   for(const m of members)if(m.editing){const k=m.room+':'+m.editing;editCounts.set(k,(editCounts.get(k)||0)+1);}
   for(const m of members){m.conflict=m.editing&&editCounts.get(m.room+':'+m.editing)>1?m.editing:null;delete m.editing;}
-  return {version,project:readActiveProject(),recentProjects:readRecentProjects(),approvals:[...approvals.values()].filter(item=>item.state==='pending').map(({id,room,name,tool,input,rule,created})=>({id,room,name,tool,input,rule,created})),approvalRules:all('SELECT member,rule FROM approval_rules'),approvalLogs:scoped?all('SELECT * FROM approval_logs WHERE room=? ORDER BY created DESC LIMIT 100',scoped):all('SELECT * FROM approval_logs ORDER BY created DESC LIMIT 100'),limits:readLimits(),ranking:all('SELECT room,enabled,mode,main_member,judge_provider,judge_model,judge_effort,judge_prompt FROM room_ranking'),replyPlans:scoped?all('SELECT seq,state FROM reply_plans WHERE room=?',scoped):all('SELECT seq,state FROM reply_plans'),remoteConfigured:remoteConfigured(),remoteRooms:selectedRemoteRooms(),tasks:handoff.list(scoped),updateStatus:fs.existsSync(updateLog)?fs.readFileSync(updateLog,'utf8').trim().split(/\r?\n/).at(-1):null,rooms:all('SELECT rooms.*,m.latest_incoming_seq FROM rooms LEFT JOIN (SELECT room,MAX(seq) AS last_seq,MAX(CASE WHEN author<>\'human:\'||room AND retracted=0 AND request NOT LIKE \'receipt:%\' THEN seq END) AS latest_incoming_seq FROM messages GROUP BY room) m ON m.room=rooms.id ORDER BY COALESCE(m.last_seq,0) DESC, rooms.rowid DESC'),
+  return {version,project:readActiveProject(),recentProjects:readRecentProjects(),approvals:[...approvals.values()].filter(item=>item.state==='pending').map(({id,room,name,tool,input,rule,created})=>({id,room,name,tool,input,rule,created})),approvalRules:all('SELECT member,rule FROM approval_rules'),approvalLogs:scoped?all('SELECT * FROM approval_logs WHERE room=? ORDER BY created DESC LIMIT 100',scoped):all('SELECT * FROM approval_logs ORDER BY created DESC LIMIT 100'),limits:readLimits(),ranking:all('SELECT room,enabled,mode,main_member,judge_provider,judge_model,judge_effort,judge_prompt FROM room_ranking'),replyPlans:scoped?all('SELECT seq,state FROM reply_plans WHERE room=?',scoped):all('SELECT seq,state FROM reply_plans'),remoteConfigured:remoteConfigured(),remoteRooms:selectedRemoteRooms(),tasks:handoff.list(scoped),updateStatus:readUpdateLog(updateLog).trim().split(/\r?\n/).at(-1)||null,rooms:all('SELECT rooms.*,m.latest_incoming_seq FROM rooms LEFT JOIN (SELECT room,MAX(seq) AS last_seq,MAX(CASE WHEN author<>\'human:\'||room AND retracted=0 AND request NOT LIKE \'receipt:%\' THEN seq END) AS latest_incoming_seq FROM messages GROUP BY room) m ON m.room=rooms.id ORDER BY COALESCE(m.last_seq,0) DESC, rooms.rowid DESC'),
     members,
     messages:scoped?all("SELECT messages.*,members.name FROM messages JOIN members ON messages.author=members.id WHERE messages.room=? AND messages.request NOT LIKE 'receipt:%' ORDER BY seq",scoped):all("SELECT messages.*,members.name FROM messages JOIN members ON messages.author=members.id WHERE messages.request NOT LIKE 'receipt:%' ORDER BY seq"),
     deliveries:scoped?all('SELECT deliveries.seq,deliveries.member,members.name,deliveries.state,deliveries.priority FROM deliveries JOIN messages ON messages.seq=deliveries.seq JOIN members ON deliveries.member=members.id WHERE messages.room=?',scoped):all('SELECT deliveries.seq,deliveries.member,members.name,deliveries.state,deliveries.priority FROM deliveries JOIN members ON deliveries.member=members.id')};
@@ -1153,7 +1154,7 @@ const server=http.createServer(async(req,res)=>{
           const watch=setInterval(()=>{
             if(draining)return clearInterval(watch);
             let text='';
-            try{text=fs.readFileSync(updateLog,'utf8');}catch{}
+            try{text=readUpdateLog(updateLog);}catch{}
             const age=Date.now()-started;
             if(/Update failed/.test(text)){clearInterval(watch);stopUpdate();}
             else if(!text.trim()&&age>30000){clearInterval(watch);stopUpdate('업데이트 실패: 30초 안에 업데이트 프로그램이 시작되지 않았어요. Windows ZIP으로 다시 시도해 주세요.');}
@@ -1263,11 +1264,12 @@ const server=http.createServer(async(req,res)=>{
       else if(args.action==='approve'||args.action==='disconnect'){
         const old=args.action==='approve'?'pending':one('SELECT state FROM members WHERE id=?',args.participant)?.state;
         const target=one('SELECT room,parent FROM members WHERE id=?',args.participant);
-        if(args.action==='disconnect'&&!['approved','start_failed'].includes(old))throw Error('Disconnect is unavailable for this participant.');
+        if(args.action==='disconnect'&&!['pending','approved','start_failed'].includes(old))throw Error('Disconnect is unavailable for this participant.');
         if(args.action==='approve'&&target?.parent)member(target.parent,target.room);
         run('UPDATE members SET state=?, since=(SELECT COALESCE(MAX(seq),0) FROM messages WHERE messages.room=members.room) WHERE id=? AND state=?',args.action==='approve'?'approved':'disconnected',args.participant,old);
         if(args.action==='disconnect'){
           invalidateWarm(args.participant);
+          run('DELETE FROM desktop_bindings WHERE member=? OR member IN (SELECT id FROM members WHERE parent=?)',args.participant,args.participant);
           run("UPDATE members SET state='disconnected' WHERE parent=?",args.participant);
           run('DELETE FROM invites WHERE parent=?',args.participant);
         }

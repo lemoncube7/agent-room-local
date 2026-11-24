@@ -1,5 +1,24 @@
 'use strict';
 const path = require('node:path');
+const fs = require('node:fs');
+const utf8 = new TextDecoder('utf-8', {fatal: true});
+const windowsKorean = new TextDecoder('euc-kr');
+
+function readUpdateLog(file) {
+  let bytes;
+  try { bytes = fs.readFileSync(file); }
+  catch (error) { if (error.code === 'ENOENT') return ''; throw error; }
+  const lines = [];
+  let start = 0;
+  for (let end = 0; end <= bytes.length; end++) {
+    if (end < bytes.length && bytes[end] !== 10) continue;
+    const line = bytes.subarray(start, end);
+    start = end + 1;
+    try { lines.push(utf8.decode(line)); }
+    catch { lines.push(windowsKorean.decode(line)); }
+  }
+  return lines.join('\n');
+}
 
 function updaterLaunchCommand(rootDir, updateLog, powershell, tag) {
   const quote = value => "'" + String(value).replace(/'/g, "''") + "'";
@@ -55,4 +74,4 @@ async function checkUpdate(version) {
   };
 }
 
-module.exports = { updaterLaunchCommand, checkUpdate };
+module.exports = { updaterLaunchCommand, checkUpdate, readUpdateLog };

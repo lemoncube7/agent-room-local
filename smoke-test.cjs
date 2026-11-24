@@ -230,6 +230,15 @@ async function main(){
   const updatedRoom2=await rpc('/control',{action:'room_ranking',room:room2.id,name:'Configured room 2',mode:'broadcast',memo:'Room rule'});
   assert.equal(updatedRoom2.rooms.find(r=>r.id===room2.id).name,'Configured room 2');
   assert.equal(updatedRoom2.rooms.find(r=>r.id===room2.id).memo,'Room rule');
+  const joinAgain=async(id,code)=>{
+    emit('tools/call',{name:'join_room_code',arguments:{request:code}},id);
+    return (await until(()=>frames.find(frame=>frame.id===id))).result;
+  };
+  const {code}=await rpc('/control',{action:'room_code',room:room2.id});
+  assert.equal((await joinAgain(21,code)).isError,true);
+  await rpc('/control',{action:'disconnect',participant:pending.id});
+  assert.equal(JSON.parse((await joinAgain(22,code)).content[0].text).state,'pending');
+  assert.equal((await sync()).members.filter(item=>item.room===room2.id&&item.name==='Claude Code'&&item.state==='pending').length,1);
   console.log('Passed: room approval, one channel push, reply, receipt, one-use subagent invitation, separate authorship, inherited revocation, room-wide broadcast, managed Codex and Claude creation and resume, durable outbox across hub restart, shared agent replies, room-scoped state, safe upload headers, and project switching.');
 }
 main().catch(err=>{console.error(err);process.exitCode=1;}).finally(()=>procs.forEach(p=>p.kill()));

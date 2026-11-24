@@ -82,17 +82,17 @@ async function push(message){
   }finally{fs.rmSync(file,{force:true});}
 }
 async function receive(){
-  if(busy||!joined)return;
+  if(busy||joining||!joined)return;
+  const target=joined;
   if(provider==='codex'&&thread&&!desktopBound){
     try{
-      await hub('/tool',{action:'bind_codex_desktop',room:joined.room,participant:joined.participant,thread,pipe:process.env.CODEX_APP_TOOLS_PIPE_PATH||null});
-      desktopBound=true;
+      await hub('/tool',{action:'bind_codex_desktop',...target,thread,pipe:process.env.CODEX_APP_TOOLS_PIPE_PATH||null});
+      if(joined===target)desktopBound=true;
       return;
     }catch(err){if(!/Approve this participant/.test(err.message))console.error(err.message);return;}
   }
   if(desktopBound||(!claude&&(provider!=='codex'||!thread)))return;
   busy=true;
-  const target=joined;
   try{
     for(const message of await hub('/delivery',{...target,action:'pending',after:0})){
       if(joined!==target)break;
@@ -228,11 +228,19 @@ async function invoke(req){
       try{
         let data;
         if(['request_join','join_room_code','join_subagent'].includes(name)){
-          if(joined||joining)throw Error('This MCP process is already pairing or paired. Restart this client connection to change rooms.');
+          if(joining)throw Error('A join request is already in progress.');
           joining=true;
-          try{data=await hub('/tool',{action:name,room:args.room,request:args.request,name:claude?'Claude Code':provider==='work'?'ChatGPT Work':provider==='agy'?'Antigravity':'Codex'});}
-          finally{joining=false;}
-          joined={room:data.room??args.room,participant:data.participant};
+          try{
+            if(joined){
+              const {state}=await hub('/tool',{action:'pairing_status',...joined});
+              if(!['disconnected','missing'].includes(state))throw Error(state==='pending'
+                ?'This session already has a pending join request. Approve or cancel it in Agent Room first.'
+                :'This session is already connected. Disconnect it in Agent Room before joining again.');
+            }
+            data=await hub('/tool',{action:name,room:args.room,request:args.request,name:claude?'Claude Code':provider==='work'?'ChatGPT Work':provider==='agy'?'Antigravity':'Codex'});
+            desktopBound=false;
+            joined={room:data.room??args.room,participant:data.participant};
+          }finally{joining=false;}
           const note=claude
             ?' Approve this participant in Agent Room. Note: live push requires starting Claude with --dangerously-load-development-channels server:agent-room; otherwise call read_messages.'
             :provider==='codex'&&!thread
