@@ -225,6 +225,11 @@ async function main(){
   const projState=await rpc('/control',{action:'set_project',room:room.id,project:altProject,applyMcp:false});
   assert.ok(projState.recentProjects.includes(altProject));
   assert.equal((await post('/control',{action:'set_project',project:path.join(root,'missing-dir'),applyMcp:false})).status,400);
+  const renamed=await rpc('/control',{action:'rename_room',room:room2.id,name:'Renamed room 2'});
+  assert.equal(renamed.rooms.find(r=>r.id===room2.id).name,'Renamed room 2');
+  const updatedRoom2=await rpc('/control',{action:'room_ranking',room:room2.id,name:'Configured room 2',mode:'broadcast',memo:'Room rule'});
+  assert.equal(updatedRoom2.rooms.find(r=>r.id===room2.id).name,'Configured room 2');
+  assert.equal(updatedRoom2.rooms.find(r=>r.id===room2.id).memo,'Room rule');
   console.log('Passed: room approval, one channel push, reply, receipt, one-use subagent invitation, separate authorship, inherited revocation, room-wide broadcast, managed Codex and Claude creation and resume, durable outbox across hub restart, shared agent replies, room-scoped state, safe upload headers, and project switching.');
 }
 main().catch(err=>{console.error(err);process.exitCode=1;}).finally(()=>procs.forEach(p=>p.kill()));

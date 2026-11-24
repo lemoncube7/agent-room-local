@@ -17,21 +17,39 @@ const formatLimitsContext=()=>formatLimitsContextFrom(local);
 const updaterLaunchCommand=(powershell,tag)=>buildUpdaterLaunchCommand(__dirname,updateLog,powershell,tag);
 const checkUpdate=()=>checkReleaseUpdate(version);
 const approvals=new Map(), approvalTurns=new Map();
+const approvalLogFile=path.join(local,'approvals.log');
+function logApproval(item,decision){
+  const now=new Date().toISOString();
+  const created=typeof item.created==='number'?new Date(item.created).toISOString():(item.created||now);
+  const decided=decision==='pending'?null:now;
+  try{
+    run('INSERT INTO approval_logs(id,room,member,name,tool,input,rule,decision,created,decided) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET decision=excluded.decision,decided=excluded.decided',
+      item.id,item.room,item.member,item.name,item.tool,item.input,item.rule??null,decision,created,decided);
+    if(decision!=='pending'){
+      const line=`[${now}] [${decision}] ${item.name} · ${item.tool}${item.rule?' ('+item.rule+')':''} | ${String(item.input||'').replace(/\s+/g,' ').slice(0,400)}\n`;
+      fs.appendFileSync(approvalLogFile,line,'utf8');
+    }
+  }catch(error){console.error('Agent Room approval log:',error.message);}
+}
 function approvalTool({action,turn,tool,input,id,expire,rule}){
   const owner=approvalTurns.get(turn);
   if(!owner)throw Error('Approval turn expired.');
   if(action==='approval_request'){
     if(typeof tool!=='string'||typeof input!=='string')throw Error('Invalid approval request.');
     const safeRule=typeof rule==='string'&&rule?rule.slice(0,120):null;
-    if(safeRule&&one('SELECT 1 FROM approval_rules WHERE member=? AND rule=?',owner.participant,safeRule))return {state:'allowed'};
+    if(safeRule&&one('SELECT 1 FROM approval_rules WHERE member=? AND rule=?',owner.participant,safeRule)){
+      logApproval({id:randomUUID(),room:owner.room,member:owner.participant,name:owner.name,tool:tool.slice(0,120),input:input.slice(0,2000),rule:safeRule,created:Date.now()},'auto_allowed');
+      return {state:'allowed'};
+    }
     if([...approvals.values()].filter(item=>item.member===owner.participant&&item.state==='pending').length>=5)throw Error('Too many pending approvals.');
     const item={id:randomUUID(),room:owner.room,member:owner.participant,name:owner.name,tool:tool.slice(0,120),input:input.slice(0,2000),rule:safeRule,state:'pending',created:Date.now()};
     approvals.set(item.id,item);
+    logApproval(item,'pending');
     return {id:item.id};
   }
   const item=approvals.get(id);
   if(!item||item.member!==owner.participant)throw Error('Approval request not found.');
-  if(expire&&item.state==='pending')item.state='expired';
+  if(expire&&item.state==='pending'){item.state='expired';logApproval(item,'expired');}
   const state=item.state;
   if(state!=='pending')approvals.delete(id);
   return {state};
@@ -164,7 +182,10 @@ function queueForRoom(room,author,seq,recipient=null,root=null){
   run("INSERT INTO deliveries(seq,member,state,priority) SELECT ?,members.id,CASE WHEN members.paused=0 THEN 'queued' ELSE 'context_only' END,CASE WHEN members.paused=0 THEN NULL ELSE 0 END FROM members JOIN cli_sessions ON cli_sessions.member=members.id WHERE room=? AND state='approved' AND members.id<>? AND (? IS NULL OR members.id=?) AND (members.id=? OR NOT EXISTS(SELECT 1 FROM deliveries prior WHERE prior.seq=? AND prior.member=members.id AND prior.priority=0))",seq,room,author,recipient,recipient,recipient,root);
 }
 const spoolPaths=id=>({job:path.join(spool,id+'.job.json'),result:path.join(spool,id+'.result.json'),pid:path.join(spool,id+'.pid'),inbox:path.join(spool,id+'.inbox'),closing:path.join(spool,id+'.inbox.closing'),live:path.join(spool,id+'.inbox.live'),progress:path.join(spool,id+'.progress.json'),interim:path.join(spool,id+'.interim.jsonl')});
+const stripWorkLines=text=>text.replace(/^\[\[WORK:[^\r\n]{1,122}\]\][ \t]*(?:\r?\n|$)/gm,'').trim();
 function storeInterim(jobId,author,room,sender,text,index){
+  text=stripWorkLines(text);
+  if(!text)return;
   const inserted=run('INSERT OR IGNORE INTO messages(room,author,request,body,created) VALUES(?,?,?,?,?)',room,author,'interim:'+jobId+':'+index,text,new Date().toISOString());
   if(!inserted.changes)return;
   const seq=Number(inserted.lastInsertRowid);
@@ -306,16 +327,21 @@ async function requestUiApproval(participant,room,name,permission,req){
   const safeRule=req.kind==='execute'&&cmd&&!req.input?.BypassSandbox&&!/[;&|`$<>()\r\n]/.test(cmd)&&!/^(rm|rmdir|del|powershell|pwsh|cmd|bash|sh|gh|curl|wget)$/.test(base)&&!(base==='git'&&/^(push|reset|clean|rebase)$/i.test(cmd.split(/\s+/)[1]||''))
     ?'agy:'+base
     :req.kind!=='execute'?'agy:'+String(req.kind||tool).slice(0,80):null;
-  if(safeRule&&one('SELECT 1 FROM approval_rules WHERE member=? AND rule=?',participant,safeRule))return 'allow_always';
+  if(safeRule&&one('SELECT 1 FROM approval_rules WHERE member=? AND rule=?',participant,safeRule)){
+    logApproval({id:randomUUID(),room,member:participant,name,tool,input:inputStr,rule:safeRule,created:Date.now()},'auto_allowed');
+    return 'allow_always';
+  }
   if([...approvals.values()].filter(i=>i.member===participant&&i.state==='pending').length>=5)return 'deny';
   const item={id:randomUUID(),room,member:participant,name,tool,input:inputStr,rule:safeRule,state:'pending',created:Date.now()};
   approvals.set(item.id,item);
+  logApproval(item,'pending');
   const deadline=Date.now()+240000;
   while(Date.now()<deadline){
     await new Promise(r=>setTimeout(r,400));
     if(item.state==='allowed'){approvals.delete(item.id);return 'allow_once';}
     if(item.state!=='pending'){approvals.delete(item.id);return 'deny';}
   }
+  logApproval(item,'expired');
   approvals.delete(item.id);
   return 'deny';
 }
@@ -384,7 +410,7 @@ async function cliTurn(participant, prompt, inputSeq){
     const roleNote=row.role?' Your assigned role in this room: '+JSON.stringify(row.role)+'.':'';
     const context='Your display name in Agent Room is '+JSON.stringify(row.name)+'. Your agent provider is '+session.provider+'.'+roleNote+' Use this name when interpreting mentions and identifying yourself. You are in a shared Agent Room chat. Your normal response goes to the whole room. Keep the default so other agents can follow progress. Only when a specific reply really needs a single recipient, put [[TO:participant-id]] on its own first line, using an exact ID from this room roster: '+JSON.stringify(peerRoster)+'. Never invent a reply from another agent.';
     const audience=!input?'This is the first turn.':input.author.startsWith('human:')?'The user posted to the whole room.':'Another agent posted to the whole room.';
-    const replyPolicy='This room works like a real conversation: speak when you have something useful to add, and everyone can read what you post. Before starting non-trivial work (editing files, running commands or tests, investigating), briefly state what you plan to do and which files you will touch. You can see how this message was delivered to peers (priority 1 = active responder, 0 = context only). If you are at priority n-1 (e.g. 1) and another peer should follow up next as priority n (e.g. 2), put [[CALL:participant-id]] (or [[NEXT:participant-id]]) on its own line at the start of your reply to wake them. If no reply is needed, respond exactly [[AGENT_ROOM_NO_REPLY]]. Avoid courtesy acknowledgments and unnecessary agent-to-agent chatter.';
+    const replyPolicy='This room works like a real conversation: speak when you have something useful to add, and everyone can read what you post. Before starting non-trivial work (editing files, running commands or tests, investigating), emit a standalone visible progress line [[WORK: short task description]] before using tools, naming the affected files when known. Update it when the task changes. The line is shown on your agent card. Omit it for a simple reply and from your final answer. You can see how this message was delivered to peers (priority 1 = active responder, 0 = context only). If you are at priority n-1 (e.g. 1) and another peer should follow up next as priority n (e.g. 2), put [[CALL:participant-id]] (or [[NEXT:participant-id]]) on its own line at the start of your reply to wake them. If no reply is needed, respond exactly [[AGENT_ROOM_NO_REPLY]]. Avoid courtesy acknowledgments and unnecessary agent-to-agent chatter.';
     const roomCfg=one('SELECT enabled,mode,main_member FROM room_ranking WHERE room=?',row.room);
     const roomMode=roomCfg?.mode||(roomCfg?.enabled?'ranking':'broadcast');
     const mainMember=roomMode==='hierarchy'?(one("SELECT id,name FROM members WHERE id=? AND room=? AND state='approved'",roomCfg?.main_member||'',row.room)||one("SELECT members.id,members.name FROM members JOIN cli_sessions ON cli_sessions.member=members.id WHERE room=? AND state='approved' ORDER BY members.rowid LIMIT 1",row.room)):null;
@@ -429,7 +455,7 @@ async function cliTurn(participant, prompt, inputSeq){
       run("UPDATE deliveries SET state='answered' WHERE seq=? AND member=?",inputSeq,participant);
       return;
     }
-    let replyText=result.reply.trim();
+    let replyText=stripWorkLines(result.reply);
     const called=new Set(), forwarded=new Set();
     for(let ctrl=replyText.match(/^\[\[(CALL|FORWARD|NEXT):([^\]\r\n]+)\]\]\s*/);ctrl;ctrl=replyText.match(/^\[\[(CALL|FORWARD|NEXT):([^\]\r\n]+)\]\]\s*/)){
       const targetId=ctrl[2].trim();
@@ -543,6 +569,55 @@ function member(id,room){
   if(result.parent&&!one("SELECT id FROM members WHERE id=? AND room=? AND state='approved'",result.parent,room)) throw Error('The parent participant is disconnected.');
   return result;
 }
+function prepareRoom(sourceId,name){
+  if(draining)throw Error('업데이트 중이에요. 잠시 후 다시 시도하세요.');
+  const source=one('SELECT memo FROM rooms WHERE id=?',sourceId);
+  if(!source)throw Error('설정을 가져올 방을 찾을 수 없어요.');
+  const agents=all("SELECT m.id,m.name,m.role,m.paused,c.project,c.provider,c.model,c.effort,c.permission_profile FROM members m JOIN cli_sessions c ON c.member=m.id WHERE m.room=? AND m.state IN ('approved','starting','start_failed') ORDER BY m.rowid",sourceId);
+  if(!agents.length)throw Error('이 방에는 복사할 CLI 에이전트 설정이 없어요.');
+  const room=randomUUID(), roomName=str(name,70);
+  const ids=new Map(agents.map(agent=>[agent.id,randomUUID()]));
+  const ranking=one('SELECT enabled,mode,main_member,judge_provider,judge_model,judge_effort,judge_prompt FROM room_ranking WHERE room=?',sourceId);
+  db.exec('BEGIN');
+  try{
+    run('INSERT INTO rooms(id,name,memo) VALUES(?,?,?)',room,roomName,source.memo);
+    for(const agent of agents){
+      const id=ids.get(agent.id);
+      run("INSERT INTO members(id,room,name,role,paused,state) VALUES(?,?,?,?,?,'approved')",id,room,agent.name,agent.role,agent.paused);
+      run('INSERT INTO cli_sessions(member,project,provider,model,effort,permission_profile,prepared) VALUES(?,?,?,?,?,?,1)',
+        id,agent.project,agent.provider,agent.model,agent.effort,agent.permission_profile);
+    }
+    if(ranking)run('INSERT INTO room_ranking(room,enabled,mode,main_member,judge_provider,judge_model,judge_effort,judge_prompt) VALUES(?,?,?,?,?,?,?,?)',
+      room,ranking.enabled,ranking.mode,ids.get(ranking.main_member)||null,ranking.judge_provider,ranking.judge_model,ranking.judge_effort,ranking.judge_prompt);
+    db.exec('COMMIT');
+  }catch(error){db.exec('ROLLBACK');throw error;}
+  return room;
+}
+function deleteRoom(room){
+  if(draining)throw Error('업데이트 중이에요. 잠시 후 다시 시도하세요.');
+  if(!one('SELECT id FROM rooms WHERE id=?',room))throw Error('삭제할 방을 찾을 수 없어요.');
+  const participants=all('SELECT id FROM members WHERE room=?',room);
+  if(rankingRooms.has(room)||participants.some(({id})=>cliBusy.has(id)||desktopBusy.has(id))||
+     [...approvals.values()].some(item=>item.room===room&&item.state==='pending')){
+    throw Error('방에서 진행 중인 응답이나 승인 요청을 마친 뒤 삭제해 주세요.');
+  }
+  db.exec('BEGIN');
+  try{
+    run('DELETE FROM handoff_history WHERE task IN (SELECT id FROM handoff_tasks WHERE room=?)',room);
+    run('DELETE FROM handoff_alerts WHERE seq IN (SELECT seq FROM messages WHERE room=?) OR task IN (SELECT id FROM handoff_tasks WHERE room=?)',room,room);
+    run('DELETE FROM deliveries WHERE seq IN (SELECT seq FROM messages WHERE room=?) OR member IN (SELECT id FROM members WHERE room=?)',room,room);
+    for(const table of ['cli_sessions','approval_rules','desktop_bindings']){
+      run('DELETE FROM '+table+' WHERE member IN (SELECT id FROM members WHERE room=?)',room);
+    }
+    for(const table of ['handoff_tasks','approval_logs','reply_plans','room_ranking','remote_rooms','invites','room_codes','messages','members']){
+      run('DELETE FROM '+table+' WHERE room=?',room);
+    }
+    run('DELETE FROM rooms WHERE id=?',room);
+    db.exec('COMMIT');
+  }catch(error){db.exec('ROLLBACK');throw error;}
+  for(const {id} of participants){invalidateWarm(id);cliCooldown.delete(id);limitNotified.delete(id);cliRepeatErrors.delete(id);}
+  judgeCooldown.delete(room);
+}
 function saveAttachments(items){
   if(!Array.isArray(items)||!items.length)return [];
   if(items.length>10)throw Error('파일은 한 번에 10개까지 첨부할 수 있어요.');
@@ -620,7 +695,7 @@ function task({action,room,participant,name,text,request,replyTo,after=0,...extr
     if(remoteConfigured()&&!one('SELECT room FROM remote_rooms WHERE room=?',room))throw Error('Remote access is disabled for this room.');
     if(extra.control==='approval_decide'){
       const item=approvals.get(extra.id);
-      if(item&&item.room===room&&item.state==='pending'&&typeof extra.allow==='boolean')item.state=extra.allow?'allowed':'denied';
+      if(item&&item.room===room&&item.state==='pending'&&typeof extra.allow==='boolean'){item.state=extra.allow?'allowed':'denied';logApproval(item,item.state);}
       return {ok:true};
     }
     if(extra.control==='retry_agent'){
@@ -771,7 +846,7 @@ function state(roomId=null){
   const editCounts=new Map();
   for(const m of members)if(m.editing){const k=m.room+':'+m.editing;editCounts.set(k,(editCounts.get(k)||0)+1);}
   for(const m of members){m.conflict=m.editing&&editCounts.get(m.room+':'+m.editing)>1?m.editing:null;delete m.editing;}
-  return {version,project:readActiveProject(),recentProjects:readRecentProjects(),approvals:[...approvals.values()].filter(item=>item.state==='pending').map(({id,room,name,tool,input,rule,created})=>({id,room,name,tool,input,rule,created})),approvalRules:all('SELECT member,rule FROM approval_rules'),limits:readLimits(),ranking:all('SELECT room,enabled,mode,main_member,judge_provider,judge_model,judge_effort,judge_prompt FROM room_ranking'),replyPlans:scoped?all('SELECT seq,state FROM reply_plans WHERE room=?',scoped):all('SELECT seq,state FROM reply_plans'),remoteConfigured:remoteConfigured(),remoteRooms:selectedRemoteRooms(),tasks:handoff.list(scoped),updateStatus:fs.existsSync(updateLog)?fs.readFileSync(updateLog,'utf8').trim().split(/\r?\n/).at(-1):null,rooms:all('SELECT rooms.* FROM rooms LEFT JOIN (SELECT room,MAX(seq) AS last_seq FROM messages GROUP BY room) m ON m.room=rooms.id ORDER BY COALESCE(m.last_seq,0) DESC, rooms.rowid DESC'),
+  return {version,project:readActiveProject(),recentProjects:readRecentProjects(),approvals:[...approvals.values()].filter(item=>item.state==='pending').map(({id,room,name,tool,input,rule,created})=>({id,room,name,tool,input,rule,created})),approvalRules:all('SELECT member,rule FROM approval_rules'),approvalLogs:scoped?all('SELECT * FROM approval_logs WHERE room=? ORDER BY created DESC LIMIT 100',scoped):all('SELECT * FROM approval_logs ORDER BY created DESC LIMIT 100'),limits:readLimits(),ranking:all('SELECT room,enabled,mode,main_member,judge_provider,judge_model,judge_effort,judge_prompt FROM room_ranking'),replyPlans:scoped?all('SELECT seq,state FROM reply_plans WHERE room=?',scoped):all('SELECT seq,state FROM reply_plans'),remoteConfigured:remoteConfigured(),remoteRooms:selectedRemoteRooms(),tasks:handoff.list(scoped),updateStatus:fs.existsSync(updateLog)?fs.readFileSync(updateLog,'utf8').trim().split(/\r?\n/).at(-1):null,rooms:all('SELECT rooms.*,m.latest_incoming_seq FROM rooms LEFT JOIN (SELECT room,MAX(seq) AS last_seq,MAX(CASE WHEN author<>\'human:\'||room AND retracted=0 AND request NOT LIKE \'receipt:%\' THEN seq END) AS latest_incoming_seq FROM messages GROUP BY room) m ON m.room=rooms.id ORDER BY COALESCE(m.last_seq,0) DESC, rooms.rowid DESC'),
     members,
     messages:scoped?all("SELECT messages.*,members.name FROM messages JOIN members ON messages.author=members.id WHERE messages.room=? AND messages.request NOT LIKE 'receipt:%' ORDER BY seq",scoped):all("SELECT messages.*,members.name FROM messages JOIN members ON messages.author=members.id WHERE messages.request NOT LIKE 'receipt:%' ORDER BY seq"),
     deliveries:scoped?all('SELECT deliveries.seq,deliveries.member,members.name,deliveries.state,deliveries.priority FROM deliveries JOIN messages ON messages.seq=deliveries.seq JOIN members ON deliveries.member=members.id WHERE messages.room=?',scoped):all('SELECT deliveries.seq,deliveries.member,members.name,deliveries.state,deliveries.priority FROM deliveries JOIN members ON deliveries.member=members.id')};
@@ -907,13 +982,23 @@ const server=http.createServer(async(req,res)=>{
         const judgePrompt=args.prompt===undefined?(current?.judge_prompt??null):args.prompt?.trim()?str(args.prompt,2000):null;
         run('INSERT INTO room_ranking(room,enabled,mode,main_member,judge_provider,judge_model,judge_effort,judge_prompt) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(room) DO UPDATE SET enabled=excluded.enabled,mode=excluded.mode,main_member=excluded.main_member,judge_provider=excluded.judge_provider,judge_model=excluded.judge_model,judge_effort=excluded.judge_effort,judge_prompt=excluded.judge_prompt',
           args.room,mode==='ranking'?1:0,mode,mainMember,provider,model,effort,judgePrompt);
+        if(args.name!==undefined)run('UPDATE rooms SET name=? WHERE id=?',str(args.name,70),args.room);
         if(args.memo!==undefined)run('UPDATE rooms SET memo=? WHERE id=?',args.memo?.trim()?str(args.memo,4000):'',args.room);
+      }
+      else if(args.action==='rename_room'){
+        if(!one('SELECT id FROM rooms WHERE id=?',args.room))throw Error('Room not found.');
+        run('UPDATE rooms SET name=? WHERE id=?',str(args.name,70),args.room);
       }
       else if(args.action==='room_memo'){
         if(!one('SELECT id FROM rooms WHERE id=?',args.room))throw Error('Room not found.');
         run('UPDATE rooms SET memo=? WHERE id=?',args.memo?.trim()?str(args.memo,4000):'',args.room);
       }
       else if(args.action==='create')run('INSERT INTO rooms(id,name) VALUES(?,?)',randomUUID(),str(args.name,70));
+      else if(args.action==='prepare_room'){
+        const room=prepareRoom(args.source,args.name);
+        result={...state(room),createdRoom:room};
+      }
+      else if(args.action==='delete_room'){deleteRoom(args.room);result=state();}
       else if(args.action==='set_project'){
         const resolved=saveProjectSelection(args.project);
         if(args.applyMcp===true&&process.platform==='win32'){
@@ -1006,6 +1091,7 @@ const server=http.createServer(async(req,res)=>{
         if(!item||item.state!=='pending'||typeof args.allow!=='boolean')throw Error('이미 처리됐거나 만료된 허용 요청이에요.');
         if(args.allow&&args.always===true&&item.rule)run('INSERT OR IGNORE INTO approval_rules(member,rule) VALUES(?,?)',item.member,item.rule);
         item.state=args.allow?'allowed':'denied';
+        logApproval(item,args.allow&&args.always===true?'allowed_always':item.state);
       }
       else if(args.action==='edit_agent'){
         if(cliBusy.has(args.participant))throw Error('답변이 끝난 뒤 에이전트 설정을 변경하세요.');

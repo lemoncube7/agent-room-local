@@ -58,6 +58,7 @@ function initDb(rootDir) {
   db.exec('CREATE TABLE IF NOT EXISTS cli_sessions(member TEXT PRIMARY KEY, project TEXT NOT NULL, thread TEXT)');
   for (const [column, def] of [
     ['provider', "TEXT NOT NULL DEFAULT 'codex'"],
+    ['prepared', 'INTEGER NOT NULL DEFAULT 0'],
     ['model', 'TEXT'],
     ['effort', 'TEXT'],
     ['last_cli_error', 'TEXT'],
@@ -71,6 +72,7 @@ function initDb(rootDir) {
   }
 
   db.exec('CREATE TABLE IF NOT EXISTS approval_rules(member TEXT NOT NULL,rule TEXT NOT NULL,PRIMARY KEY(member,rule))');
+  db.exec('CREATE TABLE IF NOT EXISTS approval_logs(id TEXT PRIMARY KEY,room TEXT NOT NULL,member TEXT NOT NULL,name TEXT NOT NULL,tool TEXT NOT NULL,input TEXT NOT NULL,rule TEXT,decision TEXT NOT NULL,created TEXT NOT NULL,decided TEXT); CREATE INDEX IF NOT EXISTS approval_logs_room ON approval_logs(room,created DESC);');
   db.exec('CREATE TABLE IF NOT EXISTS desktop_bindings(member TEXT PRIMARY KEY, thread TEXT NOT NULL UNIQUE, pipe TEXT, since INTEGER NOT NULL)');
   db.exec('CREATE TABLE IF NOT EXISTS remote_rooms (room TEXT PRIMARY KEY, since INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS remote_options (enabled INTEGER NOT NULL)');
   db.exec("BEGIN; INSERT OR IGNORE INTO remote_rooms(room,since) SELECT id,(SELECT COALESCE(MAX(seq),0) FROM messages WHERE messages.room=rooms.id) FROM rooms; INSERT INTO remote_options SELECT 1 WHERE NOT EXISTS(SELECT 1 FROM remote_options); CREATE TRIGGER IF NOT EXISTS enroll_new_remote_room AFTER INSERT ON rooms BEGIN INSERT OR IGNORE INTO remote_rooms(room,since) VALUES(NEW.id,0); END; COMMIT;");
@@ -91,7 +93,7 @@ function initDb(rootDir) {
 
   db.exec('CREATE TABLE IF NOT EXISTS handoff_alerts (seq INTEGER PRIMARY KEY, task INTEGER NOT NULL, revision INTEGER NOT NULL)');
 
-  run("UPDATE members SET state='start_failed' WHERE state IN ('starting','approved') AND id IN (SELECT member FROM cli_sessions WHERE thread IS NULL)");
+  run("UPDATE members SET state='start_failed' WHERE state IN ('starting','approved') AND id IN (SELECT member FROM cli_sessions WHERE thread IS NULL AND prepared=0)");
   run("UPDATE deliveries SET state='uncertain' WHERE state IN ('submitting','working') AND member IN (SELECT member FROM cli_sessions)");
   run("UPDATE deliveries SET state='uncertain' WHERE state='submitting' AND member IN (SELECT member FROM desktop_bindings)");
 

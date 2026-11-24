@@ -109,19 +109,22 @@ function mergeLiveReplies(parts){
 }
 function createProgressWriter(progressFile){
   if(!progressFile)return()=>{};
-  let lastStep='', preview='', lastChunk='', lastAt=0;
+  let lastStep='', preview='', lastChunk='', lastAt=0, task='';
+  const taskLine=/^\[\[WORK:[ \t]*([^\r\n]{1,120}?)\]\][ \t]*(?:\r?\n|$)/gm;
+  const extractTask=text=>text.replace(taskLine,(_line,title)=>{task=title.trim();return '';});
   const cleanPreview=text=>String(text||'').replace(/^(?:\[\[(?:CALL|TO):[^\]\r\n]+\]\]\s*)+/,'').trim();
   const write=(step,chunk,delta=false)=>{
     let nextChunk='';
     if(delta&&chunk){
-      preview=cleanPreview((preview+String(chunk)).slice(-4000));
+      preview=extractTask(cleanPreview((preview+String(chunk)).slice(-4000)));
       nextChunk=String(chunk);
     }else{
       const clean=chunk?cleanPreview(chunk):'';
       nextChunk=clean&&clean!=='[[AGENT_ROOM_NO_REPLY]]'&&clean!==lastChunk?clean:'';
       if(nextChunk){
         lastChunk=nextChunk;
-        preview=(preview?preview+'\n\n'+nextChunk:nextChunk).slice(-4000);
+        const output=extractTask(nextChunk);
+        if(output)preview=(preview?preview+'\n\n'+output:output).slice(-4000);
       }
     }
     if(!step&&!nextChunk)return;
@@ -129,11 +132,11 @@ function createProgressWriter(progressFile){
     const now=Date.now();
     if(!nextChunk&&nextStep===lastStep&&now-lastAt<250)return;
     lastStep=nextStep; lastAt=now;
-    try{fs.writeFileSync(progressFile,JSON.stringify({step:nextStep,preview,updatedAt:now}));}catch{}
+    try{fs.writeFileSync(progressFile,JSON.stringify({step:nextStep,task,preview,updatedAt:now}));}catch{}
   };
   write.reset=()=>{
     preview='';
-    try{fs.writeFileSync(progressFile,JSON.stringify({step:lastStep||'작업 진행 중…',preview,updatedAt:Date.now()}));}catch{}
+    try{fs.writeFileSync(progressFile,JSON.stringify({step:lastStep||'작업 진행 중…',task,preview,updatedAt:Date.now()}));}catch{}
   };
   return write;
 }
@@ -204,7 +207,8 @@ function importAgyUsageFile(usageFile){
 }
 function refreshAgyLimits(spawnIfStale=true){
   const localUsage=path.join(__dirname,'local','agy-usage.json');
-  const usageFile=process.env.AGENT_ROOM_AGY_USAGE_FILE||(fs.existsSync(localUsage)?localUsage:'');
+  const saved=cliSettings();
+  const usageFile=process.env.AGENT_ROOM_AGY_USAGE_FILE||saved?.agyUsageFile||(fs.existsSync(localUsage)?localUsage:'');
   if(!usageFile)return Promise.resolve(false);
   const before=fs.existsSync(usageFile)?fs.statSync(usageFile).mtimeMs:0;
   if(before&&Date.now()-before<25*60*1000)return Promise.resolve(importAgyUsageFile(usageFile));
