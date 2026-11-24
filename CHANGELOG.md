@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.45
+- **전역 MCP 자동 등록 (`setup.ps1 -Global`):** 프로젝트 변경 시 Codex(`~/.codex/config.toml`), Claude(`~/.claude.json`), Antigravity(`agy mcp add`) 전역 MCP 설정을 함께 등록·갱신할 수 있습니다.
+- **기존 대화 MCP 연결 개선 (`bridge.cjs`):** `CODEX_THREAD_ID`가 있는 Codex 세션은 승인 즉시 데스크톱 푸시(`bind_codex_desktop`)를 자동 연결하고, Claude/Codex 수동 조건 안내를 보강했습니다.
+- **다중 1순위 사전 조율 (`hub.cjs`):** 여러 에이전트에게 동시에 `priority: 1`이 배정될 때, 겹치는 작업이면 먼저 조율/분담을 제안하고 충돌을 피하도록 턴 지침을 보강했습니다.
+- **권한 승인 팝업 대폭 축소 (`hub.cjs`, `bridge.cjs`):** `dev` 권한에서 따옴표 안 정규식 `|` 및 안전한 체인 명령(`;`, `&&`, `||`, `|`, `if ($?)`), `Select-String`/`Get-ChildItem`/`node`/`npm`/`npx`/`python`/`cargo`/`go`/`dotnet`/`gh` 읽기·검증 명령을 자동 허용합니다.
+
 ## v0.2.44
 - **권한 승인 로그:** 모든 권한 허용 요청과 처리 결과(`pending`/`allowed`/`allowed_always`/`auto_allowed`/`denied`/`expired`)를 SQLite(`approval_logs`)와 `local/approvals.log`에 자동 기록하고, 방 메뉴 `⋯` → `권한 승인 로그`에서 조회할 수 있습니다.
 - **대화 흐름 & 작업 패널 & 작업 시작 안내:** 원래 요청 아래에 순위·호출 흐름을 표시하고, 긴 중간 출력은 오른쪽 접을 수 있는 작업 패널로 분리했습니다. 에이전트가 작업 시작 시 남긴 한 줄 안내를 오른쪽 카드에 실시간 표시합니다.

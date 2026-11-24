@@ -304,17 +304,47 @@ function clipContext(text,recent,provider){
   const limit=recent?(provider==='agy'?2500:6000):800;
   return source.length>limit?source.slice(0,limit)+'\n[... '+(source.length-limit)+' characters omitted; ask the author if you need the rest]':source;
 }
+const safeAgyCmds=new Set(['node','npm','npx','pnpm','yarn','pytest','python','py','tsc','vitest','jest','cargo','go','dotnet','ls','dir','pwd','cd','cat','type','head','tail','wc','grep','rg','findstr','echo','which','where','where.exe','true','sleep','mkdir','get-childitem','get-content','get-item','get-location','set-location','test-path','select-string','measure-object','select-object','where-object','sort-object','format-list','format-table','out-string','convertfrom-json','convertto-json','write-output','write-host']);
+function splitSafeAgyParts(command){
+  const text=String(command||'').trim().replace(/\bif\s*\(\s*\$\?\s*\)\s*\{([^}]*)\}/gi,';$1').replace(/(^|\s)2>(?:\/dev\/null|&1|\$null)(?=\s|$)/gi,'$1');
+  if(!text||/[`<>]|::|\biex\b|invoke-expression/i.test(text))return null;
+  const parts=[];let quote='',cur='';
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(quote){if(c===quote&&text[i-1]!=='\\')quote='';else if(quote==='"'&&c==='`')return null;cur+=c;continue;}
+    if(c==='"'||c==="'"){quote=c;cur+=c;continue;}
+    if(/[(){}$]/.test(c))return null;
+    if(/[;|&\r\n]/.test(c)){
+      if((c==='&'||c==='|')&&text[i+1]===c)i++;
+      if(c==='\r'&&text[i+1]==='\n')i++;
+      if(cur.trim())parts.push(cur.trim());
+      cur='';continue;
+    }
+    cur+=c;
+  }
+  if(quote)return null;
+  if(cur.trim())parts.push(cur.trim());
+  return parts.length?parts:null;
+}
+function isSafeAgyPart(part){
+  const clean=part.replace(/^&\s+/,'').trim();
+  const words=clean.split(/\s+/), rawBase=(words[0]||'').replace(/^["']|["']$/g,'').toLowerCase(), base=path.basename(rawBase);
+  if(!base)return false;
+  if(base==='git')return /^git(\s+-C\s+("[^"]+"|'[^']+'|\S+))?\s+(status|diff|log|show|add|commit|branch|fetch|remote|rev-parse|ls-files|blame|init|check-ignore|rm\s+--cached)(\s|$)/i.test(clean);
+  if(base==='gh')return /^gh\s+(auth\s+status|release\s+(view|list)|repo\s+view|pr\s+(view|list)|issue\s+(view|list))(\s|$)/i.test(clean);
+  if(base==='agy'||base==='agy.exe')return /^["']?[^\s"']*agy(?:\.exe)?["']?\s+(mcp\s+list|--help|--version)(\s|$)/i.test(clean);
+  if(base==='claude'||base==='claude.exe')return /^["']?[^\s"']*claude(?:\.exe)?["']?\s+(mcp\s+list|--help|--version)(\s|$)/i.test(clean);
+  if(base==='codex'||base==='codex.exe')return /^["']?[^\s"']*codex(?:\.exe)?["']?\s+(--help|--version)(\s|$)/i.test(clean);
+  if(base==='sort'&&words.some(w=>/^(-o|--output|--compress-program)/i.test(w)))return false;
+  return safeAgyCmds.has(base);
+}
 function isSafeAgyAction(permission,req){
   const kind=String(req.kind||'').toLowerCase();
   if(['read','search','think'].includes(kind))return true;
   if(['edit','move'].includes(kind))return permission==='dev'||permission==='edit';
   if(kind==='execute'&&permission==='dev'&&!req.input?.BypassSandbox){
-    const cmd=String(req.input?.CommandLine||req.input?.command||'').trim();
-    if(cmd&&!/[;&|`$<>()\r\n]/.test(cmd)){
-      const base=cmd.split(/\s+/)[0].toLowerCase();
-      if(['node','npm','pytest','ls','pwd','cat','head','tail','wc','grep','rg','echo','which','where'].includes(base))return true;
-      if(base==='git'&&/^git(\s+-C\s+("[^"]+"|'[^']+'|\S+))?\s+(status|diff|log|show|add|commit|branch|fetch|remote|rev-parse|ls-files|blame)(\s|$)/.test(cmd))return true;
-    }
+    const parts=splitSafeAgyParts(req.input?.CommandLine||req.input?.command||'');
+    return !!parts&&parts.every(isSafeAgyPart);
   }
   return false;
 }
@@ -428,6 +458,12 @@ async function cliTurn(participant, prompt, inputSeq){
     const retractBlock=retractedNotices.length?'\nThe user RETRACTED these earlier messages. Ignore them and do not act on them: '+JSON.stringify(retractedNotices.map(item=>clipContext(item.body,false))):'';
     const receivedBlock=received.length?'\nRoom messages that arrived since your last turn. Take them into account and handle anything still meant for you in this one reply: '+JSON.stringify(received.map(({name,body},index)=>({name,body:clipContext(body,index>=received.length-3,session.provider)}))):'';
     const peerDeliveries=inputSeq?all("SELECT members.id,members.name,deliveries.state,deliveries.priority FROM deliveries JOIN members ON members.id=deliveries.member WHERE deliveries.seq=? AND deliveries.member<>? ORDER BY COALESCE(deliveries.priority,999),members.rowid",inputSeq,participant):[];
+    const myPriority=inputSeq?one('SELECT priority FROM deliveries WHERE seq=? AND member=?',inputSeq,participant)?.priority:null;
+    const parallelPeers=peerDeliveries.filter(p=>p.priority===1);
+    const firstP1=myPriority===1&&parallelPeers.length?one("SELECT member FROM deliveries JOIN members ON members.id=deliveries.member WHERE deliveries.seq=? AND deliveries.priority=1 ORDER BY members.rowid LIMIT 1",inputSeq)?.member:null;
+    const multiP1Policy=myPriority===1&&parallelPeers.length?(firstP1===participant
+      ?' Multiple agents received priority 1 for this message. If each agent can answer independently (e.g. separate opinions), reply normally. If this involves editing files, running shared commands, or unclear division of work, DO NOT edit files yet: propose a quick coordination/split first ("먼저 상의합시다") and [[CALL:participant-id]] if needed.'
+      :' Multiple agents received priority 1 for this message. If each agent should answer independently (e.g. separate opinions), reply normally. If this involves editing files or overlapping work, avoid conflicting edits: defer with [[AGENT_ROOM_NO_REPLY]] or align briefly unless your distinct part is already clear.'):'';
     const peerActivity=peers.filter(p=>cliBusy.has(p.id)).map(p=>({id:p.id,name:p.name,step:readProgress(p.id)?.step||'작업 진행 중…'}));
     const deliveryBlock=peerDeliveries.length?'\nPeer delivery status for this message: '+JSON.stringify(peerDeliveries):'';
     const activityBlock=peerActivity.length?'\nCurrently busy peers (avoid editing files they are modifying): '+JSON.stringify(peerActivity):'';
@@ -435,7 +471,7 @@ async function cliTurn(participant, prompt, inputSeq){
     const memoBlock=roomMemo?'\nPinned room memo (shared rules & decisions): '+roomMemo:'';
     const activeTasks=all("SELECT t.id,t.title,t.next,t.status,o.name AS owner_name,f.name AS offered_name FROM handoff_tasks t LEFT JOIN members o ON o.id=t.owner LEFT JOIN members f ON f.id=t.offered_to WHERE t.room=? AND t.status<>'done' ORDER BY t.id DESC LIMIT 10",row.room);
     const tasksBlock=activeTasks.length?'\nActive room tasks: '+JSON.stringify(activeTasks.map(t=>({id:t.id,title:t.title,status:t.status,owner:t.owner_name||'unassigned',...(t.offered_name?{offeredTo:t.offered_name}:{}),next:t.next}))):'';
-    const result=await invokeCli(session.project,context+formatLimitsContext()+' '+audience+' '+replyPolicy+structurePolicy+handoffPolicy+(interruptedTurns.delete(jobId)?' Your previous turn on this message was interrupted by an app restart. Check what was already done (files, git status) before continuing, and do not repeat completed work.':'')+memoBlock+tasksBlock+deliveryBlock+activityBlock+historyBlock+retractBlock+receivedBlock+'\n\n'+prompt,session.thread,session.provider,session.model,session.effort,turnOptions);
+    const result=await invokeCli(session.project,context+formatLimitsContext()+' '+audience+' '+replyPolicy+structurePolicy+multiP1Policy+handoffPolicy+(interruptedTurns.delete(jobId)?' Your previous turn on this message was interrupted by an app restart. Check what was already done (files, git status) before continuing, and do not repeat completed work.':'')+memoBlock+tasksBlock+deliveryBlock+activityBlock+historyBlock+retractBlock+receivedBlock+'\n\n'+prompt,session.thread,session.provider,session.model,session.effort,turnOptions);
     cliCooldown.delete(participant);limitNotified.delete(participant);cliRepeatErrors.delete(participant);
     for(const item of retractedNotices)run("UPDATE deliveries SET state='retracted' WHERE seq=? AND member=? AND state='retract_notice'",item.seq,participant);
     if(inputSeq&&one('SELECT retracted FROM messages WHERE seq=?',inputSeq)?.retracted){
@@ -1003,8 +1039,9 @@ const server=http.createServer(async(req,res)=>{
         const resolved=saveProjectSelection(args.project);
         if(args.applyMcp===true&&process.platform==='win32'){
           const powershell=path.join(process.env.SystemRoot||'C:/Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
+          const setupArgs=['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(__dirname,'setup.ps1'),'-Project',resolved,'-Apply','-SelectProject',...(args.applyGlobalMcp!==false?['-Global']:[])];
           await new Promise((resolve,reject)=>{
-            execFile(powershell,['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(__dirname,'setup.ps1'),'-Project',resolved,'-Apply','-SelectProject'],{windowsHide:true,timeout:30000},(error,_stdout,stderr)=>{
+            execFile(powershell,setupArgs,{windowsHide:true,timeout:30000},(error,_stdout,stderr)=>{
               if(error)return reject(Error((stderr||error.message||'MCP 설정 적용에 실패했어요.').trim().split(/\r?\n/)[0]));
               resolve();
             });

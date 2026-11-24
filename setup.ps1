@@ -2,6 +2,7 @@
 param(
   [string]$Project = (Get-Location).Path,
   [switch]$Apply,
+  [switch]$Global,
   [switch]$SelectProject,
   [switch]$Connect,
   [switch]$Test,
@@ -19,34 +20,13 @@ $node = Get-Command node -ErrorAction Stop
 $major = [int]((& $node.Source -p "process.versions.node.split('.')[0]") | Select-Object -First 1)
 if ($major -lt 24) { throw 'Agent Room requires Node.js 24 or newer.' }
 
-$claudeConfig = if (Test-Path -LiteralPath $claudePath) {
-  Get-Content -LiteralPath $claudePath -Raw -Encoding utf8 | ConvertFrom-Json
-} else { [pscustomobject]@{} }
-if ($claudeConfig -isnot [pscustomobject]) { throw 'Expected a JSON object in .mcp.json.' }
-if (-not $claudeConfig.PSObject.Properties['mcpServers']) {
-  $claudeConfig | Add-Member -NotePropertyName mcpServers -NotePropertyValue ([pscustomobject]@{})
-}
-if ($claudeConfig.mcpServers -isnot [pscustomobject]) { throw 'Expected an mcpServers object.' }
 $wantedClaude = [pscustomobject]@{ command='node'; args=@($bridgePath,'claude') }
-$existingClaude = $claudeConfig.mcpServers.PSObject.Properties['agent-room']
-if ($existingClaude) {
-  $existing = $existingClaude.Value
-  if ($existing.command -cne 'node' -or (($existing.args -join '|') -cne ($wantedClaude.args -join '|'))) {
-    throw 'Existing Claude agent-room config differs. Review it before applying setup.'
-  }
-}
-$codex = if (Test-Path -LiteralPath $codexPath) { [IO.File]::ReadAllText($codexPath) } else { '' }
 $argsJson = ConvertTo-Json -InputObject @($bridgePath.Replace('\','/'),'codex') -Compress
 $block = "[mcp_servers.agent-room]`ncommand = `"node`"`nargs = $argsJson"
 $start = '# Agent Room setup begin'
 $end = '# Agent Room setup end'
 $managedBlock = "$start`n$block`n$end"
-$normalized = $codex -replace '
-',"`n"
-$existingCodex = $normalized.Contains($managedBlock)
-if (([regex]::IsMatch($normalized,'(?m)^\s*\[mcp_servers\.(?:agent-room|"agent-room"|''agent-room'')\s*\]')) -and -not $existingCodex) {
-  throw 'Existing Codex agent-room config differs. Review it before applying setup.'
-}
+
 function Save-Config($file,$contents) {
   $folder = Split-Path -Parent $file
   New-Item -ItemType Directory -Force -Path $folder | Out-Null
@@ -59,6 +39,46 @@ function Save-Config($file,$contents) {
     Move-Item -LiteralPath $temp -Destination $file -Force
   } finally { Remove-Item -LiteralPath $temp -ErrorAction SilentlyContinue }
 }
+function Sync-ClaudeMcp($file,$writeChanges) {
+  $cfg = if (Test-Path -LiteralPath $file) {
+    Get-Content -LiteralPath $file -Raw -Encoding utf8 | ConvertFrom-Json
+  } else { [pscustomobject]@{} }
+  if ($cfg -isnot [pscustomobject]) { throw "Expected a JSON object in $file." }
+  if (-not $cfg.PSObject.Properties['mcpServers']) {
+    $cfg | Add-Member -NotePropertyName mcpServers -NotePropertyValue ([pscustomobject]@{})
+  }
+  if ($cfg.mcpServers -isnot [pscustomobject]) { throw "Expected an mcpServers object in $file." }
+  $existing = $cfg.mcpServers.PSObject.Properties['agent-room']
+  if ($existing) {
+    $val = $existing.Value
+    if ($val.command -cne 'node' -or (($val.args -join '|') -cne ($wantedClaude.args -join '|'))) {
+      throw "Existing Claude agent-room config differs in $file. Review it before applying setup."
+    }
+    return $true
+  }
+  if ($writeChanges) {
+    $cfg.mcpServers | Add-Member -NotePropertyName 'agent-room' -NotePropertyValue $wantedClaude
+    Save-Config $file ($cfg | ConvertTo-Json -Depth 30)
+    return $true
+  }
+  return $false
+}
+function Sync-CodexMcp($file,$writeChanges) {
+  $raw = if (Test-Path -LiteralPath $file) { [IO.File]::ReadAllText($file) } else { '' }
+  $norm = $raw -replace "`r`n","`n"
+  $hasManaged = $norm.Contains($managedBlock)
+  if (([regex]::IsMatch($norm,'(?m)^\s*\[mcp_servers\.(?:agent-room|"agent-room"|''agent-room'')\s*\]')) -and -not $hasManaged) {
+    throw "Existing Codex agent-room config differs in $file. Review it before applying setup."
+  }
+  if (-not $hasManaged -and $writeChanges) {
+    $prefix = if ($raw.TrimEnd()) { $raw.TrimEnd()+"`n`n" } else { '' }
+    Save-Config $file ($prefix+$managedBlock+"`n")
+    return $true
+  }
+  return $hasManaged
+}
+$existingClaude = Sync-ClaudeMcp $claudePath $false
+$existingCodex = Sync-CodexMcp $codexPath $false
 if (($Connect -or $SelectProject) -and -not $Apply) { throw 'Use -Apply with -Connect or -SelectProject.' }
 function Find-AgentCli($provider) {
     $app = Get-Command "$provider.exe" -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -78,11 +98,8 @@ function Find-AgentCli($provider) {
 }
 
 if ($Apply) {
-  if (-not $existingClaude) {
-    $claudeConfig.mcpServers | Add-Member -NotePropertyName 'agent-room' -NotePropertyValue $wantedClaude
-    Save-Config $claudePath ($claudeConfig | ConvertTo-Json -Depth 30)
-  }
-  if (-not $existingCodex) { Save-Config $codexPath ($codex.TrimEnd()+"`n`n"+$managedBlock+"`n") }
+  $existingClaude = Sync-ClaudeMcp $claudePath $true
+  $existingCodex = Sync-CodexMcp $codexPath $true
 }
 $cliSettings = @{codex=(Find-AgentCli 'codex');claude=(Find-AgentCli 'claude');agy=(Find-AgentCli 'agy')}
 if ($CodexCli) {
@@ -93,6 +110,19 @@ if ($CodexCli) {
   if(Test-Path -LiteralPath $savedCliPath){
     $savedCli=Get-Content -LiteralPath $savedCliPath -Raw | ConvertFrom-Json
     if($savedCli.codex -and (Test-Path -LiteralPath $savedCli.codex -PathType Leaf)){$cliSettings.codex=$savedCli.codex}
+  }
+}
+if ($Apply -and $Global) {
+  $globalCodexPath = Join-Path $env:USERPROFILE '.codex/config.toml'
+  $globalClaudePath = Join-Path $env:USERPROFILE '.claude.json'
+  [void](Sync-CodexMcp $globalCodexPath $true)
+  [void](Sync-ClaudeMcp $globalClaudePath $true)
+  if ($env:APPDATA -and (Test-Path -LiteralPath (Join-Path $env:APPDATA 'Claude') -PathType Container)) {
+    [void](Sync-ClaudeMcp (Join-Path $env:APPDATA 'Claude/claude_desktop_config.json') $true)
+  }
+  if ($cliSettings.agy -and (Test-Path -LiteralPath $cliSettings.agy -PathType Leaf)) {
+    & $cliSettings.agy mcp add agent-room $node.Source $bridgePath agy 2>$null | Out-Null
+    if ($LASTEXITCODE) { throw 'Failed to register Agent Room MCP in Antigravity (agy).' }
   }
 }
 if ($Connect -or $SelectProject) {

@@ -6,7 +6,7 @@ const {randomUUID}=require('node:crypto');
 const {execFile}=require('node:child_process');
 const local=path.join(__dirname,'local');
 const provider=process.argv[2];
-const thread=process.argv[3];
+let thread=process.argv[3]||process.env.CODEX_THREAD_ID||'';
 const claude=provider==='claude';
 if(!['claude','codex','work','agy','approval','turn','say'].includes(provider))throw Error('Specify claude, codex, work, or agy.');
 async function runSay(){
@@ -37,7 +37,7 @@ async function runTurn(jobFile){
   fs.writeFileSync(job.resultFile+'.tmp',JSON.stringify(output));
   fs.renameSync(job.resultFile+'.tmp',job.resultFile);
 }
-let joined, timer, busy=false, joining=false;
+let joined, timer, busy=false, joining=false, desktopBound=false;
 const emit=payload=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',...payload})+'\n');
 async function hub(route,data){
   const {url,token}=JSON.parse(fs.readFileSync(path.join(local,'hub.json'),'utf8'));
@@ -82,7 +82,15 @@ async function push(message){
   }finally{fs.rmSync(file,{force:true});}
 }
 async function receive(){
-  if(busy||!joined||(!claude&&(provider!=='codex'||!thread)))return;
+  if(busy||!joined)return;
+  if(provider==='codex'&&thread&&!desktopBound){
+    try{
+      await hub('/tool',{action:'bind_codex_desktop',room:joined.room,participant:joined.participant,thread,pipe:process.env.CODEX_APP_TOOLS_PIPE_PATH||null});
+      desktopBound=true;
+      return;
+    }catch(err){if(!/Approve this participant/.test(err.message))console.error(err.message);return;}
+  }
+  if(desktopBound||(!claude&&(provider!=='codex'||!thread)))return;
   busy=true;
   const target=joined;
   try{
@@ -149,12 +157,12 @@ function splitCommand(command){
   if(current.trim())parts.push(current.trim());
   return parts.length?parts:null;
 }
-const safeDevCommands=new Set(['cd','pwd','ls','cat','head','tail','wc','grep','cut','tr','sort','echo','sleep','mkdir','which','where','true','node','npm','pytest','get-childitem','get-content','get-location','set-location','test-path','select-string','measure-object']);
+const safeDevCommands=new Set(['cd','pwd','ls','dir','cat','type','head','tail','wc','grep','rg','findstr','cut','tr','sort','echo','sleep','mkdir','which','where','where.exe','true','node','npm','npx','pnpm','yarn','pytest','python','py','tsc','vitest','jest','get-childitem','get-content','get-item','get-location','set-location','test-path','select-string','measure-object','select-object','where-object','sort-object','format-list','format-table','out-string','convertfrom-json','convertto-json','write-output','write-host']);
 function isSafeDevPart(part){
   const words=part.split(/\s+/), base=words[0].toLowerCase();
   if(base==='git'){
     if(words[0]!=='git'||/(^|\s)(-c|--output|--ext-diff|--textconv|--exec|--upload-pack|--receive-pack)(=|\s|$)/.test(part))return false;
-    return /^git(\s+-C\s+("[^"]+"|'[^']+'|\S+))?\s+(status|diff|log|show|add|commit|branch|fetch|remote|rev-parse|ls-files|blame)(\s|$)/.test(part);
+    return /^git(\s+-C\s+("[^"]+"|'[^']+'|\S+))?\s+(status|diff|log|show|add|commit|branch|fetch|remote|rev-parse|ls-files|blame|init|check-ignore|rm\s+--cached)(\s|$)/.test(part);
   }
   if(base==='sort'&&words.some(word=>/^(-o|--output|--compress-program)/.test(word)))return false;
   if(['cargo','go','dotnet'].includes(base))return /^(test|build)$/.test(words[1]||'');
@@ -225,7 +233,12 @@ async function invoke(req){
           try{data=await hub('/tool',{action:name,room:args.room,request:args.request,name:claude?'Claude Code':provider==='work'?'ChatGPT Work':provider==='agy'?'Antigravity':'Codex'});}
           finally{joining=false;}
           joined={room:data.room??args.room,participant:data.participant};
-          data={state:data.state,instructions:'Approve this participant in Agent Room.'};
+          const note=claude
+            ?' Approve this participant in Agent Room. Note: live push requires starting Claude with --dangerously-load-development-channels server:agent-room; otherwise call read_messages.'
+            :provider==='codex'&&!thread
+              ?' Approve this participant in Agent Room, then run bind-desktop.cjs with your CODEX_THREAD_ID (or call read_messages) to receive messages.'
+              :'';
+          data={state:data.state,instructions:'Approve this participant in Agent Room.'+note};
         }else if(name==='list_rooms')data=await hub('/tool',{action:name});
         else{
           if(!joined)throw Error('Join a room first.');
