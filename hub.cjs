@@ -845,6 +845,25 @@ function task({action,room,participant,name,text,request,replyTo,after=0,...extr
     return {seq};
   }catch(error){db.exec('ROLLBACK');throw error;}
 }
+function readSessionCwd(filePath){
+  let fd;
+  try{
+    fd=fs.openSync(filePath,'r');
+    const buf=Buffer.alloc(16384);
+    const n=fs.readSync(fd,buf,0,buf.length,0);
+    const text=buf.subarray(0,n).toString('utf8');
+    for(const line of text.split(/\r?\n/)){
+      if(!line.trim())continue;
+      try{
+        const obj=JSON.parse(line);
+        const cwd=obj.cwd||obj.payload?.cwd||obj.session?.cwd;
+        if(typeof cwd==='string'&&cwd.trim()&&fs.existsSync(cwd.trim()))return cwd.trim();
+      }catch{}
+    }
+  }catch{}
+  finally{if(fd!==undefined)try{fs.closeSync(fd);}catch{}}
+  return null;
+}
 function discoverSessions(provider){
   const os=require('node:os'), home=os.homedir(), out=[];
   const uuidRe=/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
@@ -861,7 +880,8 @@ function discoverSessions(provider){
           for(const f of fs.readdirSync(full)){
             if(!f.endsWith('.jsonl'))continue;
             const m=f.slice(0,-6).match(uuidRe);if(!m)continue;
-            try{const fst=fs.statSync(path.join(full,f));out.push({id:m[1],mtime:fst.mtimeMs,label:`${fmt(fst.mtimeMs)} · ${shortProj} (${m[1].slice(0,8)})`});}catch{}
+            const fp=path.join(full,f);
+            try{const fst=fs.statSync(fp);out.push({id:m[1],mtime:fst.mtimeMs,file:fp,shortProj});}catch{}
           }
         }
       }
@@ -875,7 +895,7 @@ function discoverSessions(provider){
           if(st.isDirectory())walk(full,depth+1);
           else if(entry.endsWith('.jsonl')){
             const m=entry.match(uuidRe);
-            if(m)out.push({id:m[1],mtime:st.mtimeMs,label:`${fmt(st.mtimeMs)} · Codex (${m[1].slice(0,8)})`});
+            if(m)out.push({id:m[1],mtime:st.mtimeMs,file:full,shortProj:'Codex'});
           }
         }
       };
@@ -885,12 +905,16 @@ function discoverSessions(provider){
       if(fs.existsSync(base)){
         for(const entry of fs.readdirSync(base)){
           const m=entry.match(uuidRe);if(!m)continue;
-          try{const st=fs.statSync(path.join(base,entry));if(st.isDirectory())out.push({id:m[1],mtime:st.mtimeMs,label:`${fmt(st.mtimeMs)} · AGY (${m[1].slice(0,8)})`});}catch{}
+          try{const st=fs.statSync(path.join(base,entry));if(st.isDirectory())out.push({id:m[1],mtime:st.mtimeMs,file:null,shortProj:'AGY'});}catch{}
         }
       }
     }
   }catch{}
-  return out.sort((a,b)=>b.mtime-a.mtime).slice(0,15).map(({id,label})=>({id,label}));
+  return out.sort((a,b)=>b.mtime-a.mtime).slice(0,15).map(({id,mtime,file,shortProj})=>{
+    const cwd=file?readSessionCwd(file):null;
+    const tag=cwd?path.basename(cwd):shortProj;
+    return {id,label:`${fmt(mtime)} · ${tag} (${id.slice(0,8)})`,...(cwd?{project:cwd}:{})};
+  });
 }
 function readActiveProject(){
   const projectFile=path.join(local,'project.txt');
@@ -1155,9 +1179,11 @@ const server=http.createServer(async(req,res)=>{
         const name=args.name?.trim()?str(args.name,120):model||providerNames[provider];
         const role=args.role?.trim()?str(args.role,120):'';
         const thread=args.thread?.trim()?str(args.thread,120):null;
+        const matchedSession=thread?discoverSessions(provider).find(s=>s.id===thread):null;
+        const sessionProject=matchedSession?.project&&fs.existsSync(matchedSession.project)?matchedSession.project:project;
         const effort=normalizeEffort(args.effort);
         run('INSERT INTO members(id,room,name,state,role) VALUES(?,?,?,?,?)',id,args.room,name,thread?'approved':'starting',role);
-        run('INSERT INTO cli_sessions(member,project,provider,model,effort,permission_profile,thread) VALUES(?,?,?,?,?,?,?)',id,project,provider,model,effort,normalizePermission(args.permission),thread);
+        run('INSERT INTO cli_sessions(member,project,provider,model,effort,permission_profile,thread) VALUES(?,?,?,?,?,?,?)',id,sessionProject,provider,model,effort,normalizePermission(args.permission),thread);
         run("INSERT OR IGNORE INTO members(id,room,name,state) VALUES(?,?,?,'human')",'human:'+args.room,args.room,'나');
         if(!thread)void cliTurn(id,'You are connected to Agent Room. Briefly say hello in Korean. Do not change any project files.');
       }

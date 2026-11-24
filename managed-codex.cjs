@@ -530,11 +530,12 @@ function createAcpHost(file,prefix,project,session,model,effort,options={},onExi
       await ready;
       const liveFile=turnOpts.inboxFile?turnOpts.inboxFile+'.live':null;
       const turn={
-        text:'',pendingInterim:'',writeProgress,onApproval:turnOpts.onApproval,
+        text:'',pendingInterim:'',emittedInterim:false,writeProgress,onApproval:turnOpts.onApproval,
         flushInterim(){
           const t=cleanInterim(turn.pendingInterim);
           turn.pendingInterim='';
           if(!t)return;
+          turn.emittedInterim=true;
           if(turnOpts.onInterim)try{turnOpts.onInterim(t);}catch{}
         }
       };
@@ -543,7 +544,7 @@ function createAcpHost(file,prefix,project,session,model,effort,options={},onExi
       try{
         const res=await rpc('session/prompt',{sessionId,prompt:[{type:'text',text:prompt}]});
         turnsCompleted++;
-        const reply=turn.text.trim()||'[[AGENT_ROOM_NO_REPLY]]';
+        const reply=(turn.emittedInterim?turn.pendingInterim.trim():turn.text.trim())||'[[AGENT_ROOM_NO_REPLY]]';
         return {id:sessionId,reply,usage:{turns:1,inputTokens:0,outputTokens:0,costUsd:0},stopReason:res?.stopReason};
       }catch(err){
         throw Object.assign(err.cliCode?err:diagnoseCliFailure('agy',err,stderr),{warmReused:turnsCompleted>0});
