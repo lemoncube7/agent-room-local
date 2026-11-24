@@ -1013,9 +1013,11 @@ const server=http.createServer(async(req,res)=>{
         if(!agent.project||!fs.existsSync(agent.project))throw Error('프로젝트 폴더를 찾을 수 없어요.');
         const [file,...prefix]=cliCommand(agent.provider);
         const resume=agent.provider==='claude'?['--resume',agent.thread]:agent.provider==='agy'?['--conversation',agent.thread]:['resume',agent.thread];
-        const quote=v=>'"'+String(v).replace(/"/g,'""')+'"';
-        const cmd=[file,...prefix,...resume].map(quote).join(' ');
-        const child=spawn('cmd.exe',['/c','start','Agent Room CLI','/D',agent.project,'cmd.exe','/k',cmd],{detached:true,stdio:'ignore',windowsHide:false});
+        const psQuote=v=>"'"+String(v).replace(/'/g,"''")+"'";
+        const psCmd='& '+[file,...prefix,...resume].map(psQuote).join(' ');
+        const launcher='Start-Process -FilePath powershell.exe -WorkingDirectory '+psQuote(agent.project)+' -ArgumentList @("-NoExit","-Command",'+psQuote(psCmd)+')';
+        const powershell=path.join(process.env.SystemRoot||'C:/Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
+        const child=spawn(powershell,['-NoProfile','-NonInteractive','-Command',launcher],{detached:true,stdio:'ignore',windowsHide:true});
         child.unref();
       }
       else if(args.action==='user_message'){
