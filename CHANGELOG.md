@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.46
+- **기존 대화 이어서 연결 (`+ 추가` 직접 세션 재개):** MCP 채널/파이프 제약 없이 허브가 최근 로컬 세션(Claude `~/.claude/projects`, Codex `~/.codex/sessions`, Antigravity `~/.gemini/antigravity-cli/brain`)을 자동 탐색해 `기존 대화 이어서 연결` 드롭다운에서 클릭 한 번으로 바로 연결·재개할 수 있습니다.
+- **설치·업데이트 시 전역 MCP 자동 적용 (`start.ps1`, `update.ps1`):** `Start Agent Room` 실행 및 자동 업데이트 시 `setup.ps1 -Apply -SelectProject -Global`을 자동 실행해 별도 수동 설정 없이도 Codex · Claude · Antigravity 전역 MCP가 유지됩니다.
+
 ## v0.2.45
 - **전역 MCP 자동 등록 (`setup.ps1 -Global`):** 프로젝트 변경 시 Codex(`~/.codex/config.toml`), Claude(`~/.claude.json`), Antigravity(`agy mcp add`) 전역 MCP 설정을 함께 등록·갱신할 수 있습니다.
 - **기존 대화 MCP 연결 개선 (`bridge.cjs`):** `CODEX_THREAD_ID`가 있는 Codex 세션은 승인 즉시 데스크톱 푸시(`bind_codex_desktop`)를 자동 연결하고, Claude/Codex 수동 조건 안내를 보강했습니다.

@@ -845,6 +845,53 @@ function task({action,room,participant,name,text,request,replyTo,after=0,...extr
     return {seq};
   }catch(error){db.exec('ROLLBACK');throw error;}
 }
+function discoverSessions(provider){
+  const os=require('node:os'), home=os.homedir(), out=[];
+  const uuidRe=/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
+  const fmt=ms=>new Date(ms).toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false});
+  try{
+    if(provider==='claude'){
+      const base=path.join(home,'.claude','projects');
+      if(fs.existsSync(base)){
+        for(const dir of fs.readdirSync(base)){
+          const full=path.join(base,dir);
+          let st;try{st=fs.statSync(full);}catch{continue;}
+          if(!st.isDirectory())continue;
+          const shortProj=dir.split('-').filter(Boolean).slice(-2).join('/')||dir;
+          for(const f of fs.readdirSync(full)){
+            if(!f.endsWith('.jsonl'))continue;
+            const m=f.slice(0,-6).match(uuidRe);if(!m)continue;
+            try{const fst=fs.statSync(path.join(full,f));out.push({id:m[1],mtime:fst.mtimeMs,label:`${fmt(fst.mtimeMs)} · ${shortProj} (${m[1].slice(0,8)})`});}catch{}
+          }
+        }
+      }
+    }else if(provider==='codex'){
+      const base=path.join(home,'.codex','sessions');
+      const walk=(dir,depth)=>{
+        if(depth>3||!fs.existsSync(dir))return;
+        for(const entry of fs.readdirSync(dir)){
+          const full=path.join(dir,entry);
+          let st;try{st=fs.statSync(full);}catch{continue;}
+          if(st.isDirectory())walk(full,depth+1);
+          else if(entry.endsWith('.jsonl')){
+            const m=entry.match(uuidRe);
+            if(m)out.push({id:m[1],mtime:st.mtimeMs,label:`${fmt(st.mtimeMs)} · Codex (${m[1].slice(0,8)})`});
+          }
+        }
+      };
+      walk(base,0);
+    }else if(provider==='agy'){
+      const base=path.join(home,'.gemini','antigravity-cli','brain');
+      if(fs.existsSync(base)){
+        for(const entry of fs.readdirSync(base)){
+          const m=entry.match(uuidRe);if(!m)continue;
+          try{const st=fs.statSync(path.join(base,entry));if(st.isDirectory())out.push({id:m[1],mtime:st.mtimeMs,label:`${fmt(st.mtimeMs)} · AGY (${m[1].slice(0,8)})`});}catch{}
+        }
+      }
+    }
+  }catch{}
+  return out.sort((a,b)=>b.mtime-a.mtime).slice(0,15).map(({id,label})=>({id,label}));
+}
 function readActiveProject(){
   const projectFile=path.join(local,'project.txt');
   return process.env.AGENT_ROOM_PROJECT||(fs.existsSync(projectFile)?fs.readFileSync(projectFile,'utf8').trim():'');
@@ -1054,6 +1101,10 @@ const server=http.createServer(async(req,res)=>{
         const project=process.env.AGENT_ROOM_PROJECT||(fs.existsSync(projectFile)?fs.readFileSync(projectFile,'utf8').trim():__dirname);
         result={models:await discoverModels(project,args.provider)};
       }
+      else if(args.action==='list_sessions'){
+        if(!Object.hasOwn(providerNames,args.provider))throw Error('Unknown agent provider.');
+        result={sessions:discoverSessions(args.provider)};
+      }
       else if(args.action==='check_update')result=await checkUpdate();
       else if(args.action==='apply_update'){
         if(process.platform!=='win32')throw Error('자동 설치는 Windows에서 사용할 수 있어요.');
@@ -1103,11 +1154,12 @@ const server=http.createServer(async(req,res)=>{
         const model=args.model?.trim()?str(args.model,120):null;
         const name=args.name?.trim()?str(args.name,120):model||providerNames[provider];
         const role=args.role?.trim()?str(args.role,120):'';
+        const thread=args.thread?.trim()?str(args.thread,120):null;
         const effort=normalizeEffort(args.effort);
-        run("INSERT INTO members(id,room,name,state,role) VALUES(?,?,?,'starting',?)",id,args.room,name,role);
-        run('INSERT INTO cli_sessions(member,project,provider,model,effort,permission_profile) VALUES(?,?,?,?,?,?)',id,project,provider,model,effort,normalizePermission(args.permission));
+        run('INSERT INTO members(id,room,name,state,role) VALUES(?,?,?,?,?)',id,args.room,name,thread?'approved':'starting',role);
+        run('INSERT INTO cli_sessions(member,project,provider,model,effort,permission_profile,thread) VALUES(?,?,?,?,?,?,?)',id,project,provider,model,effort,normalizePermission(args.permission),thread);
         run("INSERT OR IGNORE INTO members(id,room,name,state) VALUES(?,?,?,'human')",'human:'+args.room,args.room,'나');
-        void cliTurn(id,'You are connected to Agent Room. Briefly say hello in Korean. Do not change any project files.');
+        if(!thread)void cliTurn(id,'You are connected to Agent Room. Briefly say hello in Korean. Do not change any project files.');
       }
       else if(args.action==='pause_agent'){
         const target=one("SELECT id FROM members WHERE id=? AND room=? AND state IN ('approved','start_failed')",args.participant,args.room);

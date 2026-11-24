@@ -71,6 +71,12 @@ try {
         $applied.Add($file)
         Copy-Item -LiteralPath (Join-Path $payload $file) -Destination (Join-Path $PSScriptRoot $file) -Force
     }
+    try {
+        $projectFile = Join-Path $PSScriptRoot 'local/project.txt'
+        $savedProject = if (Test-Path -LiteralPath $projectFile) { (Get-Content -LiteralPath $projectFile -Raw).Trim() } else { $PSScriptRoot }
+        if (-not $savedProject -or -not (Test-Path -LiteralPath $savedProject -PathType Container)) { $savedProject = $PSScriptRoot }
+        & (Join-Path $PSScriptRoot 'setup.ps1') -Project $savedProject -Apply -SelectProject -Global | Out-Null
+    } catch { }
     Write-Output '업데이트된 Agent Room 허브를 시작하고 확인하는 중...'
     $newHub = Start-RoomHub
     if (-not (Wait-RoomHub $newHub ($Tag.Substring(1)))) {

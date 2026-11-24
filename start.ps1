@@ -75,12 +75,15 @@ function Start-AgentRoom([string]$projectDir, [bool]$skipSetupIfConfigured = $fa
     }
     $node = Get-Command node.exe -ErrorAction SilentlyContinue
     if (-not $node) { throw 'Node.js 24 이상을 먼저 설치한 뒤 Agent Room을 다시 열어 주세요.' }
-    $needsSetup = -not $skipSetupIfConfigured -or -not (
+    $globalCodex = Join-Path $env:USERPROFILE '.codex\config.toml'
+    $globalClaude = Join-Path $env:USERPROFILE '.claude.json'
+    $hasGlobalMcp = (Test-Path -LiteralPath $globalCodex) -and (Select-String -LiteralPath $globalCodex -Pattern '\[mcp_servers\.(?:agent-room|"agent-room"|''agent-room'')\]' -Quiet) -and (Test-Path -LiteralPath $globalClaude) -and (Select-String -LiteralPath $globalClaude -Pattern '"agent-room"\s*:' -Quiet)
+    $needsSetup = -not $skipSetupIfConfigured -or -not $hasGlobalMcp -or -not (
         (Test-Path -LiteralPath (Join-Path $resolved '.codex\config.toml')) -or
         (Test-Path -LiteralPath (Join-Path $resolved '.mcp.json'))
     )
     if ($needsSetup) {
-        & (Join-Path $PSScriptRoot 'setup.ps1') -Project $resolved -Apply -SelectProject | Out-Null
+        & (Join-Path $PSScriptRoot 'setup.ps1') -Project $resolved -Apply -SelectProject -Global | Out-Null
     } else {
         [void][IO.Directory]::CreateDirectory($localDir)
         [IO.File]::WriteAllText($lastProjectFile, $resolved)
