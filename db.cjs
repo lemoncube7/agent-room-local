@@ -46,8 +46,10 @@ function initDb(rootDir) {
   const run = (sql, ...args) => db.prepare(sql).run(...args);
   const hasCol = (table, name) => all(`PRAGMA table_info(${table})`).some(col => col.name === name);
 
+  if (!hasCol('rooms', 'memo')) db.exec("ALTER TABLE rooms ADD COLUMN memo TEXT NOT NULL DEFAULT ''");
   if (!hasCol('members', 'parent')) db.exec('ALTER TABLE members ADD COLUMN parent TEXT');
   if (!hasCol('members', 'paused')) db.exec('ALTER TABLE members ADD COLUMN paused INTEGER NOT NULL DEFAULT 0');
+  if (!hasCol('members', 'role')) db.exec("ALTER TABLE members ADD COLUMN role TEXT NOT NULL DEFAULT ''");
   if (!hasCol('messages', 'recipient')) db.exec('ALTER TABLE messages ADD COLUMN recipient TEXT');
   if (!hasCol('messages', 'relay_root')) db.exec('ALTER TABLE messages ADD COLUMN relay_root INTEGER');
   if (!hasCol('messages', 'retracted')) db.exec('ALTER TABLE messages ADD COLUMN retracted INTEGER NOT NULL DEFAULT 0');

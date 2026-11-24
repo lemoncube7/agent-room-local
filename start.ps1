@@ -49,11 +49,6 @@ function Test-RoomHub {
 }
 
 function Open-AgentRoomClient {
-    if ($Native) {
-        $nativePath = Join-Path $PSScriptRoot 'native-chat.ps1'
-        Start-Process -FilePath 'powershell.exe' -ArgumentList ('-NoProfile -STA -ExecutionPolicy Bypass -File "' + $nativePath + '"') -WindowStyle Hidden
-        return
-    }
     $appBrowser = @(
         (Get-Command msedge.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1),
         (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe' -ErrorAction SilentlyContinue).'(default)',
