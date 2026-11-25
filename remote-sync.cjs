@@ -14,6 +14,25 @@ async function request(url,options){
   return response.json();
 }
 function post(headers,body){return {method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify(body)};}
+const MAX_RELAY_BYTES=1400000;
+function buildRelayBatch(messages,body){
+  const events=[];
+  const batch=[];
+  let bytes=Buffer.byteLength(JSON.stringify({...body,events}));
+  if(bytes>=MAX_RELAY_BYTES)throw Error('The remote agent state is too large to sync.');
+  for(const message of messages.slice(0,35)){
+    if(!message.recipient){
+      const event={room:message.room,seq:message.seq,name:message.name,text:message.body.slice(0,30000),created:message.created};
+      const next=Buffer.byteLength(JSON.stringify(event))+(events.length?1:0);
+      if(bytes+next>MAX_RELAY_BYTES)break;
+      bytes+=next;
+      events.push(event);
+    }
+    batch.push(message);
+  }
+  if(messages.length&&!batch.length)throw Error('The message and agent state do not fit in one sync request.');
+  return {batch,body:{...body,events}};
+}
 async function main(){
   const site=new URL(siteText);
   if(site.protocol!=='https:'||!site.hostname.endsWith('.chatgpt.site')||site.username||site.password||site.pathname!=='/'||site.search||site.hash)throw Error('Use the private https://…chatgpt.site origin.');
@@ -42,18 +61,18 @@ async function main(){
       const state=await request(hub.url+'/state');
       const selection=state.remoteConfigured?state.remoteRooms:[{room:initialRoom,since:Math.max(0,...first.messages.filter(m=>m.room===initialRoom).map(m=>m.seq))}];
       const allowed=new Set(selection.map(item=>item.room));
-      const rooms=state.rooms.filter(room=>allowed.has(room.id));
+      const rooms=state.rooms.filter(room=>allowed.has(room.id)).map(({id,name})=>({id,name}));
       const floors=new Map(selection.map(x=>[x.room,Math.max(x.since,cursor[key(x.room)]||0)]));
-      const batch=state.messages.filter(m=>allowed.has(m.room)&&m.seq>floors.get(m.room)).slice(0,35);
-      const events=batch.filter(m=>!m.recipient).map(m=>({room:m.room,seq:m.seq,name:m.name,text:m.body.slice(0,30000),created:m.created}));
       const snapshot={
         members:(state.members||[]).filter(m=>allowed.has(m.room)&&m.state!=='disconnected').map(({id,room,name,state:st,provider,model,paused,busy,progress,conflict,cliError})=>({id,room,name,state:st,provider,model,paused,busy,progress,conflict,cliError})),
         approvals:(state.approvals||[]).filter(a=>allowed.has(a.room)).map(({id,room,name,tool,input,created})=>({id,room,name,tool,input:String(input||'').slice(0,800),created})),
         limits:state.limits||{},
-        ranking:(state.ranking||[]).filter(r=>allowed.has(r.room)),
+        ranking:(state.ranking||[]).filter(r=>allowed.has(r.room)).map(({room,enabled,mode,main_member})=>({room,enabled,mode,main_member})),
         controlResults:[...controlResults.values()].filter(item=>item.room===null||allowed.has(item.room))
       };
-      const response=await request(relay,post(headers,{rooms,legacyRoom:initialRoom,acknowledged,events,snapshot}));
+      const messages=state.messages.filter(m=>allowed.has(m.room)&&m.seq>floors.get(m.room));
+      const {batch,body}=buildRelayBatch(messages,{rooms,legacyRoom:initialRoom,acknowledged,snapshot});
+      const response=await request(relay,post(headers,body));
       acknowledged=[];
       for(const item of batch)cursor[key(item.room)]=item.seq;
       if(batch.length)save();
@@ -88,4 +107,5 @@ async function main(){
     await wait(2000);
   }
 }
-main().catch(error=>{console.error(error.message);process.exitCode=1;});
+if(require.main===module)main().catch(error=>{console.error(error.message);process.exitCode=1;});
+module.exports={buildRelayBatch};

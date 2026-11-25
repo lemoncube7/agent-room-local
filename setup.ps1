@@ -51,10 +51,19 @@ function Sync-ClaudeMcp($file,$writeChanges) {
   $existing = $cfg.mcpServers.PSObject.Properties['agent-room']
   if ($existing) {
     $val = $existing.Value
-    if ($val.command -cne 'node' -or (($val.args -join '|') -cne ($wantedClaude.args -join '|'))) {
+    $isExact = $val.command -ceq 'node' -and (($val.args -join '|') -ceq ($wantedClaude.args -join '|'))
+    if ($isExact) { return $true }
+    $isOtherBridge = $val.command -eq 'node' -and $val.args -and $val.args.Count -ge 1 -and ($val.args[0] -like '*bridge.cjs') -and (Test-Path -LiteralPath (Join-Path (Split-Path -Parent $val.args[0]) 'hub.cjs') -PathType Leaf)
+    if (-not $isOtherBridge) {
       throw "Existing Claude agent-room config differs in $file. Review it before applying setup."
     }
-    return $true
+    if ($writeChanges) {
+      $cfg.mcpServers.PSObject.Properties.Remove('agent-room')
+      $cfg.mcpServers | Add-Member -NotePropertyName 'agent-room' -NotePropertyValue $wantedClaude
+      Save-Config $file ($cfg | ConvertTo-Json -Depth 30)
+      return $true
+    }
+    return $false
   }
   if ($writeChanges) {
     $cfg.mcpServers | Add-Member -NotePropertyName 'agent-room' -NotePropertyValue $wantedClaude
@@ -67,12 +76,15 @@ function Sync-CodexMcp($file,$writeChanges,$trustDir=$null) {
   $raw = if (Test-Path -LiteralPath $file) { [IO.File]::ReadAllText($file) } else { '' }
   $norm = $raw -replace "`r`n","`n"
   $hasManaged = $norm.Contains($managedBlock)
-  if (([regex]::IsMatch($norm,'(?m)^\s*\[mcp_servers\.(?:agent-room|"agent-room"|''agent-room'')\s*\]')) -and -not $hasManaged) {
+  $oldBlockMatch = [regex]::Match($norm, '(?ms)^# Agent Room setup begin\n.*?^# Agent Room setup end\n?')
+  $remainder = if ($oldBlockMatch.Success -and -not $hasManaged) { $norm.Remove($oldBlockMatch.Index, $oldBlockMatch.Length) } else { $norm }
+  $hasOtherAgentRoom = [regex]::IsMatch($remainder,'(?m)^\s*\[mcp_servers\.(?:agent-room|"agent-room"|''agent-room'')\s*\]')
+  if ($hasOtherAgentRoom -and -not $hasManaged) {
     throw "Existing Codex agent-room config differs in $file. Review it before applying setup."
   }
   $needsTrust = $trustDir -and -not [regex]::IsMatch($norm, ('(?mi)^\s*\[projects\.' + [regex]::Escape("'$trustDir'") + '\s*\]')) -and -not [regex]::IsMatch($norm, ('(?mi)^\s*\[projects\.' + [regex]::Escape('"' + $trustDir.Replace('\','\\') + '"') + '\s*\]'))
   if ((-not $hasManaged -or $needsTrust) -and $writeChanges) {
-    $next = $raw.TrimEnd()
+    $next = if ($oldBlockMatch.Success -and -not $hasManaged) { $remainder.TrimEnd() } else { $raw.TrimEnd() }
     if (-not $hasManaged) { $next = if ($next) { $next + "`n`n" + $managedBlock } else { $managedBlock } }
     if ($needsTrust) { $next = if ($next) { $next + "`n`n[projects.'$trustDir']`ntrust_level = `"trusted`"" } else { "[projects.'$trustDir']`ntrust_level = `"trusted`"" } }
     Save-Config $file ($next + "`n")

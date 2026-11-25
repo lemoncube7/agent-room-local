@@ -643,7 +643,7 @@ async function runWarmTurn(participant,project,prompt,session,provider,model=nul
     throw error;
   }
 }
-function runCodex(project, prompt, session, provider='codex',model=null,effort=null,options={}) {
+async function runCodex(project, prompt, session, provider='codex',model=null,effort=null,options={}) {
   const claude=provider==='claude';
   const agy=provider==='agy';
   const name=agy?'Antigravity':claude?'Claude Code':'Codex';
@@ -678,8 +678,44 @@ function runCodex(project, prompt, session, provider='codex',model=null,effort=n
     return runStreamLive('agy',file,prefix,liveArgs,project,prompt,session,options.inboxFile,options.progressFile,options.interimFile);
   }
   const writeProgress=createProgressWriter(options.progressFile);
+  if(provider==='codex'&&!options.rank&&options.inboxFile){
+    const args=[...prefix];
+    if(codexArgs[0]==='-c')args.push(...codexArgs.slice(0,2));
+    let lastInterim='';
+    try{
+      const result=await require('./codex-app-server.cjs').runAppServer({
+        file,args,project,env:cliEnv(),session,prompt,model,effort,inbox:options.inboxFile,
+        onItem(method,item){
+          const type=item.type.replace(/[A-Z]/g,letter=>'_'+letter.toLowerCase());
+          const progress=describeStreamProgress({type:method.replace('/','.'),item:{...item,type}});
+          if(progress)writeProgress(progress.step,progress.text);
+          if(method==='item/completed'&&type==='agent_message'&&item.phase==='commentary'&&options.interimFile){
+            const clean=cleanInterim(item.text);
+            if(clean){
+              fs.appendFileSync(options.interimFile,JSON.stringify(clean)+'\n');
+              lastInterim=item.text.trim();
+            }
+          }
+        }
+      });
+      if(lastInterim&&result.reply.trim()===lastInterim)result.reply='[[AGENT_ROOM_NO_REPLY]]';
+      return result;
+    }catch(error){
+      if(!error.beforeTurn)throw diagnoseCliFailure(provider,error,String(error.message));
+    }
+  }
   writeProgress('CLI 실행 중…');
   return new Promise((resolve,reject)=>{
+    let pendingCodexInterim='', lastCodexInterim='';
+    const flushCodexInterim=()=>{
+      if(!options.interimFile||!pendingCodexInterim)return;
+      const clean=cleanInterim(pendingCodexInterim);
+      const raw=pendingCodexInterim.trim();
+      pendingCodexInterim='';
+      if(!clean)return;
+      lastCodexInterim=raw;
+      try{fs.appendFileSync(options.interimFile,JSON.stringify(clean)+'\n');}catch{}
+    };
     const child=execFile(file,[...prefix,...(agy?agyArgs:claude?claudeArgs:codexArgs)],{
       cwd:project,windowsHide:true,env:cliEnv(),timeout:options.rank?25000:agy?300000:1800000,maxBuffer:8*1024*1024
     },(error,stdout,stderr)=>{
@@ -696,7 +732,12 @@ function runCodex(project, prompt, session, provider='codex',model=null,effort=n
           sumUsage(usage,response.usage||{total_cost_usd:response.total_cost_usd},1);
           if(response.total_cost_usd&&!response.usage?.total_cost_usd)usage.costUsd+=Number(response.total_cost_usd)||0;
           if(!response.is_error)result={id:response.session_id,reply:response.result,usage};
-        }else result=parseCodex(stdout,session);
+        }else{
+          result=parseCodex(stdout,session);
+          if(lastCodexInterim&&typeof result?.reply==='string'&&result.reply.trim()===lastCodexInterim){
+            result.reply='[[AGENT_ROOM_NO_REPLY]]';
+          }
+        }
       }catch{}
       const diagnostic=(stderr||'')+'\n'+stdout;
       const incomplete=error||!result?.id||typeof result.reply!=='string'||!result.reply.trim();
@@ -713,13 +754,25 @@ function runCodex(project, prompt, session, provider='codex',model=null,effort=n
       delete result.toolDiagnostics;
       resolve(result);
     });
-    if(provider==='codex'&&options.progressFile){
+    if(provider==='codex'&&(options.progressFile||options.interimFile)){
       let codexBuf='';
       child.stdout?.on('data',chunk=>{
         codexBuf+=chunk;
         for(let at=codexBuf.indexOf('\n');at>=0;at=codexBuf.indexOf('\n')){
           const line=codexBuf.slice(0,at);codexBuf=codexBuf.slice(at+1);
-          try{const info=describeStreamProgress(JSON.parse(line));if(info)writeProgress(info.step,info.text);}catch{}
+          try{
+            const ev=JSON.parse(line);
+            const info=describeStreamProgress(ev);
+            if(info)writeProgress(info.step,info.text);
+            if(options.interimFile){
+              if(ev.type==='item.completed'&&ev.item?.type==='agent_message'&&ev.item.text){
+                if(pendingCodexInterim)flushCodexInterim();
+                pendingCodexInterim=ev.item.text;
+              }else if((ev.type==='item.started'||ev.type==='item.completed')&&ev.item?.type&&ev.item.type!=='agent_message'){
+                flushCodexInterim();
+              }
+            }
+          }catch{}
         }
       });
     }

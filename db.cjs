@@ -78,6 +78,11 @@ function initDb(rootDir) {
   db.exec("BEGIN; INSERT OR IGNORE INTO remote_rooms(room,since) SELECT id,(SELECT COALESCE(MAX(seq),0) FROM messages WHERE messages.room=rooms.id) FROM rooms; INSERT INTO remote_options SELECT 1 WHERE NOT EXISTS(SELECT 1 FROM remote_options); CREATE TRIGGER IF NOT EXISTS enroll_new_remote_room AFTER INSERT ON rooms BEGIN INSERT OR IGNORE INTO remote_rooms(room,since) VALUES(NEW.id,0); END; COMMIT;");
 
   db.exec('CREATE TABLE IF NOT EXISTS room_ranking(room TEXT PRIMARY KEY,enabled INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS reply_plans(seq INTEGER PRIMARY KEY,room TEXT NOT NULL,state TEXT NOT NULL)');
+  db.exec(`CREATE TABLE IF NOT EXISTS coordination_turns (
+    seq INTEGER NOT NULL, member TEXT NOT NULL, position INTEGER NOT NULL,
+    state TEXT NOT NULL, note TEXT, PRIMARY KEY(seq,member)
+  ); UPDATE coordination_turns SET state='pending' WHERE state='working';
+  UPDATE deliveries SET state='coordination_wait' WHERE state='coordination_speaking';`);
   const rankingColumns = new Set(all('PRAGMA table_info(room_ranking)').map(column => column.name));
   for (const [column, def] of [
     ['judge_provider', 'TEXT'],

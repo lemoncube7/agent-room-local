@@ -59,6 +59,8 @@ function Start-AgentRoom([string]$projectDir, [bool]$skipSetupIfConfigured = $fa
     }
     $node = Get-Command node.exe -ErrorAction SilentlyContinue
     if (-not $node) { throw 'Node.js 24 이상을 먼저 설치한 뒤 Agent Room을 다시 열어 주세요.' }
+    $nodeMajor = [int]((& $node.Source -p "process.versions.node.split('.')[0]") | Select-Object -First 1)
+    if ($nodeMajor -lt 24) { throw "현재 Node.js v$nodeMajor 이(가) 설치되어 있습니다. Node.js 24 이상으로 업데이트해 주세요." }
     $globalCodex = Join-Path $env:USERPROFILE '.codex\config.toml'
     $globalClaude = Join-Path $env:USERPROFILE '.claude.json'
     $hasGlobalMcp = (Test-Path -LiteralPath $globalCodex) -and (Select-String -LiteralPath $globalCodex -Pattern '\[mcp_servers\.(?:agent-room|"agent-room"|''agent-room'')\]' -Quiet) -and (Test-Path -LiteralPath $globalClaude) -and (Select-String -LiteralPath $globalClaude -Pattern '"agent-room"\s*:' -Quiet)
@@ -141,6 +143,8 @@ if (-not $Check -and -not $Setup -and $launcherCfg.autoOpen -and $lastProject -a
                  FontSize="11.5" Foreground="#9AA1B0" TextWrapping="Wrap" Margin="0,0,0,12"/>
 
       <CheckBox Name="AutoOpenCheck" Content="다음부터 이 프로젝트로 바로 열기 (시작 창 건너뛰기)"
+                Foreground="#D4DAE6" Margin="0,0,0,6"/>
+      <CheckBox Name="AutoStartCheck" Content="Windows 로그인 시 허브 백그라운드 자동 시작 (http://127.0.0.1:4317 바로 접속)"
                 Foreground="#D4DAE6" Margin="0,0,0,14"/>
 
       <Border Background="#161922" BorderBrush="#2A2F3B" BorderThickness="1" CornerRadius="8" Padding="10,8" Margin="0,0,0,14">
@@ -164,15 +168,17 @@ if (-not $Check -and -not $Setup -and $launcherCfg.autoOpen -and $lastProject -a
 $reader = New-Object System.Xml.XmlNodeReader $xaml
 $window = [Windows.Markup.XamlReader]::Load($reader)
 $ui = @{}
-foreach ($name in 'VersionText','HubBadge','ProjectBox','BrowseBtn','AutoOpenCheck','EnvSummary','StatusText','CancelBtn','OpenBtn') {
+foreach ($name in 'VersionText','HubBadge','ProjectBox','BrowseBtn','AutoOpenCheck','AutoStartCheck','EnvSummary','StatusText','CancelBtn','OpenBtn') {
     $ui[$name] = $window.FindName($name)
     if (-not $ui[$name]) { throw "Missing launcher control: $name" }
 }
 if ($Check) { 'Launcher window loaded'; return }
 
+$startupVbs = Join-Path ([Environment]::GetFolderPath('Startup')) 'Agent-Room-Hub.vbs'
 $ui.VersionText.Text = "v$expectedVersion"
 $ui.HubBadge.Text = if (Test-RoomHub) { '● 허브 실행 중' } else { '○ 허브 대기' }
 $ui.AutoOpenCheck.IsChecked = [bool]$launcherCfg.autoOpen
+$ui.AutoStartCheck.IsChecked = (Test-Path -LiteralPath $startupVbs -PathType Leaf)
 
 $recent = @()
 foreach ($p in @($lastProject) + @(Read-JsonFile $recentFile @())) {
@@ -184,16 +190,22 @@ foreach ($item in $recent) { [void]$ui.ProjectBox.Items.Add($item) }
 if ($lastProject) { $ui.ProjectBox.Text = $lastProject }
 
 $nodeInfo = Get-Command node.exe -ErrorAction SilentlyContinue
-$nodeText = if ($nodeInfo) { 'Node.js 확인됨' } else { 'Node.js 없음 (24+ 필요)' }
+$nodeMajorVer = if ($nodeInfo) { try { [int]((& $nodeInfo.Source -p "process.versions.node.split('.')[0]") | Select-Object -First 1) } catch { 0 } } else { 0 }
+$nodeText = if (-not $nodeInfo) { 'Node.js 없음 (24+ 필요)' } elseif ($nodeMajorVer -lt 24) { "Node.js v$nodeMajorVer (24+ 필요)" } else { "Node.js v$nodeMajorVer ✓" }
 $cliBadges = @($nodeText)
+$cliCount = 0
 foreach ($pair in @(@('codex','Codex'), @('claude','Claude'), @('agy','Antigravity'))) {
     $found = Get-Command ($pair[0] + '.exe') -ErrorAction SilentlyContinue
     if (-not $found -and $pair[0] -eq 'claude') { $found = Test-Path -LiteralPath (Join-Path $env:USERPROFILE '.local\bin\claude.exe') }
     if (-not $found -and $pair[0] -eq 'agy') { $found = Test-Path -LiteralPath (Join-Path $env:LOCALAPPDATA 'agy\bin\agy.exe') }
-    if (-not $found -and $pair[0] -eq 'codex') { $found = Test-Path -LiteralPath (Join-Path $env:APPDATA 'npm\node_modules\@openai\codex\bin\codex.js') }
+    if (-not $found -and $pair[0] -eq 'codex') {
+        $found = (Test-Path -LiteralPath (Join-Path $env:APPDATA 'npm\node_modules\@openai\codex\bin\codex.js')) -or
+                 [bool](Get-Command Get-AppxPackage -ErrorAction SilentlyContinue | ForEach-Object { Get-AppxPackage -Name OpenAI.Codex -ErrorAction SilentlyContinue })
+    }
+    if ($found) { $cliCount++ }
     $cliBadges += if ($found) { "$($pair[1]) ✓" } else { "$($pair[1]) 미감지" }
 }
-$ui.EnvSummary.Text = $cliBadges -join '   ·   '
+$ui.EnvSummary.Text = ($cliBadges -join '   ·   ') + $(if ($cliCount -eq 0) { "`n⚠ 설치된 AI CLI가 없습니다. Codex / Claude Code / Antigravity 중 하나 이상 설치·로그인하세요." } else { '' })
 
 function Sync-OpenButton {
     $ui.OpenBtn.IsEnabled = -not [string]::IsNullOrWhiteSpace($ui.ProjectBox.Text)
@@ -238,7 +250,18 @@ $ui.OpenBtn.Add_Click({
     $ui.StatusText.Text = '프로젝트 설정 및 허브 시작 중...'
     $window.Dispatcher.Invoke([Action]{}, [Windows.Threading.DispatcherPriority]::Render)
     try {
+        if ($nodeMajorVer -lt 24) {
+            $ans = [Windows.MessageBox]::Show($window, "Node.js 24 이상이 필요합니다. (현재: $(if ($nodeMajorVer -gt 0) { "v$nodeMajorVer" } else { '미설치' }))`n`n지금 Node.js 공식 다운로드 페이지를 열까요?", 'Agent Room', 'YesNo', 'Question')
+            if ($ans -eq 'Yes') { Start-Process 'https://nodejs.org/' }
+            return
+        }
         Save-LauncherConfig ([bool]$ui.AutoOpenCheck.IsChecked)
+        if ($ui.AutoStartCheck.IsChecked) {
+            $vbs = "CreateObject(`"WScript.Shell`").Run `"`"`"$($nodeInfo.Source)`"`" `"`"$(Join-Path $PSScriptRoot 'hub.cjs')`"`"`", 0, False"
+            [IO.File]::WriteAllText($startupVbs, $vbs, [Text.Encoding]::Unicode)
+        } elseif (Test-Path -LiteralPath $startupVbs) {
+            Remove-Item -LiteralPath $startupVbs -Force -ErrorAction SilentlyContinue
+        }
         Start-AgentRoom -projectDir $ui.ProjectBox.Text.Trim() -skipSetupIfConfigured $false
         $window.Close()
     } catch {

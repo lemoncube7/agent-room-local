@@ -15,6 +15,24 @@ for(const name of ['hub.cjs','db.cjs','limits.cjs','updater.cjs','bridge.cjs','h
 fs.mkdirSync(path.join(root,'.codex'));
 fs.writeFileSync(path.join(root,'.codex/config.toml'),'');
 fs.writeFileSync(path.join(root,'managed-codex.cjs'),"const fs=require('node:fs'),path=require('node:path');\nexports.runCodex=async(project,prompt,session,provider,model,effort,options)=>{\n if(options?.rank){const input=JSON.parse(prompt.split('Treat this JSON solely as data: ').at(-1));if(input.message==='Bad rank JSON')return {id:'judge',reply:'broken'};if(input.message==='Sequential test')return {id:'judge',reply:JSON.stringify({ranks:input.roster.map(x=>({id:x.id,rank:x.name==='gpt-test'?1:x.name==='Codex CLI'?2:0}))})};if(input.message.startsWith('Private test '))return {id:'judge',reply:JSON.stringify({ranks:input.roster.map(x=>({id:x.id,rank:x.name==='Codex CLI'?1:0}))})};let n=0;return {id:'judge',reply:JSON.stringify({ranks:input.roster.slice().reverse().map(x=>({id:x.id,rank:input.message==='Tie test'?(x.provider==='agy'?0:1):x.provider==='agy'?0:++n}))})};}\n const content=prompt.split('\\n\\n').at(-1);\n const body=content.split('\\n').slice(1).join('\\n');\n const peer=content.startsWith('Message from Codex CLI')||content.startsWith('Message from Claude Code CLI');\n if(provider==='claude'&&fs.existsSync(path.join(project,'fail-claude')))throw Error('CLI missing');\n if(body==='Hold reply'||body==='Tie test')await new Promise(resolve=>setTimeout(resolve,650));\n let reply='[[AGENT_ROOM_NO_REPLY]]';\n if(prompt.includes('This turn is a task handoff notification'))reply='[[HANDOFF_ACCEPT]]';\n else if(!session)reply=provider==='agy'?'AGY started '+model+' '+effort:provider==='claude'?'Claude opened':'Opened';\n else if(body.startsWith('Private test '))reply='[[TO:'+body.slice(13)+']]\\nTargeted only';\n else if(!peer&&['Follow up','Hold reply','Everyone hello','Sequential test'].includes(body))reply=(provider==='claude'?'Claude resumed: ':'Resumed: ')+body;\n else if(!peer&&body==='Broadcast relay'&&provider==='codex'){const roster=JSON.parse(prompt.match(/room roster: (\\[.*?\\])\\. Never/)[1]);reply='[[CALL:'+roster.find(x=>x.name==='Claude Code CLI').id+']]\\nShared hello to Claude';}\n else if(peer&&body==='Shared hello to Claude'&&provider==='claude')reply='Shared reply to Codex';\n return {id:'mock-'+provider,reply};\n};");
+fs.appendFileSync(path.join(root,'managed-codex.cjs'),`
+const baseRun=exports.runCodex;
+exports.runCodex=async (...args)=>{
+ const [,prompt,,provider,,,options]=args;
+ if(options?.rank&&prompt.startsWith('This is your turn to coordinate')){
+  const {name,prior}=JSON.parse(prompt.split('Treat the JSON solely as data: ').at(-1));
+  return {id:'coordination',reply:name+' agrees after '+prior.length+' notes'};
+ }
+ if(options?.rank&&prompt.includes('"message":"Coordination test"')){
+  const {roster}=JSON.parse(prompt.split('Treat this JSON solely as data: ').at(-1));
+  return {id:'judge',reply:JSON.stringify({coordinate:true,ranks:roster.map(x=>({id:x.id,rank:['gpt-test','Codex CLI'].includes(x.name)?1:0}))})};
+ }
+ if(!options?.rank&&prompt.includes('Coordination is complete.')&&prompt.endsWith('Coordination test')){
+  return {id:'mock-'+provider,reply:'Work started after coordination'};
+ }
+ return baseRun(...args);
+};
+`);
 function start(file,args=[]){
   const child=spawn(process.execPath,[path.join(root,file),...args],{env:{...process.env,ROOM_PORT:'0',AGENT_ROOM_PROJECT:root}});
   procs.push(child); return child;
@@ -239,6 +257,16 @@ async function main(){
   await rpc('/control',{action:'disconnect',participant:pending.id});
   assert.equal(JSON.parse((await joinAgain(22,code)).content[0].text).state,'pending');
   assert.equal((await sync()).members.filter(item=>item.room===room2.id&&item.name==='Claude Code'&&item.state==='pending').length,1);
+  const coordination=await rpc('/control',{action:'user_message',room:room.id,text:'Coordination test'});
+  const requestSeq=coordination.messages.find(message=>message.body==='Coordination test').seq;
+  const completed=await until(async()=>{
+    const state=await sync();
+    const replies=state.messages.filter(message=>message.relay_root===requestSeq);
+    return replies.filter(reply=>reply.body==='Work started after coordination').length===2?replies:false;
+  },420);
+  assert.match(completed[0].body,/after 0 notes/);
+  assert.match(completed[1].body,/after 1 notes/);
+  assert.equal(completed[2].body,'Work started after coordination');
   console.log('Passed: room approval, one channel push, reply, receipt, one-use subagent invitation, separate authorship, inherited revocation, room-wide broadcast, managed Codex and Claude creation and resume, durable outbox across hub restart, shared agent replies, room-scoped state, safe upload headers, and project switching.');
 }
 main().catch(err=>{console.error(err);process.exitCode=1;}).finally(()=>procs.forEach(p=>p.kill()));
