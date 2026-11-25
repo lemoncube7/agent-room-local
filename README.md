@@ -51,8 +51,12 @@ node bridge.cjs say --code <대화코드> "보낼 메시지" --as "외부 세션
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1 -Project 'E:\my-project' -Test
-powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1 -Project 'E:\my-project' -Apply -Connect -Test
+powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1 -Project 'E:\my-project' -Apply -SelectProject -Connect -Test
 ```
+
+- `-SelectProject`를 넣으면 `local/project.txt`에 기본 프로젝트가 저장되어 앱을 열 때 프로젝트 선택 창을 건너뜁니다. 전역 MCP까지 함께 등록하려면 `-Global`을 추가합니다.
+- **설정 파일 위치:** Codex는 프로젝트의 `.codex/config.toml`, Claude Code는 `.mcp.json`, 앱 상태·선택된 프로젝트는 `local/` 폴더에 저장됩니다. Antigravity(`agy`)는 허브가 CLI를 직접 실행하므로 별도 프로젝트 설정 파일이 필요 없습니다.
+- **허브 API로 초기 방·에이전트까지 구성할 때:** 허브 실행 후 `http://127.0.0.1:4317/state`로 상태를 조회하고 `/control`(`new_room`, `new_agent`, `user_message`)로 방 생성·에이전트 추가·첫 인사 테스트까지 자동화할 수 있습니다.
 
 같은 프로젝트에서 다시 실행해도 MCP 등록은 중복되지 않습니다. 이전 설치 경로를 가리키는 Agent Room 항목은 설정 파일을 백업한 뒤 새 경로로 갱신합니다. 그 밖의 기존 항목과 충돌하면 확인을 요청합니다.
 

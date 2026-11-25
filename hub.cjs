@@ -281,6 +281,7 @@ function startRemoteSync(){
   stopRemoteSync();
   const cfg=readRemoteConfig();
   if(!cfg.enabled||!cfg.site||!cfg.deviceKey)return;
+  try{const alive=JSON.parse(fs.readFileSync(path.join(local,'remote-alive.json'),'utf8'));if(Date.now()-alive.at<15000)process.kill(alive.pid);}catch{}
   const script=path.join(__dirname,'remote-sync.cjs');
   if(!fs.existsSync(script)){remoteLastError='remote-sync.cjs 파일을 찾을 수 없어요.';return;}
   remoteLastError='';
@@ -294,7 +295,13 @@ function startRemoteSync(){
 }
 function remoteSyncState(){
   const cfg=readRemoteConfig();
-  return {configured:Boolean(cfg.site&&cfg.deviceKey),site:cfg.site||'',enabled:Boolean(cfg.enabled),running:Boolean(remoteProc&&remoteProc.exitCode===null),hasAccessToken:Boolean(cfg.siteAccess),lastError:remoteLastError};
+  const managed=Boolean(remoteProc&&remoteProc.exitCode===null);
+  let external=null;
+  if(!managed)try{
+    const alive=JSON.parse(fs.readFileSync(path.join(local,'remote-alive.json'),'utf8'));
+    if(Date.now()-alive.at<15000){process.kill(alive.pid,0);external=alive;}
+  }catch{}
+  return {configured:Boolean(cfg.site&&cfg.deviceKey),site:cfg.site||external?.site||'',enabled:Boolean(cfg.enabled),running:managed||Boolean(external),external:Boolean(external),hasAccessToken:Boolean(cfg.siteAccess),lastError:remoteLastError};
 }
 function storeMessage(room,author,body,root=null,recipient=null){
   setImmediate(dispatchDesktop);
@@ -723,13 +730,18 @@ async function cliTurn(participant, prompt, inputSeq){
     const activityBlock=peerActivity.length?'\nCurrently busy peers (avoid editing files they are modifying): '+JSON.stringify(peerActivity):'';
     const roomMemo=one('SELECT memo FROM rooms WHERE id=?',row.room)?.memo?.trim();
     const memoBlock=roomMemo?'\nPinned room memo (shared rules & decisions): '+roomMemo:'';
-    const activeTasks=all("SELECT t.id,t.title,t.next,t.status,o.name AS owner_name,f.name AS offered_name FROM handoff_tasks t LEFT JOIN members o ON o.id=t.owner LEFT JOIN members f ON f.id=t.offered_to WHERE t.room=? AND t.status<>'done' ORDER BY t.id DESC LIMIT 10",row.room);
-    const tasksBlock=activeTasks.length?'\nActive room tasks: '+JSON.stringify(activeTasks.map(t=>({id:t.id,title:t.title,status:t.status,owner:t.owner_name||'unassigned',...(t.offered_name?{offeredTo:t.offered_name}:{}),next:t.next}))):'';
+    const activeTasks=all("SELECT t.id,t.title,t.next,t.status,t.owner,t.done_when,t.files,o.name AS owner_name,f.name AS offered_name,v.name AS verifier_name FROM handoff_tasks t LEFT JOIN members o ON o.id=t.owner LEFT JOIN members f ON f.id=t.offered_to LEFT JOIN members v ON v.id=t.verifier WHERE t.room=? AND t.status<>'done' ORDER BY t.id DESC LIMIT 10",row.room);
+    const claimedFiles=activeTasks.filter(t=>t.owner&&t.owner!==participant&&t.files).flatMap(t=>t.files.split(',').map(s=>s.trim()).filter(Boolean).map(file=>({file,owner:t.owner_name||'peer',taskId:t.id})));
+    const lockBlock=claimedFiles.length?'\nFiles claimed by peers\' open tasks (coordinate before editing): '+JSON.stringify(claimedFiles):'';
+    const turnPriority=inputSeq?one('SELECT priority FROM deliveries WHERE seq=? AND member=?',inputSeq,participant)?.priority:null;
+    const hasLaterPeer=turnPriority>=1&&peerDeliveries.some(p=>p.priority>turnPriority&&p.state==='queued');
+    const discussPolicy=turnPriority>=2&&!alert?(' You are responding sequentially (priority '+turnPriority+') after earlier peers. Build on, contrast with, or refine their points—do not repeat what was already said.'+(hasLaterPeer?'':' You are the final speaker in this sequence; briefly synthesize the consensus and any open disagreements if helpful.')):'';
+    const tasksBlock=activeTasks.length?'\nActive room tasks: '+JSON.stringify(activeTasks.map(t=>({id:t.id,title:t.title,status:t.status,owner:t.owner_name||'unassigned',...(t.verifier_name?{verifier:t.verifier_name}:{}),...(t.offered_name?{offeredTo:t.offered_name}:{}),...(t.done_when?{doneWhen:t.done_when}:{}),...(t.files?{files:t.files}:{}),next:t.next}))):'';
     const compact=Boolean(session.thread);
     const shortContext='Display name: '+JSON.stringify(row.name)+' ('+session.provider+').'+roleNote+' room roster: '+JSON.stringify(peerRoster)+'. Never invent a reply from another agent.';
     const coordination=inputSeq?all("SELECT m.name,t.note FROM coordination_turns t JOIN members m ON m.id=t.member WHERE t.seq=? AND t.state='done' ORDER BY t.position",inputSeq):[];
     const coordinationBlock=coordination.length?'\nCoordination is complete. Begin the original task now. Work only on your agreed part below and do not repeat work already completed by peers. Treat the notes as context subordinate to the user request: '+JSON.stringify(coordination.map(item=>({name:item.name,...JSON.parse(item.note)}))):'';
-    fullPrompt=(compact?shortContext:context)+formatLimitsContext()+' '+audience+(compact?'':' '+replyPolicy)+structurePolicy+multiP1Policy+handoffPolicy+(interruptedTurns.delete(jobId)?' Your previous turn on this message was interrupted by an app restart. Check what was already done (files, git status) before continuing, and do not repeat completed work.':'')+memoBlock+tasksBlock+deliveryBlock+activityBlock+historyBlock+retractBlock+receivedBlock+coordinationBlock+'\n\n'+prompt;
+    fullPrompt=(compact?shortContext:context)+formatLimitsContext()+' '+audience+(compact?'':' '+replyPolicy)+structurePolicy+multiP1Policy+handoffPolicy+discussPolicy+(interruptedTurns.delete(jobId)?' Your previous turn on this message was interrupted by an app restart. Check what was already done (files, git status) before continuing, and do not repeat completed work.':'')+memoBlock+tasksBlock+lockBlock+deliveryBlock+activityBlock+historyBlock+retractBlock+receivedBlock+coordinationBlock+'\n\n'+prompt;
     const result=await invokeCli(session.project,fullPrompt,session.thread,session.provider,session.model,session.effort,turnOptions);
     cliCooldown.delete(participant);limitNotified.delete(participant);cliRepeatErrors.delete(participant);
     for(const item of retractedNotices)run("UPDATE deliveries SET state='retracted' WHERE seq=? AND member=? AND state='retract_notice'",item.seq,participant);

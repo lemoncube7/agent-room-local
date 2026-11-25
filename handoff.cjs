@@ -12,6 +12,10 @@ function createHandoff({db,all,one,run,member,notify}){
       actor TEXT NOT NULL, note TEXT NOT NULL, created TEXT NOT NULL
     );
   `);
+  const hasCol=name=>all('PRAGMA table_info(handoff_tasks)').some(c=>c.name===name);
+  if(!hasCol('verifier'))db.exec('ALTER TABLE handoff_tasks ADD COLUMN verifier TEXT');
+  if(!hasCol('done_when'))db.exec("ALTER TABLE handoff_tasks ADD COLUMN done_when TEXT NOT NULL DEFAULT ''");
+  if(!hasCol('files'))db.exec("ALTER TABLE handoff_tasks ADD COLUMN files TEXT NOT NULL DEFAULT ''");
   const now=()=>new Date().toISOString();
   const fail=text=>{throw Error(text);};
   function field(value,max,required=false){
@@ -38,8 +42,11 @@ function createHandoff({db,all,one,run,member,notify}){
       let id=input.id;
       if(action==='handoff_create'){
         const owner=human?(input.target?member(input.target,room).id:null):actor;
-        id=Number(run("INSERT INTO handoff_tasks(room,title,summary,next,owner,status,revision,updated) VALUES(?,?,?,?,?,'open',1,?)",room,
-          field(input.title,120,true),field(input.summary??'',8000),field(input.next,2000,true),owner,now()).lastInsertRowid);
+        const verifier=input.verifier?member(input.verifier,room).id:null;
+        const doneWhen=field(input.doneWhen??'',1000);
+        const files=field(input.files??'',1000);
+        id=Number(run("INSERT INTO handoff_tasks(room,title,summary,next,owner,verifier,done_when,files,status,revision,updated) VALUES(?,?,?,?,?,?,?,?,'open',1,?)",room,
+          field(input.title,120,true),field(input.summary??'',8000),field(input.next,2000,true),owner,verifier,doneWhen,files,now()).lastInsertRowid);
       }else{
         const row=one('SELECT * FROM handoff_tasks WHERE id=? AND room=?',id,room);
         if(!row)fail('Task is not in this room.');
@@ -50,7 +57,8 @@ function createHandoff({db,all,one,run,member,notify}){
           if(action==='handoff_accept')member(row.offered_to,room);
           run("UPDATE handoff_tasks SET owner=?,offered_to=NULL,status='open' WHERE id=?",action==='handoff_accept'?row.offered_to:row.owner,id);
         }else{
-          if(!human&&row.owner!==actor)fail('Only the task owner can make this change.');
+          const isVerifier=Boolean(row.verifier&&row.verifier===actor);
+          if(!human&&row.owner!==actor&&!(action==='handoff_complete'&&isVerifier))fail('Only the task owner can make this change.');
           if(action==='handoff_offer'){
             if(row.status!=='open')fail('This task already has a pending handoff.');
             const target=member(input.target,room);
@@ -59,11 +67,17 @@ function createHandoff({db,all,one,run,member,notify}){
             run("UPDATE handoff_tasks SET offered_to=?,status='offered',next=? WHERE id=?",target.id,next,id);
             notify(room,target.id,id,row.title,next,row.revision+1);
           }else if(action==='handoff_update'){
-            run('UPDATE handoff_tasks SET title=?,summary=?,next=? WHERE id=?',field(input.title??row.title,120,true),
-              field(input.summary??row.summary,8000),field(input.next??row.next,2000,true),id);
+            const verifier=input.verifier===undefined?row.verifier:(input.verifier?member(input.verifier,room).id:null);
+            run('UPDATE handoff_tasks SET title=?,summary=?,next=?,verifier=?,done_when=?,files=? WHERE id=?',field(input.title??row.title,120,true),
+              field(input.summary??row.summary,8000),field(input.next??row.next,2000,true),verifier,field(input.doneWhen??row.done_when??'',1000),field(input.files??row.files??'',1000),id);
           }else if(action==='handoff_complete'){
-            if(row.status!=='open')fail('Resolve the handoff before completing the task.');
-            run("UPDATE handoff_tasks SET status='done' WHERE id=?",id);
+            if(!['open','verifying'].includes(row.status))fail('Resolve the handoff before completing the task.');
+            if(row.status==='open'&&row.verifier&&row.verifier!==row.owner&&!human&&!isVerifier){
+              run("UPDATE handoff_tasks SET status='verifying' WHERE id=?",id);
+              notify(room,row.verifier,id,'[검증 요청] '+row.title,row.done_when||row.next,row.revision+1);
+            }else{
+              run("UPDATE handoff_tasks SET status='done' WHERE id=?",id);
+            }
           }else fail('Unknown handoff action.');
         }
         run('UPDATE handoff_tasks SET revision=revision+1,updated=? WHERE id=?',now(),id);
