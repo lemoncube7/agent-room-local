@@ -1,7 +1,8 @@
 # Changelog
 
 ## v0.2.50
-- **Codex `active_writer` 데스크톱 앱 pipe 폴백 (`hub.cjs`, `codex-ipc.cjs`):** 데스크톱 앱에 열린 Codex 스레드로 `codex exec resume`이 잠금 오류(`already has an active writer`)를 반환하면, `codex-app-tools-*` named pipe(`send_message_to_thread`)로 자동 우회 전달합니다.
+- **Codex 데스크톱 앱 양방향 연동 (`hub.cjs`, `codex-ipc.cjs`):** `active_writer` 잠금 시 `codex-app-tools-*` named pipe로 미수신 동료 메시지까지 포함해 간결히 전달하고, Codex 데스크톱에서 작성한 일반 답변(`rollout-*.jsonl` `task_complete`)도 중복 없이 방에 자동 미러링합니다.
+- **반복 프롬프트 축약 (`hub.cjs`):** 기존 세션이 이어진 턴에서는 매번 반복되던 긴 기본 안내문을 생략해 프롬프트를 크게 줄였습니다.
 - **인증 만료 시 자동 로그인 창 & 버튼 (`hub.cjs`, `index.html`):** `claude`/`codex`/`agy`에서 `auth_expired` 발생 시 자동으로 로그인 터미널 창을 띄우고(5분 쿨다운), 카드에 `로그인 창 열기` 버튼을 추가했습니다.
 - **프로젝트 신뢰 자동 등록 (`setup.ps1`, `managed-codex.cjs`):** `-Global` 적용 시 선택한 프로젝트를 `~/.codex/config.toml`에 `trust_level = "trusted"`로 자동 등록하며, `active_writer` 진단 안내를 추가했습니다.
 

@@ -178,6 +178,60 @@ function routeAgentReply(room,author,seq,recipient,called,root,wake){
     run('INSERT OR IGNORE INTO deliveries(seq,member,state,priority) VALUES(?,?,?,?)',seq,id,active?'queued':'context_only',active?1:0);
   }
 }
+const codexMirrorState=new Map();
+function findCodexRolloutFile(threadId){
+  const root=path.join(os.homedir(),'.codex','sessions');
+  if(!threadId||!fs.existsSync(root))return null;
+  const walk=(dir,depth)=>{
+    let entries;try{entries=fs.readdirSync(dir,{withFileTypes:true});}catch{return null;}
+    entries.sort((a,b)=>b.name.localeCompare(a.name));
+    for(const e of entries){
+      const full=path.join(dir,e.name);
+      if(e.isDirectory()&&depth<3){const hit=walk(full,depth+1);if(hit)return hit;}
+      else if(e.isFile()&&e.name.startsWith('rollout-')&&e.name.endsWith('.jsonl')&&e.name.includes(threadId))return full;
+    }
+    return null;
+  };
+  return walk(root,0);
+}
+function mirrorCodexDesktopReplies(){
+  if(draining||process.env.ROOM_PORT==='0')return;
+  const rows=all("SELECT m.id AS member,m.room,COALESCE(db.thread,cs.thread) AS thread FROM members m LEFT JOIN desktop_bindings db ON db.member=m.id LEFT JOIN cli_sessions cs ON cs.member=m.id AND cs.provider='codex' WHERE m.state='approved' AND COALESCE(db.thread,cs.thread) IS NOT NULL");
+  const now=Date.now();
+  for(const {member:memberId,room,thread} of rows){
+    let st=codexMirrorState.get(memberId);
+    if(!st||st.thread!==thread){st={thread,file:null,offset:0,lastScan:0,seenTurns:new Set()};codexMirrorState.set(memberId,st);}
+    if(!st.file){
+      if(now-st.lastScan<15000)continue;
+      st.lastScan=now;
+      const found=findCodexRolloutFile(thread);
+      if(!found)continue;
+      st.file=found;
+      try{st.offset=fs.statSync(found).size;}catch{st.file=null;}
+      continue;
+    }
+    let size;try{size=fs.statSync(st.file).size;}catch{st.file=null;continue;}
+    if(size<=st.offset)continue;
+    let chunk='';
+    try{
+      const fd=fs.openSync(st.file,'r');
+      try{const buf=Buffer.alloc(size-st.offset);fs.readSync(fd,buf,0,buf.length,st.offset);chunk=buf.toString('utf8');}finally{fs.closeSync(fd);}
+    }catch{continue;}
+    const lastNl=chunk.lastIndexOf('\n');
+    if(lastNl<0)continue;
+    st.offset+=Buffer.byteLength(chunk.slice(0,lastNl+1),'utf8');
+    for(const line of chunk.slice(0,lastNl).split('\n')){
+      let ev;try{ev=JSON.parse(line);}catch{continue;}
+      if(ev?.type!=='event_msg'||ev.payload?.type!=='task_complete')continue;
+      const turnId=ev.payload.turn_id, msg=String(ev.payload.last_agent_message||'').trim();
+      if(!turnId||!msg||msg==='[[AGENT_ROOM_NO_REPLY]]'||cliBusy.has(memberId)||st.seenTurns.has(turnId))continue;
+      st.seenTurns.add(turnId);
+      const recentCutoff=new Date(Date.now()-30000).toISOString();
+      if(one('SELECT 1 FROM messages WHERE room=? AND author=? AND body=? AND created>=?',room,memberId,msg,recentCutoff))continue;
+      storeMessage(room,memberId,msg);
+    }
+  }
+}
 function queueForRoom(room,author,seq,recipient=null,root=null){
   run("INSERT INTO deliveries(seq,member,state,priority) SELECT ?,members.id,CASE WHEN members.paused=0 THEN 'queued' ELSE 'context_only' END,CASE WHEN members.paused=0 THEN NULL ELSE 0 END FROM members JOIN cli_sessions ON cli_sessions.member=members.id WHERE room=? AND state='approved' AND members.id<>? AND (? IS NULL OR members.id=?) AND (members.id=? OR NOT EXISTS(SELECT 1 FROM deliveries prior WHERE prior.seq=? AND prior.member=members.id AND prior.priority=0))",seq,room,author,recipient,recipient,recipient,root);
 }
@@ -472,7 +526,9 @@ async function cliTurn(participant, prompt, inputSeq){
     const memoBlock=roomMemo?'\nPinned room memo (shared rules & decisions): '+roomMemo:'';
     const activeTasks=all("SELECT t.id,t.title,t.next,t.status,o.name AS owner_name,f.name AS offered_name FROM handoff_tasks t LEFT JOIN members o ON o.id=t.owner LEFT JOIN members f ON f.id=t.offered_to WHERE t.room=? AND t.status<>'done' ORDER BY t.id DESC LIMIT 10",row.room);
     const tasksBlock=activeTasks.length?'\nActive room tasks: '+JSON.stringify(activeTasks.map(t=>({id:t.id,title:t.title,status:t.status,owner:t.owner_name||'unassigned',...(t.offered_name?{offeredTo:t.offered_name}:{}),next:t.next}))):'';
-    fullPrompt=context+formatLimitsContext()+' '+audience+' '+replyPolicy+structurePolicy+multiP1Policy+handoffPolicy+(interruptedTurns.delete(jobId)?' Your previous turn on this message was interrupted by an app restart. Check what was already done (files, git status) before continuing, and do not repeat completed work.':'')+memoBlock+tasksBlock+deliveryBlock+activityBlock+historyBlock+retractBlock+receivedBlock+'\n\n'+prompt;
+    const compact=Boolean(session.thread);
+    const shortContext='Display name: '+JSON.stringify(row.name)+' ('+session.provider+').'+roleNote+' room roster: '+JSON.stringify(peerRoster)+'. Never invent a reply from another agent.';
+    fullPrompt=(compact?shortContext:context)+formatLimitsContext()+' '+audience+(compact?'':' '+replyPolicy)+structurePolicy+multiP1Policy+handoffPolicy+(interruptedTurns.delete(jobId)?' Your previous turn on this message was interrupted by an app restart. Check what was already done (files, git status) before continuing, and do not repeat completed work.':'')+memoBlock+tasksBlock+deliveryBlock+activityBlock+historyBlock+retractBlock+receivedBlock+'\n\n'+prompt;
     const result=await invokeCli(session.project,fullPrompt,session.thread,session.provider,session.model,session.effort,turnOptions);
     cliCooldown.delete(participant);limitNotified.delete(participant);cliRepeatErrors.delete(participant);
     for(const item of retractedNotices)run("UPDATE deliveries SET state='retracted' WHERE seq=? AND member=? AND state='retract_notice'",item.seq,participant);
@@ -548,9 +604,12 @@ async function cliTurn(participant, prompt, inputSeq){
       return;
     }
     if(error.cliCode==='active_writer'&&session.provider==='codex'&&session.thread){
+      const roomName=one('SELECT name FROM rooms WHERE id=?',row.room)?.name||row.room;
+      const missed=received.length?received.map(({name,body})=>`[${name}] ${clipContext(body,true,'codex')}`).join('\n')+'\n\n':'';
+      const desktopPrompt='[Agent Room · '+roomName+' | '+row.name+']\n'+missed+prompt+'\n\n(이 방으로 회신하려면 `send_message` MCP 도구 또는 `node "'+path.join(__dirname,'bridge.cjs')+'" say "'+row.room+'" "<답변>" --as "'+row.name+'"` 를 실행하세요. 답장이 불필요하면 방으로 보내지 마세요.)';
       const ipcState=await new Promise(resolve=>{
         const payload=path.join(local,randomUUID()+'.app-input.json');
-        try{fs.writeFileSync(payload,JSON.stringify({threadId:session.thread,participant,prompt:fullPrompt,eventId:String(inputSeq||randomUUID())}),{flag:'wx'});}
+        try{fs.writeFileSync(payload,JSON.stringify({threadId:session.thread,participant,prompt:desktopPrompt,eventId:String(inputSeq||randomUUID())}),{flag:'wx'});}
         catch{return resolve('failed');}
         execFile(process.execPath,[path.join(__dirname,'codex-ipc.cjs'),payload],{windowsHide:true,timeout:30000},(_err,stdout)=>{
           try{fs.rmSync(payload,{force:true});}catch{}
@@ -1327,7 +1386,7 @@ server.listen(Number(process.env.ROOM_PORT||4317),'127.0.0.1',()=>{
   drainOutbox();
   recoverDetachedTurns();
   dispatchQueuedTurns();
-  setInterval(()=>{if(!draining){drainOutbox();dispatchRankings();dispatchQueuedTurns();dispatchDesktop();}},1000).unref();
+  setInterval(()=>{if(!draining){drainOutbox();dispatchRankings();dispatchQueuedTurns();dispatchDesktop();mirrorCodexDesktopReplies();}},1000).unref();
   const refreshAllLimits=()=>{if(!draining){void refreshCodexLimits();void refreshAgyLimits(true);}};
   setTimeout(refreshAllLimits,2000).unref();
   setInterval(refreshAllLimits,20*60*1000).unref();
