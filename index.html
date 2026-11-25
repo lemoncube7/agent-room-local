@@ -420,8 +420,10 @@ function renderActivity(members,messages,mainMember){
   const cls=m.provider==='agy'?'agy':m.provider==='codex'||agentPane(m.name)==='gpt'?'codex':m.provider==='claude'||agentPane(m.name)==='claude'?'claude':'';
   card.className='act-card'+(cls?' '+cls:'');
   const pendingApproval=(snapshot.approvals||[]).find(a=>a.room===selected&&a.name===m.name);
+  const lastUserSeq=[...messages].reverse().find(msg=>msg.author==='human:'+selected)?.seq;
+  const appWorking=!m.busy&&lastUserSeq&&(snapshot.deliveries||[]).some(d=>d.seq===lastUserSeq&&d.member===m.id&&d.state==='accepted');
   const dot=document.createElement('span');
-  dot.className='act-dot'+(pendingApproval||m.conflict?' approval':m.paused?'':m.busy?' busy':m.cliError||m.state==='start_failed'?' error':'');
+  dot.className='act-dot'+(pendingApproval||m.conflict?' approval':m.paused?'':m.busy||appWorking?' busy':m.cliError||m.state==='start_failed'?' error':'');
   const name=el('span',m.name);name.className='act-name';name.prepend(dot);
   if(mainMember?.id===m.id){const tag=el('span','메인');tag.className='act-main';name.append(tag);}
   const lim=m.provider?snapshot.limits?.[m.provider]:null;
@@ -433,11 +435,12 @@ function renderActivity(members,messages,mainMember){
    :m.conflict?'⚠ 동시 수정 주의: '+m.conflict
    :m.paused?'일시정지됨 (호출·응답 중지)'
    :m.busy?(m.progress?.task||m.progress?.step||'응답 준비 중…')+(elapsed>=2?' ('+elapsed+'초)':'')
+   :appWorking?'앱에서 응답 중…'
    :m.cliError?m.cliError.message
    :m.state==='pending'?'방 승인 대기 중'
    :m.state==='starting'?'CLI 시작 중…'
    :m.state==='start_failed'?'실행 실패'
-   :m.provider?'대기 중':'연결됨';
+   :m.hasSession?'연결됨':'대기 중';
   const step=el('div',stepText);step.className='act-step';step.title=stepText;
   card.append(head,step);
   const lastMsg=!m.busy?[...messages].reverse().find(msg=>msg.author===m.id)?.body?.trim().split(/\r?\n/).filter(Boolean)[0]:'';

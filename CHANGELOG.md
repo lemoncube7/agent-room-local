@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.53
+- **Codex 데스크톱 중복 컨텍스트 제거 (`hub.cjs`):** `active_writer` 폴백으로 데스크톱 앱에 전달한 미수신 메시지를 즉시 `context_seen`으로 마킹해, 다음 턴마다 이전 메시지가 중복 전송되던 문제를 해결했습니다.
+- **미러링 답변의 동료 호출(`[[CALL:...]]`) 연동 (`hub.cjs`):** 데스크톱 앱에서 작성한 일반 답변에도 `[[CALL:...]]`/`[[NEXT:...]]`/`[[TO:...]]`를 인식해 다음 동료를 자동으로 깨웁니다.
+- **기존 세션 카드 상태 표시 개선 (`index.html`, `hub.cjs`):** 유휴 시 `연결됨`, 앱 답변 대기 시 `앱에서 응답 중…`으로 표시하며 미러링 완료 시 `answered`로 갱신합니다.
+
 ## v0.2.52
 - **`hub.cjs` 기동 크래시 수정:** 상단에 누락된 `const os = require('node:os')`를 추가해 세션 미러링 타이머에서 발생하던 `ReferenceError`를 해결했습니다.
 - **Claude · Antigravity 일반 답변 자동 미러링 (`hub.cjs`):** Codex에 이어 Claude(`~/.claude/projects/*/*.jsonl`)와 Antigravity(`transcript.jsonl`)의 외부 세션 일반 답변도 중복 없이 방에 자동 미러링합니다.

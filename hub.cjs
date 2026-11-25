@@ -259,13 +259,29 @@ function mirrorSessionReplies(){
       let ev;try{ev=JSON.parse(line);}catch{continue;}
       const extracted=extractMirrorReply(provider,ev);
       if(!extracted)continue;
-      const msg=stripWorkLines(String(extracted.text||'')).trim();
+      let body=stripWorkLines(String(extracted.text||'')).trim();
       const turnId=extracted.turnId;
-      if(!turnId||!msg||msg==='[[AGENT_ROOM_NO_REPLY]]'||cliBusy.has(memberId)||st.seenTurns.has(turnId))continue;
+      if(!turnId||!body||body==='[[AGENT_ROOM_NO_REPLY]]'||cliBusy.has(memberId)||st.seenTurns.has(turnId))continue;
       st.seenTurns.add(turnId);
+      const roomPeers=all("SELECT id FROM members WHERE room=? AND state='approved' AND id<>?",room,memberId);
+      const called=new Set();
+      for(let ctrl=body.match(/^\[\[(CALL|NEXT):([^\]\r\n]+)\]\]\s*/);ctrl;ctrl=body.match(/^\[\[(CALL|NEXT):([^\]\r\n]+)\]\]\s*/)){
+        const targetId=ctrl[2].trim();
+        if(roomPeers.some(p=>p.id===targetId))called.add(targetId);
+        body=body.slice(ctrl[0].length);
+      }
+      const toMatch=body.match(/^\[\[TO:([^\]\r\n]+)\]\]\s*\r?\n([\s\S]*)$/);
+      const recipient=toMatch&&roomPeers.some(p=>p.id===toMatch[1])?toMatch[1]:null;
+      if(recipient)body=toMatch[2].trim();
+      if(!body||body==='[[AGENT_ROOM_NO_REPLY]]')continue;
       const recentCutoff=new Date(Date.now()-30000).toISOString();
-      if(one('SELECT 1 FROM messages WHERE room=? AND author=? AND body=? AND created>=?',room,memberId,msg,recentCutoff))continue;
-      storeMessage(room,memberId,msg);
+      if(one('SELECT 1 FROM messages WHERE room=? AND author=? AND body=? AND created>=?',room,memberId,body,recentCutoff))continue;
+      const postedSeq=storeMessage(room,memberId,body,null,recipient);
+      run("UPDATE deliveries SET state='answered' WHERE member=? AND state IN ('accepted','uncertain') AND seq IN (SELECT seq FROM messages WHERE room=?)",memberId,room);
+      if(called.size){
+        for(const targetId of called)queueForRoom(room,memberId,postedSeq,targetId,postedSeq);
+        setImmediate(dispatchQueuedTurns);
+      }
     }
   }
 }
@@ -643,7 +659,8 @@ async function cliTurn(participant, prompt, inputSeq){
     if(error.cliCode==='active_writer'&&session.provider==='codex'&&session.thread){
       const roomName=one('SELECT name FROM rooms WHERE id=?',row.room)?.name||row.room;
       const missed=received.length?received.map(({name,body})=>`[${name}] ${clipContext(body,true,'codex')}`).join('\n')+'\n\n':'';
-      const desktopPrompt='[Agent Room · '+roomName+' | '+row.name+']\n'+missed+prompt+'\n\n(이 방으로 회신하려면 `send_message` MCP 도구 또는 `node "'+path.join(__dirname,'bridge.cjs')+'" say "'+row.room+'" "<답변>" --as "'+row.name+'"` 를 실행하세요. 답장이 불필요하면 방으로 보내지 마세요.)';
+      const callHint=peers.length?' · 다음 동료 호출 시 첫 줄에 [[CALL:id]] '+JSON.stringify(peers.map(({id,name})=>({id,name}))):'';
+      const desktopPrompt='[Agent Room · '+roomName+' | '+row.name+']\n'+missed+prompt+'\n\n(일반 답변은 방에 자동 전달됩니다'+callHint+'. 답장이 불필요하면 [[AGENT_ROOM_NO_REPLY]] 만 쓰세요.)';
       const ipcState=await new Promise(resolve=>{
         const payload=path.join(local,randomUUID()+'.app-input.json');
         try{fs.writeFileSync(payload,JSON.stringify({threadId:session.thread,participant,prompt:desktopPrompt,eventId:String(inputSeq||randomUUID())}),{flag:'wx'});}
@@ -655,6 +672,7 @@ async function cliTurn(participant, prompt, inputSeq){
       });
       if(ipcState==='accepted'||ipcState==='uncertain'){
         run('UPDATE cli_sessions SET last_cli_error=NULL WHERE member=?',participant);
+        for(const s of sentContext)run("UPDATE deliveries SET state='context_seen' WHERE seq=? AND member=? AND state='context_only'",s,participant);
         if(row.state==='starting')run("UPDATE members SET state='approved' WHERE id=? AND state='starting'",participant);
         if(inputSeq)run('UPDATE deliveries SET state=? WHERE seq=? AND member=?',ipcState,inputSeq,participant);
         return;
