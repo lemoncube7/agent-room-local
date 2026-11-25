@@ -492,6 +492,7 @@ function createAcpHost(file,prefix,project,session,model,effort,options={},onExi
         continue;
       }
       if(msg.method==='session/request_permission'&&msg.id!==undefined){
+        if(active)active.lastActivity=Date.now();
         const p=msg.params||{}, tc=p.toolCall||{}, opts=Array.isArray(p.options)?p.options:[];
         const handler=active?.onApproval||options.onApproval;
         Promise.resolve(handler?handler({tool:tc.title||tc.kind||'Tool',kind:tc.kind||'other',input:tc.rawInput||{},locations:tc.locations||[]}):'allow_once')
@@ -507,6 +508,7 @@ function createAcpHost(file,prefix,project,session,model,effort,options={},onExi
         continue;
       }
       if(msg.method==='session/update'&&active){
+        active.lastActivity=Date.now();
         const u=msg.params?.update||{};
         const kind=u.sessionUpdate||u.type||'';
         if(kind==='agent_thought_chunk')active.writeProgress('생각 중…');
@@ -544,7 +546,7 @@ function createAcpHost(file,prefix,project,session,model,effort,options={},onExi
       await ready;
       const liveFile=turnOpts.inboxFile?turnOpts.inboxFile+'.live':null;
       const turn={
-        text:'',pendingInterim:'',emittedInterim:false,writeProgress,onApproval:turnOpts.onApproval,
+        text:'',pendingInterim:'',emittedInterim:false,lastActivity:Date.now(),writeProgress,onApproval:turnOpts.onApproval,
         flushInterim(){
           const t=cleanInterim(turn.pendingInterim);
           turn.pendingInterim='';
@@ -555,14 +557,28 @@ function createAcpHost(file,prefix,project,session,model,effort,options={},onExi
       };
       active=turn;
       if(liveFile)try{fs.writeFileSync(liveFile,'1');}catch{}
+      let watchdog;
       try{
-        const res=await rpc('session/prompt',{sessionId,prompt:[{type:'text',text:prompt}]});
+        const promptPromise=rpc('session/prompt',{sessionId,prompt:[{type:'text',text:prompt}]});
+        const timeoutPromise=new Promise((_,reject)=>{
+          watchdog=setInterval(()=>{
+            if(Date.now()-turn.lastActivity>5*60*1000){
+              clearInterval(watchdog);
+              alive=false;
+              try{child.kill();}catch{}
+              reject(diagnoseCliFailure('agy',{killed:true},'ACP turn timed out after 5 minutes of inactivity'));
+            }
+          },15000);
+          watchdog.unref?.();
+        });
+        const res=await Promise.race([promptPromise,timeoutPromise]);
         turnsCompleted++;
         const reply=(turn.emittedInterim?turn.pendingInterim.trim():turn.text.trim())||'[[AGENT_ROOM_NO_REPLY]]';
         return {id:sessionId,reply,usage:{turns:1,inputTokens:0,outputTokens:0,costUsd:0},stopReason:res?.stopReason};
       }catch(err){
         throw Object.assign(err.cliCode?err:diagnoseCliFailure('agy',err,stderr),{warmReused:turnsCompleted>0});
       }finally{
+        clearInterval(watchdog);
         active=null;
         if(liveFile)fs.rmSync(liveFile,{force:true});
         if(turnOpts.inboxFile)fs.rmSync(turnOpts.inboxFile,{force:true});
