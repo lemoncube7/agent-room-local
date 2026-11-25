@@ -769,8 +769,31 @@ function renderHistory(view,messages,roomChanged){
   const author=snapshot.members.find(member=>member.id===m.author);
   const target=m.recipient?snapshot.members.find(member=>member.id===m.recipient):null;
   const sorted=(deliveryBySeq.get(m.seq)||[]).sort((a,b)=>(a.priority||Infinity)-(b.priority||Infinity));
+  const activeDeliveries=sorted.filter(d=>!snapshot.members.find(x=>x.id===d.member)?.paused);
+  const nonZero=activeDeliveries.filter(d=>d.priority!==0);
+  let delivery='';
+  if(nonZero.length){
+   const stages=new Map();
+   for(const d of nonZero){
+    const p=d.priority===null||d.priority===undefined?'':String(d.priority);
+    if(!stages.has(p))stages.set(p,new Map());
+    const byState=stages.get(p);
+    if(!byState.has(d.state))byState.set(d.state,[]);
+    byState.get(d.state).push(d.name);
+   }
+   delivery=[...stages].map(([p,byState])=>{
+    const prefix=p?p+' · ':'';
+    if(byState.size===1){
+     const [[st,names]]=[...byState];
+     return prefix+names.join(', ')+' · '+(status[st]||st);
+    }
+    return prefix+[...byState].map(([st,names])=>names.join(', ')+'('+(status[st]||st)+')').join(', ');
+   }).join(' / ');
+  }else if(activeDeliveries.length){
+   delivery='모두 응답 생략 (0순위)';
+  }
   const fallback=snapshot.replyPlans?.some(plan=>plan.seq===m.seq&&plan.state==='fallback');
-  const delivery=sorted.map(d=>(d.priority===null||d.priority===undefined?'':d.priority+' · ')+d.name+' · '+status[d.state]).join(' / ')+(fallback?' · 기본 순서 사용':'');
+  if(fallback)delivery+=(delivery?' · ':'')+'기본 순서 사용';
   const replies=repliesByRoot.get(m.seq)||[];
   const handoffs=replies.filter(source=>!source.retracted).flatMap(source=>(deliveryBySeq.get(source.seq)||[])
    .filter(target=>target.priority===1||source.recipient===target.member)
