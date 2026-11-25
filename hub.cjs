@@ -697,7 +697,7 @@ function getWarmApproval(participant,room,name,permission){
 }
 async function cliTurn(participant, prompt, inputSeq){
   const session=one('SELECT * FROM cli_sessions WHERE member=?',participant);
-  const row=one("SELECT room,name,state,role FROM members WHERE id=? AND state IN ('approved','starting')",participant);
+  const row=one("SELECT room,name,state,role,parent FROM members WHERE id=? AND state IN ('approved','starting')",participant);
   let fullPrompt=prompt;
   if(!session||!row||cliBusy.has(participant))return;
   cliBusy.add(participant);
@@ -815,9 +815,24 @@ async function cliTurn(participant, prompt, inputSeq){
     }
     let replyText=stripWorkLines(result.reply);
     const called=new Set(), forwarded=new Set();
-    for(let ctrl=replyText.match(/^\[\[(CALL|FORWARD|NEXT|HANDOFF_OFFER|HANDOFF_COMPLETE):([^\]\r\n]+)\]\]\s*/);ctrl;ctrl=replyText.match(/^\[\[(CALL|FORWARD|NEXT|HANDOFF_OFFER|HANDOFF_COMPLETE):([^\]\r\n]+)\]\]\s*/)){
+    for(let ctrl=replyText.match(/^\[\[(CALL|FORWARD|NEXT|HANDOFF_OFFER|HANDOFF_COMPLETE|SPAWN):([^\]\r\n]+)\]\]\s*/);ctrl;ctrl=replyText.match(/^\[\[(CALL|FORWARD|NEXT|HANDOFF_OFFER|HANDOFF_COMPLETE|SPAWN):([^\]\r\n]+)\]\]\s*/)){
       const tag=ctrl[1], arg=ctrl[2].trim();
-      if(tag==='HANDOFF_OFFER'){
+      if(tag==='SPAWN'){
+        const parts=arg.split(':');
+        const spec=(parts[0]||'').trim(), subName=(parts[1]||'').trim(), subTask=parts.slice(2).join(':').trim();
+        const [subProvider,subModel]=spec.split('/').map(s=>s.trim());
+        const activeSubs=one("SELECT COUNT(*) AS c FROM members WHERE parent=? AND state IN ('starting','approved')",participant)?.c||0;
+        if(row.parent)storeMessage(row.room,participant,'서브에이전트는 다른 서브에이전트를 생성할 수 없어요.');
+        else if(!Object.hasOwn(providerNames,subProvider))storeMessage(row.room,participant,'알 수 없는 CLI 종류('+subProvider+')로 서브에이전트를 생성할 수 없어요.');
+        else if(activeSubs>=3)storeMessage(row.room,participant,'한 에이전트 아래에는 최대 3개의 서브에이전트만 둘 수 있어요.');
+        else if(!subTask)storeMessage(row.room,participant,'서브에이전트 지시 내용이 비어 있어요.');
+        else{
+          const childId=randomUUID(), childName=(subName||subModel||providerNames[subProvider]).slice(0,120);
+          run("INSERT INTO members(id,room,name,state,role,parent) VALUES(?,?,?,'starting','',?)",childId,row.room,childName,participant);
+          run('INSERT INTO cli_sessions(member,project,provider,model,effort,permission_profile) VALUES(?,?,?,?,?,?)',childId,session.project,subProvider,subModel||null,null,session.permission_profile||'dev');
+          void cliTurn(childId,'[서브에이전트 지시 · 부모: '+row.name+']\n'+subTask);
+        }
+      }else if(tag==='HANDOFF_OFFER'){
         const [taskStr,targetId]=arg.split(':').map(s=>s.trim());
         const taskId=Number(taskStr);
         const curTask=Number.isInteger(taskId)?one('SELECT revision,next FROM handoff_tasks WHERE id=? AND room=?',taskId,row.room):null;
@@ -1569,6 +1584,10 @@ const server=http.createServer(async(req,res)=>{
         if(!one('SELECT id FROM rooms WHERE id=?',args.room))throw Error('Room not found.');
         run('UPDATE rooms SET memo=? WHERE id=?',args.memo?.trim()?str(args.memo,4000):'',args.room);
       }
+      else if(args.action==='set_room_folder'){
+        if(!one('SELECT id FROM rooms WHERE id=?',args.room))throw Error('Room not found.');
+        run('UPDATE rooms SET folder=? WHERE id=?',args.folder?.trim()?str(args.folder,40):'',args.room);
+      }
       else if(args.action==='remote_sync'){
         const cur=readRemoteConfig();
         const site=args.site!==undefined?String(args.site||'').trim().slice(0,300):cur.site;
@@ -1663,10 +1682,17 @@ const server=http.createServer(async(req,res)=>{
         const name=args.name?.trim()?str(args.name,120):model||providerNames[provider];
         const role=args.role?.trim()?str(args.role,120):'';
         const thread=args.thread?.trim()?str(args.thread,120):null;
+        let parentId=null, parentProject=null;
+        if(args.parent){
+          const parentRow=one("SELECT id,parent FROM members WHERE id=? AND room=? AND state='approved'",args.parent,args.room);
+          if(!parentRow||parentRow.parent)throw Error('서브에이전트는 승인된 기본 에이전트 아래에만 추가할 수 있어요.');
+          parentId=parentRow.id;
+          parentProject=one('SELECT project FROM cli_sessions WHERE member=?',parentId)?.project||null;
+        }
         const matchedSession=thread?discoverSessions(provider).find(s=>s.id===thread):null;
-        const sessionProject=matchedSession?.project&&fs.existsSync(matchedSession.project)?matchedSession.project:project;
+        const sessionProject=matchedSession?.project&&fs.existsSync(matchedSession.project)?matchedSession.project:(parentProject&&fs.existsSync(parentProject)?parentProject:project);
         const effort=normalizeEffort(args.effort);
-        run('INSERT INTO members(id,room,name,state,role) VALUES(?,?,?,?,?)',id,args.room,name,thread?'approved':'starting',role);
+        run('INSERT INTO members(id,room,name,state,role,parent) VALUES(?,?,?,?,?,?)',id,args.room,name,thread?'approved':'starting',role,parentId);
         run('INSERT INTO cli_sessions(member,project,provider,model,effort,permission_profile,thread) VALUES(?,?,?,?,?,?,?)',id,sessionProject,provider,model,effort,normalizePermission(args.permission),thread);
         run("INSERT OR IGNORE INTO members(id,room,name,state) VALUES(?,?,?,'human')",'human:'+args.room,args.room,'나');
         if(!thread)void cliTurn(id,'You are connected to Agent Room. Briefly say hello in Korean. Do not change any project files.');

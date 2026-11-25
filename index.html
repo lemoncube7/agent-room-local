@@ -58,14 +58,14 @@ aside{min-height:0;overflow:hidden}#rooms{flex:1;min-height:0;overflow:auto;alig
 header{position:relative;padding:9px 16px}.head-row{display:flex;align-items:center;gap:8px;min-width:0}.head-row button{margin:0}.head-row h2{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.icon-btn{flex:none;width:32px;height:32px;padding:0;display:inline-grid;place-items:center;background:transparent;border-color:transparent;color:var(--muted);font-size:16px;line-height:1}.icon-btn:hover,.icon-btn[aria-expanded=true]{background:var(--raised);color:var(--text)}#room-mode{flex:none;max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:1px 9px}#room-mode:empty{display:none}.head-space{flex:1}
 #room-actions{position:absolute;z-index:20;top:calc(100% - 4px);right:12px;width:230px;display:grid;gap:2px;margin:0;padding:5px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 28px #0008}#room-actions[hidden]{display:none}#room-actions button{width:100%;text-align:left;font-size:13px;padding:7px 10px;border-color:transparent;background:transparent}#room-actions button:hover{background:var(--hover)}#reply-priority[aria-pressed=true]{border-color:transparent}
 #agent-panel{min-height:0;display:flex;flex-direction:column;background:var(--panel);border-left:1px solid var(--line)}.panel-head{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 12px;border-bottom:1px solid var(--line);font-size:13px}.panel-head button{font-size:12px;padding:4px 10px}
-#activity{flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;max-height:none;margin:0;padding:10px;overflow:auto}#activity:empty{display:none}.act-card{flex:none;background:var(--bg)}.act-step,.act-preview{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}.act-actions{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;padding-top:6px;border-top:1px solid var(--line)}.act-actions button{padding:2px 8px;font-size:11px;color:var(--muted);background:transparent;border-radius:6px}.act-actions button:hover{color:var(--text);background:var(--hover)}.act-main{flex:none;font-size:10px;font-weight:600;color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:0 4px}.act-parent{font-size:11px;color:var(--muted)}
+#activity{flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;max-height:none;margin:0;padding:10px;overflow:auto}#activity:empty{display:none}.act-card{flex:none;background:var(--bg)}.act-step,.act-preview{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}.act-actions{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;padding-top:6px;border-top:1px solid var(--line)}.act-actions button{padding:2px 8px;font-size:11px;color:var(--muted);background:transparent;border-radius:6px}.act-actions button:hover{color:var(--text);background:var(--hover)}.act-main{flex:none;font-size:10px;font-weight:600;color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:0 4px}.act-parent{font-size:11px;color:var(--muted)}.act-card.subagent{margin-left:16px;border-left-style:dashed}
 .history{padding-left:max(20px,calc((100% - 1240px)/2));padding-right:max(20px,calc((100% - 1240px)/2))}article{max-width:min(88%,1040px)}#task-list article{max-width:100%}
 .retract-btn{display:block;margin:4px 0 0 auto;padding:1px 8px;font-size:11px;color:var(--muted);background:transparent;border-color:transparent;opacity:0}article:hover>.retract-btn,.retract-btn:focus-visible{opacity:1}article.retracted{opacity:.6}article.retracted p{font-style:italic;color:var(--muted)}@media(hover:none){.retract-btn{opacity:1}}
 @media(max-width:1000px){body{grid-template-columns:minmax(0,1fr)}main{grid-column:1}body>aside,#agent-panel{position:fixed;z-index:30;top:0;bottom:0;width:min(300px,86vw);box-shadow:0 0 32px #000a}body>aside{left:0}#agent-panel{right:0}article{max-width:94%}#room-mode{display:none}}
 #work-dock{flex:none;margin:0;padding:6px max(22px,calc((100% - 1240px)/2));border-top:1px solid var(--line);background:var(--panel)}#work-dock:not([hidden]){display:flex;align-items:center;flex-wrap:wrap;gap:6px;color:var(--muted);font-size:12px}#work-dock button,.request-flow button{padding:3px 8px;font-size:12px}.work-chip{display:inline-flex;align-items:center;gap:6px;max-width:340px;padding:4px 10px!important;border-radius:999px;background:var(--raised);border:1px solid var(--line);color:var(--text);font-size:12px}.work-chip:hover{border-color:var(--accent)}.work-chip-step{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
 #work-panel{flex:0 0 34%;max-height:40vh;min-height:0;display:flex;flex-direction:column;background:var(--panel);border-top:1px solid var(--line)}#work-panel[hidden]{display:none}#work-output{flex:1;overflow:auto;min-height:0;overscroll-behavior:contain;padding:10px max(20px,calc((100% - 1240px)/2))}#work-panel select{min-width:0;max-width:65%}
 .request-flow{display:flex;align-items:center;flex-wrap:wrap;gap:5px;margin:8px 0;color:var(--muted);font-size:12px}.request-flow .flow-stage{display:inline-flex;flex-wrap:wrap;gap:4px}.request-flow small{flex-basis:100%}.history{position:relative}.history article.flow-focus{outline:2px solid var(--accent);outline-offset:2px}
-#rooms .room-entry{display:flex;align-items:center;gap:6px;min-width:0}#rooms .room-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#rooms .room-badges{display:flex;gap:4px;flex:none;margin-left:auto}#rooms .room-badge{padding:0 5px;border-radius:5px;font-size:10px;font-weight:650;white-space:nowrap}#rooms .room-badge-new{background:#293c65;color:#c6d8ff}#rooms .room-badge-approval{background:#554019;color:#ffdc95}
+#rooms .room-row{display:flex;align-items:center;gap:2px;min-width:0}#rooms .room-entry{flex:1;display:flex;align-items:center;gap:6px;min-width:0}#rooms .room-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#rooms .room-badges{display:flex;gap:4px;flex:none;margin-left:auto}#rooms .room-badge{padding:0 5px;border-radius:5px;font-size:10px;font-weight:650;white-space:nowrap}#rooms .room-badge-new{background:#293c65;color:#c6d8ff}#rooms .room-badge-approval{background:#554019;color:#ffdc95}#rooms .room-more-btn{flex:none;width:24px;height:28px;padding:0;border-color:transparent;background:transparent;color:var(--muted);font-size:14px;opacity:.45;display:grid;place-items:center}#rooms .room-row:hover .room-more-btn,#rooms .room-more-btn:focus-visible{opacity:1}#rooms .room-more-btn:hover{background:var(--hover);color:var(--text)}#rooms .room-folder{margin-top:4px}#rooms .room-folder>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:5px;padding:4px 8px;font-size:11px;font-weight:600;color:var(--muted);user-select:none}#rooms .room-folder>summary:hover{color:var(--text)}#rooms .room-folder-items{display:grid;gap:2px;padding-left:8px;border-left:1px solid var(--line);margin-left:8px}#room-item-menu{position:fixed;z-index:60;min-width:140px;display:grid;gap:2px;padding:4px;background:var(--panel);border:1px solid var(--line);border-radius:9px;box-shadow:0 8px 24px #0009}#room-item-menu[hidden]{display:none}#room-item-menu button{text-align:left;font-size:12px;padding:6px 10px;border-color:transparent;background:transparent}#room-item-menu button:hover{background:var(--hover)}#room-item-menu button.danger{color:#ff9b92}
 #first-agent{align-self:center;margin:12px}#first-agent[hidden]{display:none}.dialog-options{display:grid;gap:10px;margin-top:10px} dialog summary{cursor:pointer} button#room-mode,button#room-work-mode{display:inline-flex;font-size:12px;padding:4px 8px;white-space:nowrap} button#room-mode[hidden],button#room-work-mode[hidden],#judge-fields[hidden]{display:none}
 #room-work-mode{flex:none;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--muted)}#room-work-mode.dev{border-color:#35695f;color:#9ce6d2;background:#162825}#room-work-mode.chat{border-color:#4b5582;color:#c7d2fe;background:#1e2338}
 </style>
@@ -81,6 +81,27 @@ function readRoomSeen(){
  try{const value=JSON.parse(localStorage.getItem(roomSeenKey));return value&&typeof value==='object'&&!Array.isArray(value)?value:{};}catch{return {};}
 }
 let roomSeen=readRoomSeen();
+const folderFoldKey='agentRoomClosedFolders';
+function readClosedFolders(){try{return new Set(JSON.parse(localStorage.getItem(folderFoldKey)||'[]'));}catch{return new Set();}}
+const closedFolders=readClosedFolders();
+const roomItemMenu=el('div','');roomItemMenu.id='room-item-menu';roomItemMenu.hidden=true;
+const roomMenuFolderBtn=el('button','폴더 지정 / 변경'),roomMenuDeleteBtn=el('button','방 삭제');
+roomMenuFolderBtn.type='button';roomMenuDeleteBtn.type='button';roomMenuDeleteBtn.className='danger';
+roomItemMenu.append(roomMenuFolderBtn,roomMenuDeleteBtn);document.body.append(roomItemMenu);
+let menuTargetRoom=null;
+function closeRoomItemMenu(){roomItemMenu.hidden=true;menuTargetRoom=null;}
+document.addEventListener('click',e=>{if(!roomItemMenu.hidden&&!roomItemMenu.contains(e.target)&&!e.target.closest?.('.room-more-btn'))closeRoomItemMenu();});
+roomMenuFolderBtn.onclick=()=>{
+ const r=menuTargetRoom;closeRoomItemMenu();if(!r)return;
+ const next=prompt('폴더 이름을 입력하세요 (비우면 폴더 해제)',r.folder||'');
+ if(next!==null)void control({action:'set_room_folder',room:r.id,folder:next.trim()});
+};
+roomMenuDeleteBtn.onclick=()=>{
+ const r=menuTargetRoom;closeRoomItemMenu();if(!r)return;
+ if(confirm('“'+r.name+'” 방과 로컬 대화 기록을 삭제할까요? 되돌릴 수 없습니다. 첨부 파일과 이미 원격에 전송된 기록은 별도로 남습니다.')){
+  void control({action:'delete_room',room:r.id});
+ }
+};
 function renderRoomList(){
  const pendingByRoom=new Map();
  for(const item of snapshot.approvals||[]){
@@ -101,7 +122,8 @@ function renderRoomList(){
   roomSeen=updated;
   try{localStorage.setItem(roomSeenKey,JSON.stringify(updated));}catch{}
  }
- byId('rooms').replaceChildren(...snapshot.rooms.map(room=>{
+ const makeRoomRow=room=>{
+  const row=el('div','');row.className='room-row';
   const button=el('button',''),label=el('span',room.name),badges=el('span','');
   button.className='room-entry';label.className='room-label';badges.className='room-badges';
   button.title=room.name;
@@ -119,8 +141,40 @@ function renderRoomList(){
    if(narrowView()){document.body.classList.add('rooms-collapsed');localStorage.setItem('agentRoomRoomsCollapsed','1');}
    render();void refresh();
   };
-  return button;
- }));
+  const more=el('button','⋯');more.type='button';more.className='room-more-btn';more.title='방 메뉴 (폴더 · 삭제)';more.setAttribute('aria-label',room.name+' 메뉴');
+  more.onclick=e=>{
+   e.stopPropagation();
+   if(!roomItemMenu.hidden&&menuTargetRoom?.id===room.id){closeRoomItemMenu();return;}
+   menuTargetRoom=room;
+   const rect=more.getBoundingClientRect();
+   roomItemMenu.style.top=Math.min(window.innerHeight-90,rect.bottom+2)+'px';
+   roomItemMenu.style.left=Math.min(window.innerWidth-160,Math.max(8,rect.left-100))+'px';
+   roomItemMenu.hidden=false;
+  };
+  row.append(button,more);
+  return row;
+ };
+ const ungrouped=[], folders=new Map();
+ for(const room of snapshot.rooms){
+  const f=(room.folder||'').trim();
+  if(!f)ungrouped.push(room);
+  else{if(!folders.has(f))folders.set(f,[]);folders.get(f).push(room);}
+ }
+ const nodes=ungrouped.map(makeRoomRow);
+ for(const [folderName,rooms] of folders){
+  const details=el('details','');details.className='room-folder';details.open=!closedFolders.has(folderName);
+  const summary=el('summary',(details.open?'▾ ':'▸ ')+'📁 '+folderName+' ('+rooms.length+')');
+  details.ontoggle=()=>{
+   if(details.open)closedFolders.delete(folderName);else closedFolders.add(folderName);
+   summary.textContent=(details.open?'▾ ':'▸ ')+'📁 '+folderName+' ('+rooms.length+')';
+   try{localStorage.setItem(folderFoldKey,JSON.stringify([...closedFolders]));}catch{}
+  };
+  const box=el('div','');box.className='room-folder-items';
+  box.replaceChildren(...rooms.map(makeRoomRow));
+  details.append(summary,box);
+  nodes.push(details);
+ }
+ byId('rooms').replaceChildren(...nodes);
 }
 let notifyEnabled=localStorage.getItem('agentRoomNotify')!=='0', prevBusy=new Map(), prevApprovals=new Set(), titleTimer=null;
 function syncNotifyButton(){
@@ -523,8 +577,10 @@ function renderActivity(members,messages,mainMember){
    card.append(limitsBox);
   }
   const parent=snapshot.members.find(p=>p.id===m.parent);
-  if(parent){const sub=el('div',parent.name+'의 서브에이전트');sub.className='act-parent';card.insertBefore(sub,step);}
-  const actions=agentActions(m);if(actions.childElementCount)card.append(actions);
+  if(parent){card.classList.add('subagent');const sub=el('div','↳ '+parent.name+'의 서브에이전트');sub.className='act-parent';card.insertBefore(sub,step);}
+  const actions=agentActions(m);
+  if(!m.parent&&m.state==='approved'){const addSub=el('button','+ 서브');addSub.title=m.name+' 아래에 다른 CLI 서브에이전트 추가';addSub.onclick=()=>openAgentDialog(null,m);actions.append(addSub);}
+  if(actions.childElementCount)card.append(actions);
   if(m.busy){const output=el('button','작업 보기');output.onclick=()=>showWork(m.id);actions.append(output);if(!actions.parentNode)card.append(actions);}
   return card;
  }));
@@ -780,11 +836,11 @@ byId('external-say').onclick=async()=>{
   err('');
  }catch(e){err(e.message);}finally{btn.disabled=false;}
 };
-let editingAgent,agentRoom,modelRequest=0;
+let editingAgent,agentRoom,agentParent=null,modelRequest=0;
 const modelCache=new Map();
-function openAgentDialog(agent){
+function openAgentDialog(agent,parentAgent=null){
  const form=byId('agent-form');
- form.reset();byId('agent-advanced').open=Boolean(agent);byId('agent-submit').textContent=agent?'저장':'에이전트 추가';editingAgent=agent;agentRoom=selected;byId('clear-rules-label').hidden=true;
+ form.reset();byId('agent-advanced').open=Boolean(agent);byId('agent-submit').textContent=agent?'저장':parentAgent?'서브에이전트 추가':'에이전트 추가';editingAgent=agent;agentParent=agent?null:parentAgent;agentRoom=selected;byId('clear-rules-label').hidden=true;
  form.elements.provider.value=agent?.provider||'codex';
  selectProvider(form.elements.provider.value,Boolean(agent));
  function renderSavedRules(agentId){
@@ -816,7 +872,7 @@ function openAgentDialog(agent){
   form.elements.role.value=agent.role||'';
  }else byId('saved-rules-list').hidden=true;
  byId('session-label').hidden=Boolean(agent);
- byId('agent-title').textContent=agent?'에이전트 설정':'에이전트 추가';
+ byId('agent-title').textContent=agent?'에이전트 설정':agentParent?agentParent.name+'의 서브에이전트 추가':'에이전트 추가';
  byId('agent-error').textContent='';
  byId('agent-dialog').showModal();
  void loadModels(agent?.model||'');
@@ -871,7 +927,7 @@ byId('agent-form').onsubmit=async event=>{
  const fields=event.target.elements, button=event.submitter;
  button.disabled=true;
  try{
-  const payload={action:editingAgent?'edit_agent':'new_agent',room:agentRoom,participant:editingAgent?.id,
+  const payload={action:editingAgent?'edit_agent':'new_agent',room:agentRoom,participant:editingAgent?.id,parent:agentParent?.id,
    provider:fields.provider.value,model:fields.model.value,effort:fields.effort.value,permission:fields.permission.value,clearRules:fields.clearRules.checked,name:fields.name.value,role:fields.role.value,thread:editingAgent?undefined:fields.thread?.value};
   if(await control(payload))byId('agent-dialog').close();
   else byId('agent-error').textContent=byId('error').textContent;
