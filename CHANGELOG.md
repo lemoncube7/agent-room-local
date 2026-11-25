@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.55
+- 원격 Site에서 선택한 방의 에이전트 작업 상태와 모델별 사용량을 별도 패널로 확인할 수 있습니다.
+- 원격 일시정지·재개·재실행과 권한 승인·거부의 PC 처리 결과를 표시합니다.
+
 ## v0.2.54
 - **에이전트 답변 후 후속 자동 순위 판정 (`hub.cjs`):** `ranking` 모드에서 에이전트가 답변을 올린 뒤 추가 조율/응답이 필요하면 `maybeRankAgentFollowup`이 자동 순위 판단기를 다시 실행해 `0순위`였던 동료를 `1순위`로 승격합니다(릴레이 4단계 상한 및 오류 시 `0` 폴백).
 - **열린 Claude 세션 감시자 (`bridge.cjs watch`, `hub.cjs`):** `node bridge.cjs watch <roomId> <participantId>`로 열린 Claude 세션에 새 메시지를 깨워 전달하며, 감시자가 활성화된 동안에는 헤드리스 `--resume` 충돌을 건너뜁니다.

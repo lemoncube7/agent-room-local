@@ -81,6 +81,8 @@ export async function handleRoom(request,env){
       storedText=JSON.stringify({__control:true,control:'create',name:payload.name.trim()});
     }else{
       if(!isId(targetRoom)||!await env.DB.prepare('SELECT id FROM remote_rooms WHERE id=?').bind(targetRoom).first())return json({error:'Room is not shared'},404);
+      if(payload.control==='approval_decide'&&(!isId(payload.id_target)||typeof payload.allow!=='boolean'))return json({error:'Invalid approval decision'},400);
+      if(['pause_agent','retry_agent'].includes(payload.control)&&(!isId(payload.participant)||(payload.control==='pause_agent'&&typeof payload.paused!=='boolean')))return json({error:'Invalid agent control'},400);
       storedText=JSON.stringify({__control:true,control:payload.control,id:payload.id_target,allow:payload.allow,participant:payload.participant,paused:payload.paused,enabled:payload.enabled,mode:payload.mode,mainMember:payload.mainMember});
     }
   }else{

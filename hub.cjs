@@ -907,7 +907,9 @@ function task({action,room,participant,name,text,request,replyTo,after=0,...extr
     if(remoteConfigured()&&!one('SELECT room FROM remote_rooms WHERE room=?',room))throw Error('Remote access is disabled for this room.');
     if(extra.control==='approval_decide'){
       const item=approvals.get(extra.id);
-      if(item&&item.room===room&&item.state==='pending'&&typeof extra.allow==='boolean'){item.state=extra.allow?'allowed':'denied';logApproval(item,item.state);}
+      if(!item||item.room!==room||item.state!=='pending'||typeof extra.allow!=='boolean')throw Error('Approval is no longer pending.');
+      item.state=extra.allow?'allowed':'denied';
+      logApproval(item,item.state);
       return {ok:true};
     }
     if(extra.control==='retry_agent'){
@@ -915,16 +917,16 @@ function task({action,room,participant,name,text,request,replyTo,after=0,...extr
       if(failed&&!cliBusy.has(failed.id)){
         run("UPDATE members SET state='starting' WHERE id=?",failed.id);
         void cliTurn(failed.id,'Briefly greet the room. Do not change any files.');
-      }
+      }else throw Error('Agent cannot be restarted.');
       return {ok:true};
     }
     if(extra.control==='pause_agent'){
       const target=one("SELECT id FROM members WHERE id=? AND room=? AND state IN ('approved','start_failed')",participant,room);
-      if(target){
+      if(target&&typeof extra.paused==='boolean'){
         const paused=extra.paused?1:0;
         run('UPDATE members SET paused=? WHERE id=?',paused,target.id);
         if(paused){invalidateWarm(target.id);run("UPDATE deliveries SET state='context_only',priority=0 WHERE member=? AND state IN ('queued','ranking')",target.id);}
-      }
+      }else throw Error('Agent cannot be controlled.');
       return {ok:true};
     }
     if(extra.control==='room_ranking'){

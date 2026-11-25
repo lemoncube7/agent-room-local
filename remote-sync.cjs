@@ -10,7 +10,7 @@ const hubPath=path.join(localDir,'hub.json');
 
 async function request(url,options){
   const response=await fetch(url,{...options,signal:AbortSignal.timeout(12000),redirect:'error'});
-  if(!response.ok)throw Error('HTTP '+response.status);
+  if(!response.ok)throw Object.assign(Error('HTTP '+response.status),{status:response.status});
   return response.json();
 }
 function post(headers,body){return {method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify(body)};}
@@ -34,6 +34,7 @@ async function main(){
   const key=room=>site.origin+' '+room;
   function save(){const temp=cursorPath+'.tmp';fs.writeFileSync(temp,JSON.stringify(cursor));fs.renameSync(temp,cursorPath);}
   let acknowledged=[],lastError='';
+  const controlResults=new Map();
   console.log('Remote relay enabled. Room selection is controlled in Agent Room.');
   while(true){
     try{
@@ -46,10 +47,11 @@ async function main(){
       const batch=state.messages.filter(m=>allowed.has(m.room)&&m.seq>floors.get(m.room)).slice(0,35);
       const events=batch.filter(m=>!m.recipient).map(m=>({room:m.room,seq:m.seq,name:m.name,text:m.body.slice(0,30000),created:m.created}));
       const snapshot={
-        members:(state.members||[]).filter(m=>allowed.has(m.room)&&m.state!=='disconnected').map(({id,room,name,state:st,provider,busy,progress,conflict,cliError})=>({id,room,name,state:st,provider,busy,progress,conflict,cliError})),
+        members:(state.members||[]).filter(m=>allowed.has(m.room)&&m.state!=='disconnected').map(({id,room,name,state:st,provider,model,paused,busy,progress,conflict,cliError})=>({id,room,name,state:st,provider,model,paused,busy,progress,conflict,cliError})),
         approvals:(state.approvals||[]).filter(a=>allowed.has(a.room)).map(({id,room,name,tool,input,created})=>({id,room,name,tool,input:String(input||'').slice(0,800),created})),
         limits:state.limits||{},
-        ranking:(state.ranking||[]).filter(r=>allowed.has(r.room))
+        ranking:(state.ranking||[]).filter(r=>allowed.has(r.room)),
+        controlResults:[...controlResults.values()].filter(item=>item.room===null||allowed.has(item.room))
       };
       const response=await request(relay,post(headers,{rooms,legacyRoom:initialRoom,acknowledged,events,snapshot}));
       acknowledged=[];
@@ -61,8 +63,16 @@ async function main(){
           try{ctrl=JSON.parse(command.text);}catch{}
         }
         if(ctrl?.__control){
-          if(ctrl.control==='create'||allowed.has(command.room)){
-            try{await request(hub.url+'/tool',post({Authorization:'Bearer '+hub.token},{action:'remote_control',room:command.room,...ctrl}));}catch{}
+          if(!controlResults.has(command.id)){
+            let ok=false;
+            if(ctrl.control==='create'||allowed.has(command.room)){
+              try{
+                await request(hub.url+'/tool',post({Authorization:'Bearer '+hub.token},{action:'remote_control',room:command.room,...ctrl}));
+                ok=true;
+              }catch(error){if(error.status!==400&&error.status!==403)throw error;}
+            }
+            controlResults.set(command.id,{id:command.id,room:command.room,ok});
+            if(controlResults.size>80)controlResults.delete(controlResults.keys().next().value);
           }
           acknowledged.push(command.id);
           continue;

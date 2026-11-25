@@ -79,6 +79,13 @@ article.typing small{display:block;margin-top:4px;color:#ffcf90;font-size:11px}
  header,#history,#approvals,#compose-wrap{padding-left:14px;padding-right:14px}
  article{max-width:94%}
 }
+body:not(.agents-hidden){grid-template-columns:clamp(170px,18vw,230px) minmax(0,1fr) minmax(250px,300px)}
+#agent-panel{min-height:0;overflow:auto;padding:12px;background:var(--panel);border-left:1px solid var(--line)}
+#agent-panel[hidden]{display:none}#agent-panel h3{font-size:14px;margin:0 0 8px}
+#activity{grid-template-columns:minmax(0,1fr);margin:0;max-height:none;overflow:visible}
+@media(max-width:850px){body:not(.agents-hidden){grid-template-columns:clamp(150px,20vw,190px) minmax(0,1fr)}#agent-panel{position:fixed;inset:0 0 0 auto;z-index:10;width:min(320px,88vw);box-shadow:0 0 24px #0008}#close-agents{display:inline-block}}
+@media(max-width:720px){body:not(.agents-hidden){grid-template-columns:minmax(0,1fr)}}
+@media(min-width:851px){#close-agents{display:none}}
 </style>
 <aside>
  <div class="brand"><h1>Agent Room <span class="remote-badge">원격</span></h1><span id="conn" class="pill"><i></i>연결 중</span></div>
@@ -90,12 +97,11 @@ article.typing small{display:block;margin-top:4px;color:#ffcf90;font-size:11px}
   <div class="head-row">
    <h2 id="title">채팅방을 선택하세요</h2>
    <div class="head-actions">
-    <button id="toggle-act" type="button" aria-pressed="true">현황판</button>
+    <button id="toggle-act" type="button" aria-controls="agent-panel" aria-expanded="true">에이전트</button>
     <select id="mode-sel" aria-label="구조 모드" hidden><option value="broadcast">자유 · 동시</option><option value="ranking">자동 · 순위</option><option value="hierarchy">계층형 · 메인→하위</option></select>
     <select id="main-sel" aria-label="메인 에이전트" hidden></select>
    </div>
   </div>
-  <section id="activity" aria-label="에이전트 작업 현황"></section>
  </header>
  <section id="history" aria-label="공용 대화"></section>
  <section id="approvals" aria-label="허용 요청" aria-live="polite"></section>
@@ -104,11 +110,17 @@ article.typing small{display:block;margin-top:4px;color:#ffcf90;font-size:11px}
   <p id="status" role="status"></p>
  </div>
 </main>
+<section id="agent-panel" aria-label="에이전트 패널">
+ <button id="close-agents" type="button">닫기</button>
+ <h3>에이전트</h3>
+ <section id="activity" aria-label="에이전트 작업 현황"></section>
+</section>
 <script>
 const historyView=document.querySelector('#history'),statusLine=document.querySelector('#status'),draft=document.querySelector('#draft'),form=document.querySelector('#compose');
 const conn=document.querySelector('#conn'),roomsNav=document.querySelector('#rooms'),actBox=document.querySelector('#activity'),appBox=document.querySelector('#approvals');
 const modeSel=document.querySelector('#mode-sel'),mainSel=document.querySelector('#main-sel'),toggleAct=document.querySelector('#toggle-act'),titleEl=document.querySelector('#title');
-let cursor='',pending,selected='',request=0,lastSnap=null,lastRooms=[],showAct=true;
+let cursor='',pending,selected='',request=0,lastSnap=null,lastRooms=[],showAct=!matchMedia('(max-width:850px)').matches;
+const controlRequests=new Map();
 function el(tag,text){const e=document.createElement(tag);e.textContent=text;return e;}
 function agentCls(name,provider){
  if(name==='나')return 'own';
@@ -177,9 +189,11 @@ function fmtReset(raw){
 }
 async function sendControl(payload){
  try{
-  const r=await fetch('/api/room/browser',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:crypto.randomUUID(),room:selected,...payload})});
+  const id=crypto.randomUUID();
+  const r=await fetch('/api/room/browser',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,room:selected,...payload})});
   if(!r.ok)throw Error('요청을 저장하지 못했어요.');
-  statusLine.textContent='PC로 제어 요청을 보냈어요 (약 2초 내 반영).';
+  controlRequests.set(id,{target:payload.id_target||payload.participant,expires:Date.now()+30000});
+  statusLine.textContent='요청을 보냈어요. PC 응답을 기다리는 중입니다.';
   return true;
  }catch(e){statusLine.textContent=e.message;return false;}
 }
@@ -188,6 +202,8 @@ function renderRooms(rooms){
   const b=document.createElement('button');b.type='button';
   b.setAttribute('aria-current',String(r.id===selected));
   b.append(el('span',r.name));
+  const approvals=(lastSnap?.approvals||[]).filter(item=>item.room===r.id).length;
+  if(approvals)b.append(el('small','승인 '+approvals));
   if(lastSnap?.members?.some(m=>m.room===r.id&&m.busy)){const d=document.createElement('i');d.className='dot';d.title='작업 중';b.append(d);}
   b.onclick=()=>{selected=r.id;cursor='';pending=null;historyView.replaceChildren();void refresh();};
   return b;
@@ -208,7 +224,6 @@ function renderPanel(){
   mainSel.replaceChildren(...approved.map(m=>new Option('메인: '+m.name,m.id)));
   if(mainMember)mainSel.value=mainMember.id;
  }
- actBox.hidden=!showAct;
  const labels={pending:'승인 대기',starting:'CLI 시작 중…',start_failed:'실행 실패',approved:'대기 중'};
  const winNames={five_hour:'5시간',seven_day:'7일',primary:'5시간',secondary:'7일','gemini-5h':'5시간','gemini-weekly':'7일','3p-5h':'5시간','3p-weekly':'7일'};
  actBox.replaceChildren(...members.map(m=>{
@@ -225,19 +240,21 @@ function renderPanel(){
   const meta=el('span',entries.length?(fmtAge(lim.updatedAt)||'잔여량'):'잔여량 정보 없음');meta.className='act-meta';
   const head=document.createElement('div');head.className='act-head';head.append(name,meta);
   const elapsed=m.busy&&m.progress?.updatedAt?Math.max(0,Math.floor((Date.now()-m.progress.updatedAt)/1000)):0;
-  const stepText=pa?'허용 요청 대기: '+pa.tool:m.conflict?'⚠ 동시 수정 주의: '+m.conflict:m.paused?'일시정지됨 (응답 중지)':m.busy?(m.progress?.step||'작업 진행 중…')+(elapsed>=2?' ('+elapsed+'초)':''):m.cliError?m.cliError.message:labels[m.state]||'대기 중';
+  const stepText=pa?'허용 요청 대기: '+pa.tool:m.conflict?'⚠ 동시 수정 주의: '+m.conflict:m.paused?'일시정지됨 (응답 중지)':m.busy?(m.progress?.task||m.progress?.step||'작업 진행 중…')+(elapsed>=2?' ('+elapsed+'초)':''):m.cliError?m.cliError.message:labels[m.state]||'대기 중';
   const step=el('div',stepText);step.className='act-step';step.title=stepText;
   card.append(head,step);
   const prev=m.busy&&m.progress?.preview?m.progress.preview.trim().split(/\r?\n/).filter(Boolean).at(-1):'';
   if(prev){const p=el('div',prev);p.className='act-preview';p.title=prev;card.append(p);}
   if(m.provider&&(m.state==='approved'||m.state==='start_failed')){
    const pause=el('button',m.paused?'재개':'일시정지');pause.type='button';pause.className='act-retry';
-   pause.onclick=()=>void sendControl({control:'pause_agent',participant:m.id,paused:!m.paused});
+   pause.disabled=[...controlRequests.values()].some(item=>item.target===m.id);
+   pause.onclick=async()=>{pause.disabled=true;if(!await sendControl({control:'pause_agent',participant:m.id,paused:!m.paused}))pause.disabled=false;};
    card.append(pause);
   }
   if(m.state==='start_failed'&&m.provider){
    const retry=el('button','다시 실행');retry.type='button';retry.className='act-retry';
-   retry.onclick=()=>void sendControl({control:'retry_agent',participant:m.id});
+   retry.disabled=[...controlRequests.values()].some(item=>item.target===m.id);
+   retry.onclick=async()=>{retry.disabled=true;if(!await sendControl({control:'retry_agent',participant:m.id}))retry.disabled=false;};
    card.append(retry);
   }
   if(entries.length){
@@ -258,11 +275,12 @@ function renderPanel(){
   }
   return card;
  }));
- appBox.replaceChildren(...(lastSnap?.approvals||[]).map(item=>{
+ appBox.replaceChildren(...(lastSnap?.approvals||[]).filter(item=>item.room===selected).map(item=>{
   const box=document.createElement('div'),roomName=lastRooms.find(r=>r.id===item.room)?.name||'',btns=document.createElement('footer');
-  const decide=allow=>async()=>{for(const b of btns.children)b.disabled=true;if(!await fetch('/api/room/browser',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:crypto.randomUUID(),room:item.room,control:'approval_decide',id_target:item.id,allow})}).then(r=>r.ok).catch(()=>false))for(const b of btns.children)b.disabled=false;else statusLine.textContent='허용 응답을 보냈어요.';};
+  const decide=allow=>async()=>{for(const b of btns.children)b.disabled=true;if(!await sendControl({room:item.room,control:'approval_decide',id_target:item.id,allow}))for(const b of btns.children)b.disabled=false;};
   const deny=el('button','거부'),allow=el('button','이번만 허용');deny.type='button';allow.type='button';
   deny.onclick=decide(false);allow.onclick=decide(true);btns.append(deny,allow);
+  for(const b of btns.children)b.disabled=[...controlRequests.values()].some(entry=>entry.target===item.id);
   box.append(el('strong',item.name+' · '+item.tool+' 실행 허용 요청'),el('small',' '+roomName),el('pre',item.input),btns);
   return box;
  }));
@@ -278,6 +296,12 @@ async function refresh(){
   if(turn!==request)return;
   conn.className='pill';conn.lastChild.textContent='원격 연결됨';
   lastRooms=rooms;lastSnap=snapshot||null;
+  for(const result of lastSnap?.controlResults||[]){
+   if(controlRequests.delete(result.id))statusLine.textContent=result.ok?'PC에 반영됐어요.':'PC에서 요청을 처리하지 못했어요. 현재 상태를 확인해 주세요.';
+  }
+  for(const [id,item] of controlRequests)if(item.expires<Date.now()){
+   controlRequests.delete(id);statusLine.textContent='아직 PC의 처리 결과를 확인하지 못했어요.';
+  }
   if(!selected&&rooms.length){selected=rooms[0].id;void refresh();return;}
   draft.disabled=!selected;
   renderRooms(rooms);renderPanel();
@@ -306,7 +330,13 @@ async function refresh(){
   if(nearBottom)historyView.scrollTop=historyView.scrollHeight;
  }catch(e){conn.className='pill err';conn.lastChild.textContent='연결 확인 필요';statusLine.textContent=e.message;}
 }
-toggleAct.onclick=()=>{showAct=!showAct;toggleAct.setAttribute('aria-pressed',String(showAct));actBox.hidden=!showAct;};
+function showAgentPanel(open){
+ showAct=open;toggleAct.setAttribute('aria-expanded',String(open));
+ document.querySelector('#agent-panel').hidden=!open;document.body.classList.toggle('agents-hidden',!open);
+}
+showAgentPanel(showAct);
+toggleAct.onclick=()=>showAgentPanel(!showAct);
+document.querySelector('#close-agents').onclick=()=>{showAgentPanel(false);toggleAct.focus();};
 modeSel.onchange=()=>void sendControl({control:'room_ranking',mode:modeSel.value,enabled:modeSel.value==='ranking',mainMember:mainSel.value||null});
 mainSel.onchange=()=>void sendControl({control:'room_ranking',mode:'hierarchy',enabled:false,mainMember:mainSel.value||null});
 document.querySelector('#new-room').onsubmit=async e=>{
