@@ -7,7 +7,7 @@ const crypto = require('node:crypto');
 const path = require('node:path');
 const base = __dirname;
 const MAX = 8 * 1024 * 1024;
-function connect(pipe, timeout = 4000) {
+function connect(pipe, timeout = 2500) {
   return new Promise((resolve, reject) => {
     const socket = net.createConnection(pipe);
     const timer = setTimeout(() => { socket.destroy(); reject(new Error('IPC connection timeout')); }, timeout);
@@ -90,7 +90,7 @@ async function main() {
       callerSource: 'codex', hostId: 'local', namespace: tool.namespace,
       threadId: input.threadId, turnId: `handoff-${input.eventId || crypto.randomUUID()}`,
       callId: `handoff-${crypto.randomUUID()}`, tool: tool.name,
-    });
+    }, 25000);
     if (!response.success) throw new Error('Desktop rejected message: ' + JSON.stringify(response.contentItems));
     console.log(JSON.stringify({ phase: 'accepted', threadId: input.threadId }));
   } finally { socket.destroy(); }

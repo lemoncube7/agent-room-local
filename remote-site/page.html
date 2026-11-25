@@ -1,4 +1,4 @@
-<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Agent Room · 원격</title>
+<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0f1117"><link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials"><link rel="apple-touch-icon" href="/icons/192.png"><title>Agent Room · 원격</title>
 <style>
 :root{color-scheme:dark;--bg:#0f1117;--panel:#161922;--raised:#1e222d;--hover:#282d3a;--line:#2a2f3b;--text:#e8eaf0;--muted:#9aa1b0;--accent:#7c9cff;background:var(--bg);color:var(--text);font-family:"Pretendard","Malgun Gothic","Segoe UI",sans-serif;font-size:14px;line-height:1.55}
 *{box-sizing:border-box}
@@ -86,9 +86,30 @@ body:not(.agents-hidden){grid-template-columns:clamp(170px,18vw,230px) minmax(0,
 @media(max-width:850px){body:not(.agents-hidden){grid-template-columns:clamp(150px,20vw,190px) minmax(0,1fr)}#agent-panel{position:fixed;inset:0 0 0 auto;z-index:10;width:min(320px,88vw);box-shadow:0 0 24px #0008}#close-agents{display:inline-block}}
 @media(max-width:720px){body:not(.agents-hidden){grid-template-columns:minmax(0,1fr)}}
 @media(min-width:851px){#close-agents{display:none}}
+#mobile-nav,#close-rooms,#panel-scrim{display:none}
+@media(max-width:720px){
+ body,body:not(.agents-hidden){display:block}
+ main{height:100%}header{padding-top:max(10px,env(safe-area-inset-top))}
+ #history{padding-block:12px}#compose-wrap{padding-block:8px}
+ #draft,#new-room input{font-size:16px}
+ #compose button,#approvals button,.act-retry,#mobile-nav button,#close-agents,#close-rooms{min-height:44px}
+ #mobile-nav{flex:none;display:grid;grid-template-columns:repeat(3,1fr);gap:6px;background:var(--panel);border-top:1px solid var(--line);padding:5px max(8px,env(safe-area-inset-right)) max(5px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left))}
+ #mobile-nav{position:relative;z-index:11}
+ #mobile-nav button{padding:4px 6px;background:transparent;border-color:transparent;font-size:13px}
+ #mobile-nav button[aria-pressed=true]{background:var(--raised);color:var(--accent)}
+ #toggle-act{display:none}
+ body>aside,#agent-panel{position:fixed;z-index:10;top:0;bottom:calc(55px + env(safe-area-inset-bottom));width:min(340px,88vw);max-height:none;padding-top:max(12px,env(safe-area-inset-top));padding-bottom:12px;overflow:auto}
+ body>aside{left:0}body:not(.rooms-open)>aside{display:none}
+ #close-rooms{display:block;align-self:flex-end}
+ #rooms{display:grid;overflow:visible}#rooms button{min-height:44px}
+ #panel-scrim:not([hidden]){display:block;position:fixed;inset:0;z-index:9;background:#0009;border:0;border-radius:0;width:100%}
+ #approvals{max-height:32dvh}
+}
 </style>
 <aside>
+ <button id="close-rooms" type="button">방 목록 닫기</button>
  <div class="brand"><h1>Agent Room <span class="remote-badge">원격</span></h1><span id="conn" class="pill"><i></i>연결 중</span></div>
+ <button id="install-app" type="button" hidden>앱 설치</button>
  <form id="new-room" autocomplete="off"><input name="name" placeholder="새 채팅방 이름" maxlength="70" required><button type="submit" aria-label="방 만들기">+</button></form>
  <nav id="rooms" aria-label="채팅방 목록"></nav>
 </aside>
@@ -109,7 +130,13 @@ body:not(.agents-hidden){grid-template-columns:clamp(170px,18vw,230px) minmax(0,
   <form id="compose" autocomplete="off"><textarea id="draft" rows="1" aria-label="메시지" placeholder="메시지 보내기 (Shift+Enter 줄바꿈)" maxlength="8000" required></textarea><button type="submit">보내기</button></form>
   <p id="status" role="status"></p>
  </div>
+ <nav id="mobile-nav" aria-label="화면 전환">
+  <button id="mobile-rooms" type="button" aria-pressed="false">방</button>
+  <button id="mobile-chat" type="button" aria-pressed="true">채팅</button>
+  <button id="mobile-agents" type="button" aria-pressed="false">에이전트</button>
+ </nav>
 </main>
+<button id="panel-scrim" type="button" aria-label="패널 닫기" hidden></button>
 <section id="agent-panel" aria-label="에이전트 패널">
  <button id="close-agents" type="button">닫기</button>
  <h3>에이전트</h3>
@@ -120,6 +147,7 @@ const historyView=document.querySelector('#history'),statusLine=document.querySe
 const conn=document.querySelector('#conn'),roomsNav=document.querySelector('#rooms'),actBox=document.querySelector('#activity'),appBox=document.querySelector('#approvals');
 const modeSel=document.querySelector('#mode-sel'),mainSel=document.querySelector('#main-sel'),toggleAct=document.querySelector('#toggle-act'),titleEl=document.querySelector('#title');
 let cursor='',pending,selected='',request=0,lastSnap=null,lastRooms=[],showAct=!matchMedia('(max-width:850px)').matches;
+let refreshInFlight=0;
 const controlRequests=new Map();
 function el(tag,text){const e=document.createElement(tag);e.textContent=text;return e;}
 function agentCls(name,provider){
@@ -205,7 +233,7 @@ function renderRooms(rooms){
   const approvals=(lastSnap?.approvals||[]).filter(item=>item.room===r.id).length;
   if(approvals)b.append(el('small','승인 '+approvals));
   if(lastSnap?.members?.some(m=>m.room===r.id&&m.busy)){const d=document.createElement('i');d.className='dot';d.title='작업 중';b.append(d);}
-  b.onclick=()=>{selected=r.id;cursor='';pending=null;historyView.replaceChildren();void refresh();};
+  b.onclick=()=>{selected=r.id;cursor='';pending=null;historyView.replaceChildren();if(mobileView())openMobilePane('chat');void refresh();};
   return b;
  }));
 }
@@ -275,6 +303,10 @@ function renderPanel(){
   }
   return card;
  }));
+ if(!members.length){
+  const empty=el('p',!selected?'방을 선택해 주세요.':!lastSnap?'PC에서 에이전트 상태가 아직 도착하지 않았어요.':'이 방에 표시할 에이전트가 없어요.');
+  empty.className='empty';actBox.append(empty);
+ }
  appBox.replaceChildren(...(lastSnap?.approvals||[]).filter(item=>item.room===selected).map(item=>{
   const box=document.createElement('div'),roomName=lastRooms.find(r=>r.id===item.room)?.name||'',btns=document.createElement('footer');
   const decide=allow=>async()=>{for(const b of btns.children)b.disabled=true;if(!await sendControl({room:item.room,control:'approval_decide',id_target:item.id,allow}))for(const b of btns.children)b.disabled=false;};
@@ -286,15 +318,18 @@ function renderPanel(){
  }));
 }
 async function refresh(){
+ refreshInFlight++;
  try{
   const turn=++request;
-  const r=await fetch('/api/room/browser'+(selected?'?room='+encodeURIComponent(selected):''),{cache:'no-store'});
+  const r=await fetch('/api/room/browser'+(selected?'?room='+encodeURIComponent(selected):''),{cache:'no-store',signal:AbortSignal.timeout(12000)});
   if(turn!==request)return;
   if(r.status===404&&selected){selected='';cursor='';historyView.replaceChildren();void refresh();return;}
-  if(!r.ok)throw Error('소유자 계정으로 로그인해 주세요.');
+  if(r.status===401||r.status===403)throw Error('이 사이트를 배포한 ChatGPT 계정으로 로그인해 주세요.');
+  if(!r.ok)throw Error('원격 상태를 불러오지 못했어요. 잠시 후 다시 시도합니다.');
   const {events,rooms,snapshot}=await r.json();
   if(turn!==request)return;
-  conn.className='pill';conn.lastChild.textContent='원격 연결됨';
+  const fresh=Number.isFinite(snapshot?.syncedAt)&&Date.now()-snapshot.syncedAt<20000;
+  conn.className=fresh?'pill':'pill err';conn.lastChild.textContent=fresh?'PC 연결됨':snapshot?'PC 동기화 대기':'PC 상태 없음';
   lastRooms=rooms;lastSnap=snapshot||null;
   for(const result of lastSnap?.controlResults||[]){
    if(controlRequests.delete(result.id))statusLine.textContent=result.ok?'PC에 반영됐어요.':'PC에서 요청을 처리하지 못했어요. 현재 상태를 확인해 주세요.';
@@ -329,6 +364,7 @@ async function refresh(){
   historyView.replaceChildren(...nodes);
   if(nearBottom)historyView.scrollTop=historyView.scrollHeight;
  }catch(e){conn.className='pill err';conn.lastChild.textContent='연결 확인 필요';statusLine.textContent=e.message;}
+ finally{refreshInFlight--;}
 }
 function showAgentPanel(open){
  showAct=open;toggleAct.setAttribute('aria-expanded',String(open));
@@ -336,7 +372,29 @@ function showAgentPanel(open){
 }
 showAgentPanel(showAct);
 toggleAct.onclick=()=>showAgentPanel(!showAct);
-document.querySelector('#close-agents').onclick=()=>{showAgentPanel(false);toggleAct.focus();};
+const mobileBreakpoint=matchMedia('(max-width:720px)');
+function mobileView(){return mobileBreakpoint.matches;}
+function openMobilePane(pane){
+ document.body.classList.toggle('rooms-open',pane==='rooms');
+ showAgentPanel(pane==='agents');
+ document.querySelector('#panel-scrim').hidden=pane==='chat';
+ for(const name of ['rooms','chat','agents'])document.querySelector('#mobile-'+name).setAttribute('aria-pressed',String(name===pane));
+ if(pane!=='chat')document.querySelector('#close-'+pane).focus();
+}
+for(const pane of ['rooms','chat','agents'])document.querySelector('#mobile-'+pane).onclick=()=>openMobilePane(pane);
+document.querySelector('#close-rooms').onclick=()=>{openMobilePane('chat');document.querySelector('#mobile-rooms').focus();};
+document.querySelector('#close-agents').onclick=()=>{if(mobileView()){openMobilePane('chat');document.querySelector('#mobile-agents').focus();}else{showAgentPanel(false);toggleAct.focus();}};
+document.querySelector('#panel-scrim').onclick=()=>openMobilePane('chat');
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&mobileView()&&!document.querySelector('#panel-scrim').hidden)openMobilePane('chat');});
+mobileBreakpoint.addEventListener('change',()=>{openMobilePane('chat');if(!mobileView()&&innerWidth>850)showAgentPanel(true);});
+if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
+const installButton=document.querySelector('#install-app');
+let installPrompt;
+window.addEventListener('beforeinstallprompt',event=>{
+ event.preventDefault();installPrompt=event;installButton.hidden=false;
+});
+installButton.onclick=async()=>{if(!installPrompt)return;const prompt=installPrompt;installPrompt=null;installButton.hidden=true;await prompt.prompt();};
+window.addEventListener('appinstalled',()=>{installPrompt=null;installButton.hidden=true;});
 modeSel.onchange=()=>void sendControl({control:'room_ranking',mode:modeSel.value,enabled:modeSel.value==='ranking',mainMember:mainSel.value||null});
 mainSel.onchange=()=>void sendControl({control:'room_ranking',mode:'hierarchy',enabled:false,mainMember:mainSel.value||null});
 document.querySelector('#new-room').onsubmit=async e=>{
@@ -364,5 +422,5 @@ draft.onkeydown=event=>{
  if(draft.value.trim()&&!button.disabled)form.requestSubmit(button);
 };
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void refresh();});
-void refresh();setInterval(refresh,2000);
+void refresh();setInterval(()=>{if(!refreshInFlight)void refresh();},2000);
 </script></html>

@@ -604,6 +604,10 @@ function renderHistory(view,messages,roomChanged){
     const wake=el('button','1순위로 깨우기');wake.type='button';wake.className='retract-btn';
     wake.onclick=()=>control({action:'promote_delivery',room:selected,seq:m.seq});
     card.append(wake);
+   }else if(sorted.some(d=>['uncertain','failed'].includes(d.state))){
+    const retryMsg=el('button','다시 보내기');retryMsg.type='button';retryMsg.className='retract-btn';
+    retryMsg.onclick=()=>control({action:'promote_delivery',room:selected,seq:m.seq});
+    card.append(retryMsg);
    }
    const retract=el('button','철회');retract.type='button';retract.className='retract-btn';
    retract.onclick=()=>{if(confirm('이 메시지를 철회할까요? 아직 안 간 에이전트에게는 전달을 취소하고, 이미 받은 에이전트에게는 무시하라고 알립니다.'))control({action:'retract_message',room:selected,seq:m.seq});};

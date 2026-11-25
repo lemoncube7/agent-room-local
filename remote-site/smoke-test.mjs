@@ -21,16 +21,22 @@ const call=(route,headers,body)=>handleRoom(new Request(origin+'/api/room/'+rout
  method:body===undefined?'GET':'POST',headers,body:body===undefined?undefined:JSON.stringify(body)
 }),env);
 const id=crypto.randomUUID(), A=crypto.randomUUID(), B=crypto.randomUUID();
-const rooms=[{id:A,name:'Room A'},{id:B,name:'Room B'}];
+const rooms=[{id:A,name:'Zulu'},{id:B,name:'Alpha'}];
 assert.equal((await call('browser',{},undefined)).status,403);
 assert.equal((await call('device',{}, {rooms,acknowledged:[],events:[]})).status,403);
-async function exchange(allowed=rooms,events=[],acknowledged=[]){
- const response=await call('device',device,{rooms:allowed,legacyRoom:A,events,acknowledged});
+async function exchange(allowed=rooms,events=[],acknowledged=[],snapshot){
+ const response=await call('device',device,{rooms:allowed,legacyRoom:A,events,acknowledged,snapshot});
  assert.equal(response.status,200);
  return response.json();
 }
 await exchange();
 assert.deepEqual((await (await call('browser',browser)).json()).rooms,rooms);
+await exchange(rooms,[],[],{members:[{id,room:A,name:'Agent',progress:{step:'Running',preview:'x'.repeat(260000)}}]});
+const large=(await (await call('browser',browser)).json()).snapshot;
+assert.equal(large.members[0].name,'Agent');
+assert.equal(large.members[0].progress.step,'Running');
+assert.equal(large.members[0].progress.preview,undefined);
+assert.ok(Date.now()-large.syncedAt<5000);
 assert.equal((await call('browser',browser,{id,room:B,text:'Message B'})).status,200);
 assert.equal((await call('browser',browser,{id,room:B,text:'Message B'})).status,200);
 assert.equal((await call('browser',browser,{id,room:A,text:'Message B'})).status,409);

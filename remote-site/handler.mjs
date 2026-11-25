@@ -35,14 +35,27 @@ export async function handleRoom(request,env){
        !Array.isArray(payload.events)||payload.events.length>35||!Array.isArray(payload.acknowledged)||payload.acknowledged.length>20)return json({error:'Invalid batch'},400);
     const ids=new Set(payload.rooms.map(room=>room.id));
     if(!payload.acknowledged.every(isId)||!payload.events.every(e=>ids.has(e?.room)&&Number.isSafeInteger(e.seq)&&e.seq>0&&isText(e.name,120)&&isText(e.text,30000)&&isText(e.created,50)))return json({error:'Invalid event'},400);
-    const actions=[env.DB.prepare('DELETE FROM remote_rooms'),env.DB.prepare("INSERT OR IGNORE INTO remote_rooms(id,name) SELECT json_extract(value,'$.id'),json_extract(value,'$.name') FROM json_each(?)").bind(JSON.stringify(payload.rooms))];
+    const actions=[env.DB.prepare('DELETE FROM remote_rooms'),env.DB.prepare("INSERT OR IGNORE INTO remote_rooms(id,name) SELECT json_extract(value,'$.id'),json_extract(value,'$.name') FROM json_each(?) ORDER BY key").bind(JSON.stringify(payload.rooms))];
     if(ids.has(payload.legacyRoom)){
       actions.push(env.DB.prepare('UPDATE remote_events SET room=? WHERE room IS NULL').bind(payload.legacyRoom));
       actions.push(env.DB.prepare('UPDATE remote_commands SET room=? WHERE room IS NULL').bind(payload.legacyRoom));
     }
     if(payload.snapshot&&typeof payload.snapshot==='object'){
       await ensureStateTable(env.DB);
-      actions.push(env.DB.prepare('INSERT OR REPLACE INTO remote_state(id,data) VALUES(1,?)').bind(JSON.stringify(payload.snapshot).slice(0,250000)));
+      const snapshot={...payload.snapshot,syncedAt:Date.now()};
+      let data=JSON.stringify(snapshot);
+      if(data.length>250000){
+        const members=Array.isArray(snapshot.members)?snapshot.members:[];
+        snapshot.members=members.map(member=>({...member,progress:member?.progress?{
+          step:member.progress.step,task:member.progress.task,updatedAt:member.progress.updatedAt
+        }:null}));
+        data=JSON.stringify(snapshot);
+      }
+      actions.push(env.DB.prepare('INSERT OR REPLACE INTO remote_state(id,data) VALUES(1,?)').bind(data));
+    }else{
+      await ensureStateTable(env.DB);
+      actions.push(env.DB.prepare('INSERT OR IGNORE INTO remote_state(id,data) VALUES(1,?)')
+        .bind(JSON.stringify({snapshotMissing:true,detectedAt:Date.now()})));
     }
     actions.push(
       ...payload.events.map(e=>env.DB.prepare('INSERT OR IGNORE INTO remote_events(seq,name,text,created,room) VALUES(?,?,?,?,?)').bind(e.seq,e.name,e.text,e.created,e.room)),
@@ -57,7 +70,7 @@ export async function handleRoom(request,env){
   if(!owner||(env.REMOTE_OWNER_ID&&owner!==env.REMOTE_OWNER_ID))return json({error:'Owner sign-in required'},403);
   if(route!=='/api/room/browser')return json({error:'Not found'},404);
   if(request.method==='GET'){
-    const rooms=(await env.DB.prepare('SELECT id,name FROM remote_rooms ORDER BY name,id').all()).results;
+    const rooms=(await env.DB.prepare('SELECT id,name FROM remote_rooms ORDER BY rowid').all()).results;
     const room=new URL(request.url).searchParams.get('room');
     if(room&&!rooms.some(item=>item.id===room))return json({error:'Room is not shared'},404);
     const recent=room?await env.DB.prepare('SELECT seq,name,text,created FROM remote_events WHERE room=? ORDER BY seq DESC LIMIT 100').bind(room).all():{results:[]};
@@ -65,7 +78,10 @@ export async function handleRoom(request,env){
     try{
       await ensureStateTable(env.DB);
       const row=await env.DB.prepare('SELECT data FROM remote_state WHERE id=1').first();
-      if(row?.data)snapshot=JSON.parse(row.data);
+      if(row?.data){
+        const parsed=JSON.parse(row.data);
+        if(!parsed.snapshotMissing)snapshot=parsed;
+      }
     }catch{}
     return json({rooms,events:recent.results.reverse(),snapshot});
   }
