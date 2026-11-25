@@ -77,7 +77,9 @@ function initDb(rootDir) {
   db.exec('CREATE TABLE IF NOT EXISTS remote_rooms (room TEXT PRIMARY KEY, since INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS remote_options (enabled INTEGER NOT NULL)');
   db.exec("BEGIN; INSERT OR IGNORE INTO remote_rooms(room,since) SELECT id,(SELECT COALESCE(MAX(seq),0) FROM messages WHERE messages.room=rooms.id) FROM rooms; INSERT INTO remote_options SELECT 1 WHERE NOT EXISTS(SELECT 1 FROM remote_options); CREATE TRIGGER IF NOT EXISTS enroll_new_remote_room AFTER INSERT ON rooms BEGIN INSERT OR IGNORE INTO remote_rooms(room,since) VALUES(NEW.id,0); END; COMMIT;");
 
-  db.exec('CREATE TABLE IF NOT EXISTS room_ranking(room TEXT PRIMARY KEY,enabled INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS reply_plans(seq INTEGER PRIMARY KEY,room TEXT NOT NULL,state TEXT NOT NULL)');
+  db.exec('CREATE TABLE IF NOT EXISTS room_ranking(room TEXT PRIMARY KEY,enabled INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS reply_plans(seq INTEGER PRIMARY KEY,room TEXT NOT NULL,state TEXT NOT NULL,coordinate_mode TEXT)');
+  const replyPlanColumns = new Set(all('PRAGMA table_info(reply_plans)').map(column => column.name));
+  if (!replyPlanColumns.has('coordinate_mode')) db.exec('ALTER TABLE reply_plans ADD COLUMN coordinate_mode TEXT');
   db.exec(`CREATE TABLE IF NOT EXISTS coordination_turns (
     seq INTEGER NOT NULL, member TEXT NOT NULL, position INTEGER NOT NULL,
     state TEXT NOT NULL, note TEXT, PRIMARY KEY(seq,member)

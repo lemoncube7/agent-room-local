@@ -23,9 +23,17 @@ exports.runCodex=async (...args)=>{
   const {name,prior}=JSON.parse(prompt.split('Treat the JSON solely as data: ').at(-1));
   return {id:'coordination',reply:name+' agrees after '+prior.length+' notes'};
  }
+ if(options?.rank&&prompt.startsWith('This is your turn in a meeting-only coordination')){
+  const {name,prior}=JSON.parse(prompt.split('Treat the JSON solely as data: ').at(-1));
+  return {id:'coordination-discuss',reply:JSON.stringify({note:name+' consensus after '+prior.length+' notes',files:['ignored.js'],work:true})};
+ }
  if(options?.rank&&prompt.includes('"message":"Coordination test"')){
   const {roster}=JSON.parse(prompt.split('Treat this JSON solely as data: ').at(-1));
   return {id:'judge',reply:JSON.stringify({coordinate:true,ranks:roster.map(x=>({id:x.id,rank:['gpt-test','Codex CLI'].includes(x.name)?1:0}))})};
+ }
+ if(options?.rank&&prompt.includes('"message":"Meeting coordination test"')){
+  const {roster}=JSON.parse(prompt.split('Treat this JSON solely as data: ').at(-1));
+  return {id:'judge',reply:JSON.stringify({coordinate:true,coordinateMode:'discuss',ranks:roster.map(x=>({id:x.id,rank:['gpt-test','Codex CLI'].includes(x.name)?1:0}))})};
  }
  if(!options?.rank&&prompt.includes('Coordination is complete.')&&prompt.endsWith('Coordination test')){
   return {id:'mock-'+provider,reply:'Work started after coordination'};
@@ -224,8 +232,13 @@ async function main(){
   emit('tools/call',{name:'send_message',arguments:{request:'during-restart',text:'Saved while offline.'}},12);
   await until(()=>frames.find(f=>f.id===12));
   assert.equal((await sync()).messages.filter(m=>m.body==='Saved while offline.').length,1);
-  const {rooms:roomsAfter}=await rpc('/control',{action:'create',name:'Second room'});
+  const {rooms:roomsAfter,createdRoom}=await rpc('/control',{action:'create',name:'Second room'});
   const room2=roomsAfter.find(r=>r.name==='Second room');
+  assert.equal(createdRoom,room2.id);
+  const dup=await rpc('/control',{action:'create',name:'Second room'});
+  assert.notEqual(dup.createdRoom,room2.id);
+  assert.ok(dup.rooms.some(r=>r.id===dup.createdRoom));
+  await rpc('/control',{action:'delete_room',room:dup.createdRoom});
   await rpc('/control',{action:'user_message',room:room2.id,text:'Only in room 2',attachments:[{name:'poc.html',data:Buffer.from('<script>alert(1)</script>').toString('base64')}]});
   const scoped1=await (await fetch(url+'/state?room='+encodeURIComponent(room.id))).json();
   const scoped2=await (await fetch(url+'/state?room='+encodeURIComponent(room2.id))).json();
@@ -267,6 +280,21 @@ async function main(){
   assert.match(completed[0].body,/after 0 notes/);
   assert.match(completed[1].body,/after 1 notes/);
   assert.equal(completed[2].body,'Work started after coordination');
+  const meeting=await rpc('/control',{action:'user_message',room:room.id,text:'Meeting coordination test'});
+  const meetingSeq=meeting.messages.find(message=>message.body==='Meeting coordination test').seq;
+  const meetingDone=await until(async()=>{
+    const state=await sync();
+    const plan=state.replyPlans.find(p=>p.seq===meetingSeq);
+    if(plan?.state!=='coordinated')return false;
+    return state;
+  },420);
+  const meetingReplies=meetingDone.messages.filter(message=>message.relay_root===meetingSeq);
+  assert.equal(meetingReplies.length,2);
+  assert.match(meetingReplies[0].body,/consensus after 0 notes/);
+  assert.match(meetingReplies[1].body,/consensus after 1 notes/);
+  const meetingDeliveries=meetingDone.deliveries.filter(d=>d.seq===meetingSeq);
+  assert.equal(meetingDeliveries.filter(d=>d.state==='context_seen').length,2);
+  assert.equal(meetingDeliveries.every(d=>d.state==='context_seen'||d.state==='context_only'),true);
   console.log('Passed: room approval, one channel push, reply, receipt, one-use subagent invitation, separate authorship, inherited revocation, room-wide broadcast, managed Codex and Claude creation and resume, durable outbox across hub restart, shared agent replies, room-scoped state, safe upload headers, and project switching.');
 }
 main().catch(err=>{console.error(err);process.exitCode=1;}).finally(()=>procs.forEach(p=>p.kill()));

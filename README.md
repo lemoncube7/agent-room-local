@@ -45,6 +45,10 @@ node bridge.cjs say --code <대화코드> "보낼 메시지" --as "외부 세션
 
 > 이 README대로 Agent Room을 현재 작업 프로젝트에 설치해 줘. 내 기존 Codex·Claude 대화는 유지해. CLI 실행과 프로젝트 MCP 등록, 테스트 결과를 각각 알려 줘.
 
+### 설치나 첫 사용이 막히면
+
+> 실패한 단계와 오류를 확인하고, 기존 설정을 보존하는 범위에서 해결을 시도해 줘. 그래도 막히면 Agent Room 버전, Windows·Node.js·CLI 버전, 재현 순서, 예상 동작과 실제 오류, 이미 시도한 조치를 짧게 정리해 줘. 토큰, 초대 코드, 사용자 폴더명, 프로젝트명, 원본 로그와 대화 내용은 빼 줘. 공개해도 되는 요약을 먼저 보여 주고 내가 승인하면 [Agent Room 이슈](https://github.com/lemoncube7/agent-room-local/issues)에 본문에 `@lemoncube7`을 넣어서 등록하고 링크를 알려 줘. GitHub에 등록할 수 없거나 비공개로 전달해야 하면, 이 링크를 보내 준 사람에게 전달할 메시지를 복사할 수 있게 만들어 줘.
+
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1 -Project 'E:\my-project' -Test
 powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1 -Project 'E:\my-project' -Apply -Connect -Test
