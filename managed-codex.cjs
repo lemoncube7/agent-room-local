@@ -292,13 +292,19 @@ function buildStreamArgs(provider,session,model,effort,options={}){
   const permission=options.permission||'dev';
   if(provider==='claude'){
     const args=['--print','--output-format','stream-json','--input-format','stream-json','--verbose','--permission-mode',permission==='full'?'bypassPermissions':'acceptEdits',...(session?['--resume',session]:[])];
-    if(permission==='dev')args.push('--allowedTools',devAllowedTools);
-    if(permission!=='full'&&options.approvalConfig)args.push('--mcp-config',options.approvalConfig,'--permission-prompt-tool','mcp__agent-room-approval__permission_prompt');
+    if(options.rank){
+      const i=args.indexOf('--permission-mode');
+      if(i>=0)args[i+1]='plan';
+      args.push('--tools','','--no-session-persistence','--strict-mcp-config');
+    }else{
+      if(permission==='dev')args.push('--allowedTools',devAllowedTools);
+      if(permission!=='full'&&options.approvalConfig)args.push('--mcp-config',options.approvalConfig,'--permission-prompt-tool','mcp__agent-room-approval__permission_prompt');
+    }
     if(model)args.push('--model',model);
     if(effort)args.push('--effort',effort);
     return args;
   }
-  const agyPerm=permission==='full'?['--dangerously-skip-permissions']:['--mode',permission==='edit'?'accept-edits':'auto'];
+  const agyPerm=options.rank?['--mode','plan']:permission==='full'?['--dangerously-skip-permissions']:['--mode',permission==='edit'?'accept-edits':'auto'];
   const args=['--input-format','stream-json','--output-format','stream-json',...agyPerm,...(session?['--conversation',session]:[]),'--print-timeout','1800s'];
   if(model)args.push('--model',model);
   if(effort)args.push('--effort',effort);
@@ -521,7 +527,7 @@ function createAcpHost(file,prefix,project,session,model,effort,options={},onExi
           }
         }else if(kind==='tool_call'||kind==='tool_call_update'){
           if(active.text)active.needsGap=true;
-          active.flushInterim();
+          if(kind==='tool_call')active.flushInterim();
           active.writeProgress(toolLabel(u.title||u.kind,u.rawInput));
         }
       }
@@ -591,6 +597,7 @@ function runStreamLive(provider,file,prefix,args,project,prompt,session,inboxFil
   return host.runTurn(prompt,{inboxFile,progressFile,interimFile});
 }
 const warmPool=new Map();
+const warmJudgePool=new Map();
 const warmIdleMs=30*60*1000;
 function invalidateWarm(participant){
   const entry=warmPool.get(participant);
@@ -600,8 +607,73 @@ function invalidateWarm(participant){
   entry.host.close();
   if(entry.cleanupApproval)try{entry.cleanupApproval();}catch{}
 }
+function invalidateWarmJudge(room){
+  const entry=warmJudgePool.get(room);
+  if(!entry)return;
+  warmJudgePool.delete(room);
+  clearTimeout(entry.idleTimer);
+  entry.host.close();
+}
 function closeAllWarm(){
   for(const participant of [...warmPool.keys()])invalidateWarm(participant);
+  for(const room of [...warmJudgePool.keys()])invalidateWarmJudge(room);
+}
+function ensureWarmJudge(room,project,provider='codex',model=null,effort=null){
+  if(module.exports.runCodex!==runCodex||!project||!fs.existsSync(project))return null;
+  const cfgKey=JSON.stringify([project,provider,model||'',effort||'']);
+  let entry=warmJudgePool.get(room);
+  if(entry&&(!entry.host.alive||entry.cfgKey!==cfgKey)){
+    invalidateWarmJudge(room);
+    entry=null;
+  }
+  if(!entry){
+    const [file,...prefix]=cliCommand(provider);
+    if(!file||!fs.existsSync(file))return null;
+    const onClosed=()=>{
+      const cur=warmJudgePool.get(room);
+      if(cur&&cur.host===host){
+        warmJudgePool.delete(room);
+        clearTimeout(cur.idleTimer);
+      }
+    };
+    let host;
+    if(provider==='codex'){
+      const args=[...prefix,'-c','sandbox_mode="read-only"'];
+      if(process.platform==='win32'&&(process.env.AGENT_ROOM_CODEX_SANDBOX||cliSettings().codexSandbox)==='mxc')args.push('-c','windows.sandbox="mxc"');
+      host=require('./codex-app-server.cjs').createWarmJudgeHost({file,args,project,env:cliEnv(),model,effort,onClosed});
+    }else if(provider==='claude'||provider==='agy'){
+      host=createStreamHost(provider,file,prefix,buildStreamArgs(provider,null,model,effort,{rank:true}),project,null,true,onClosed);
+    }else return null;
+    entry={host,cfgKey,idleTimer:null};
+    warmJudgePool.set(room,entry);
+  }
+  clearTimeout(entry.idleTimer);
+  entry.idleTimer=setTimeout(()=>invalidateWarmJudge(room),warmIdleMs);
+  entry.idleTimer.unref?.();
+  return entry;
+}
+function prewarmJudge(room,project,provider='codex',model=null,effort=null){
+  try{ensureWarmJudge(room,project,provider,model,effort);}catch{}
+}
+async function runWarmJudge(room,project,prompt,provider='codex',model=null,effort=null){
+  if(module.exports.runCodex!==runCodex){
+    return module.exports.runCodex(project,prompt,null,provider,model,effort,{rank:true});
+  }
+  const entry=ensureWarmJudge(room,project,provider,model,effort);
+  if(entry&&entry.host.alive&&!entry.host.busy){
+    try{
+      const result=await entry.host.runTurn(prompt,{rank:true});
+      if(entry.host.alive){
+        clearTimeout(entry.idleTimer);
+        entry.idleTimer=setTimeout(()=>invalidateWarmJudge(room),warmIdleMs);
+        entry.idleTimer.unref?.();
+      }
+      return result;
+    }catch{
+      invalidateWarmJudge(room);
+    }
+  }
+  return module.exports.runCodex(project,prompt,null,provider,model,effort,{rank:true});
 }
 async function runWarmTurn(participant,project,prompt,session,provider,model=null,effort=null,options={}){
   if((provider!=='claude'&&provider!=='agy')||options.rank)return runCodex(project,prompt,session,provider,model,effort,options);
@@ -836,4 +908,4 @@ function discoverModels(project,provider){
   });
 }
 
-module.exports={runCodex,runWarmTurn,invalidateWarm,closeAllWarm,refreshCodexLimits,refreshAgyLimits,discoverModels,diagnoseCliFailure,cliCommand};
+module.exports={runCodex,runWarmTurn,prewarmJudge,runWarmJudge,invalidateWarm,invalidateWarmJudge,closeAllWarm,refreshCodexLimits,refreshAgyLimits,discoverModels,diagnoseCliFailure,cliCommand};

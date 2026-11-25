@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.62
+- **자동 순위 판단기 상주 예열 (`codex-app-server.cjs`, `managed-codex.cjs`, `hub.cjs`):** `ranking` 모드 방에서 허브 기동 및 설정 저장 시 판단 프로세스(`prewarmJudge` / `runWarmJudge`)를 미리 열어두고 재사용해 콜드 스타트를 없앴습니다(Codex `app-server`는 새 스레드/턴만 실행해 문맥 오염 없이 유지).
+- **중복 답변 2중 방지 (`managed-codex.cjs`, `hub.cjs`):** `agy` ACP에서 최종 텍스트 뒤 도착한 `tool_call_update`로 중간 보고가 재방출되던 문제를 `tool_call` 시점에만 방출하도록 막고, 15초 이내 동일 본문 중복 저장을 차단했습니다.
+
 ## v0.2.57
 - **`cliTurn` `peers` 스코프 크래시 수정 (`hub.cjs`):** `active_writer` 데스크톱 폴백의 `callHint`가 `try` 블록 내부에만 있던 `peers`를 참조해 `ReferenceError`가 나던 문제를 `let peers = []`로 올려 해결했습니다.
 
