@@ -510,7 +510,7 @@ async function cliTurn(participant, prompt, inputSeq){
   const jobId=inputSeq?inputSeq+'-'+participant:null, priorJob=jobId?readSpoolJob(jobId):null;
   const useWarm=!priorJob&&(session.provider==='claude'||session.provider==='agy');
   const approvalTurn=priorJob?.approvalTurn??randomBytes(24).toString('hex'), approvalConfig=priorJob?.approvalConfig??path.join(local,randomUUID()+'.approval.json');
-  let sentContext=[], received=[], interimIdx=0;
+  let sentContext=[], received=[], peers=[], interimIdx=0;
   const invokeCli=(project,text,thread,provider,model,effort,options)=>useWarm
     ?runWarmTurn(participant,project,text,thread,provider,model,effort,{...options,onInterim:msg=>storeInterim(jobId||participant,participant,row.room,row.name,msg,interimIdx++)})
     :jobId?runDetached(jobId,{participant,inputSeq,approvalTurn,approvalConfig,project,prompt:text,session:thread,provider,model,effort,options},(interim,index)=>storeInterim(jobId,participant,row.room,row.name,interim,index)):runCodex(project,text,thread,provider,model,effort,options);
@@ -546,7 +546,7 @@ async function cliTurn(participant, prompt, inputSeq){
       }
     }
     if(inputSeq)run("UPDATE deliveries SET state='working' WHERE seq=? AND member=?",inputSeq,participant);
-    const peers=all("SELECT id,name,role FROM members WHERE room=? AND state='approved' AND id<>?",row.room,participant);
+    peers=all("SELECT id,name,role FROM members WHERE room=? AND state='approved' AND id<>?",row.room,participant);
     const peerRoster=peers.map(({id,name,role})=>role?{id,name,role}:{id,name});
     const roleNote=row.role?' Your assigned role in this room: '+JSON.stringify(row.role)+'.':'';
     const context='Your display name in Agent Room is '+JSON.stringify(row.name)+'. Your agent provider is '+session.provider+'.'+roleNote+' Use this name when interpreting mentions and identifying yourself. You are in a shared Agent Room chat. Your normal response goes to the whole room. Keep the default so other agents can follow progress. Only when a specific reply really needs a single recipient, put [[TO:participant-id]] on its own first line, using an exact ID from this room roster: '+JSON.stringify(peerRoster)+'. Never invent a reply from another agent.';

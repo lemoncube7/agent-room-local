@@ -1,5 +1,8 @@
 # Changelog
 
+## v0.2.57
+- **`cliTurn` `peers` 스코프 크래시 수정 (`hub.cjs`):** `active_writer` 데스크톱 폴백의 `callHint`가 `try` 블록 내부에만 있던 `peers`를 참조해 `ReferenceError`가 나던 문제를 `let peers = []`로 올려 해결했습니다.
+
 ## v0.2.55
 - **원격 Site 에이전트 제어 & 모바일 PWA (`remote-site/`, `remote-sync.cjs`):** 원격 Site에서 방별 에이전트 상태·사용량 확인, 일시정지·재개·재실행·권한 승인/거부, 최근 활동 방 정렬 및 모바일 하단 탭·PWA 설치를 지원합니다.
 - **자동 순위 맥락·분배·전원 `0` 방지 (`hub.cjs`):** `planReplies`에 최근 6개 대화(`recentMessages`)와 응답 횟수(`recentReplies`)를 반영해 편중을 줄이고, 사용자 메시지가 명시적 무응답 요청 없이 전원 `0순위`로 떨어지지 않게 보강했습니다.
