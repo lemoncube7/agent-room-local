@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.2.52
+- **`hub.cjs` 기동 크래시 수정:** 상단에 누락된 `const os = require('node:os')`를 추가해 세션 미러링 타이머에서 발생하던 `ReferenceError`를 해결했습니다.
+- **Claude · Antigravity 일반 답변 자동 미러링 (`hub.cjs`):** Codex에 이어 Claude(`~/.claude/projects/*/*.jsonl`)와 Antigravity(`transcript.jsonl`)의 외부 세션 일반 답변도 중복 없이 방에 자동 미러링합니다.
+- **시작 시 일반 브라우저 열기 (`start.ps1`):** `--app=...` 네이티브 앱 창 실행을 제거하고 기본 브라우저로 바로 열도록 변경했습니다.
+- **연결/외부 메시지 코드 자동 복사 (`index.html`):** 기존 대화 연결·외부 메시지 코드 생성 시 복사 버튼을 누르지 않아도 즉시 클립보드에 자동 복사됩니다.
+- **기존 세션 선택 목록 가독성 개선 (`hub.cjs`):** `MM/DD HH:mm · 폴더명 — 첫 대화 요약` 형식으로 대화 내용을 바로 알아볼 수 있게 개선했습니다.
+
 ## v0.2.51
 - **Codex 데스크톱 앱 양방향 연동 (`hub.cjs`, `codex-ipc.cjs`):** `active_writer` 잠금 시 `codex-app-tools-*` named pipe로 미수신 동료 메시지까지 포함해 간결히 전달하고, Codex 데스크톱에서 작성한 일반 답변(`rollout-*.jsonl` `task_complete`)도 중복 없이 방에 자동 미러링합니다.
 - **반복 프롬프트 축약 (`hub.cjs`):** 기존 세션이 이어진 턴에서는 매번 반복되던 긴 기본 안내문을 생략해 프롬프트를 크게 줄였습니다.

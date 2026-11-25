@@ -1,5 +1,6 @@
 'use strict';
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
 const {createHandoff}=require('./handoff.cjs');
@@ -178,10 +179,27 @@ function routeAgentReply(room,author,seq,recipient,called,root,wake){
     run('INSERT OR IGNORE INTO deliveries(seq,member,state,priority) VALUES(?,?,?,?)',seq,id,active?'queued':'context_only',active?1:0);
   }
 }
-const codexMirrorState=new Map();
-function findCodexRolloutFile(threadId){
-  const root=path.join(os.homedir(),'.codex','sessions');
-  if(!threadId||!fs.existsSync(root))return null;
+const sessionMirrorState=new Map();
+function findSessionLogFile(provider,threadId){
+  const home=os.homedir();
+  if(!threadId)return null;
+  if(provider==='agy'){
+    const p=path.join(home,'.gemini','antigravity-cli','brain',threadId,'.system_generated','logs','transcript.jsonl');
+    return fs.existsSync(p)?p:null;
+  }
+  if(provider==='claude'){
+    const base=path.join(home,'.claude','projects');
+    if(!fs.existsSync(base))return null;
+    try{
+      for(const dir of fs.readdirSync(base)){
+        const p=path.join(base,dir,threadId+'.jsonl');
+        if(fs.existsSync(p))return p;
+      }
+    }catch{}
+    return null;
+  }
+  const root=path.join(home,'.codex','sessions');
+  if(!fs.existsSync(root))return null;
   const walk=(dir,depth)=>{
     let entries;try{entries=fs.readdirSync(dir,{withFileTypes:true});}catch{return null;}
     entries.sort((a,b)=>b.name.localeCompare(a.name));
@@ -194,17 +212,34 @@ function findCodexRolloutFile(threadId){
   };
   return walk(root,0);
 }
-function mirrorCodexDesktopReplies(){
+function extractMirrorReply(provider,ev){
+  if(!ev||typeof ev!=='object')return null;
+  if(provider==='codex'){
+    if(ev.type!=='event_msg'||ev.payload?.type!=='task_complete')return null;
+    return {turnId:ev.payload.turn_id,text:ev.payload.last_agent_message};
+  }
+  if(provider==='claude'){
+    if(ev.type!=='assistant'||ev.isSidechain||ev.message?.stop_reason!=='end_turn'||!Array.isArray(ev.message?.content))return null;
+    const text=ev.message.content.filter(b=>b?.type==='text'&&b.text).map(b=>b.text).join('\n');
+    return {turnId:ev.uuid||ev.message.id,text};
+  }
+  if(provider==='agy'){
+    if(ev.type!=='PLANNER_RESPONSE'||ev.status!=='DONE'||(Array.isArray(ev.tool_calls)&&ev.tool_calls.length))return null;
+    return {turnId:'agy:'+ev.step_index,text:ev.content};
+  }
+  return null;
+}
+function mirrorSessionReplies(){
   if(draining||process.env.ROOM_PORT==='0')return;
-  const rows=all("SELECT m.id AS member,m.room,COALESCE(db.thread,cs.thread) AS thread FROM members m LEFT JOIN desktop_bindings db ON db.member=m.id LEFT JOIN cli_sessions cs ON cs.member=m.id AND cs.provider='codex' WHERE m.state='approved' AND COALESCE(db.thread,cs.thread) IS NOT NULL");
+  const rows=all("SELECT m.id AS member,m.room,COALESCE(db.thread,cs.thread) AS thread,COALESCE(cs.provider,'codex') AS provider FROM members m LEFT JOIN desktop_bindings db ON db.member=m.id LEFT JOIN cli_sessions cs ON cs.member=m.id WHERE m.state='approved' AND COALESCE(db.thread,cs.thread) IS NOT NULL");
   const now=Date.now();
-  for(const {member:memberId,room,thread} of rows){
-    let st=codexMirrorState.get(memberId);
-    if(!st||st.thread!==thread){st={thread,file:null,offset:0,lastScan:0,seenTurns:new Set()};codexMirrorState.set(memberId,st);}
+  for(const {member:memberId,room,thread,provider} of rows){
+    let st=sessionMirrorState.get(memberId);
+    if(!st||st.thread!==thread||st.provider!==provider){st={thread,provider,file:null,offset:0,lastScan:0,seenTurns:new Set()};sessionMirrorState.set(memberId,st);}
     if(!st.file){
       if(now-st.lastScan<15000)continue;
       st.lastScan=now;
-      const found=findCodexRolloutFile(thread);
+      const found=findSessionLogFile(provider,thread);
       if(!found)continue;
       st.file=found;
       try{st.offset=fs.statSync(found).size;}catch{st.file=null;}
@@ -222,8 +257,10 @@ function mirrorCodexDesktopReplies(){
     st.offset+=Buffer.byteLength(chunk.slice(0,lastNl+1),'utf8');
     for(const line of chunk.slice(0,lastNl).split('\n')){
       let ev;try{ev=JSON.parse(line);}catch{continue;}
-      if(ev?.type!=='event_msg'||ev.payload?.type!=='task_complete')continue;
-      const turnId=ev.payload.turn_id, msg=String(ev.payload.last_agent_message||'').trim();
+      const extracted=extractMirrorReply(provider,ev);
+      if(!extracted)continue;
+      const msg=stripWorkLines(String(extracted.text||'')).trim();
+      const turnId=extracted.turnId;
       if(!turnId||!msg||msg==='[[AGENT_ROOM_NO_REPLY]]'||cliBusy.has(memberId)||st.seenTurns.has(turnId))continue;
       st.seenTurns.add(turnId);
       const recentCutoff=new Date(Date.now()-30000).toISOString();
@@ -454,7 +491,7 @@ async function cliTurn(participant, prompt, inputSeq){
   const jobId=inputSeq?inputSeq+'-'+participant:null, priorJob=jobId?readSpoolJob(jobId):null;
   const useWarm=!priorJob&&(session.provider==='claude'||session.provider==='agy');
   const approvalTurn=priorJob?.approvalTurn??randomBytes(24).toString('hex'), approvalConfig=priorJob?.approvalConfig??path.join(local,randomUUID()+'.approval.json');
-  let sentContext=[], interimIdx=0;
+  let sentContext=[], received=[], interimIdx=0;
   const invokeCli=(project,text,thread,provider,model,effort,options)=>useWarm
     ?runWarmTurn(participant,project,text,thread,provider,model,effort,{...options,onInterim:msg=>storeInterim(jobId||participant,participant,row.room,row.name,msg,interimIdx++)})
     :jobId?runDetached(jobId,{participant,inputSeq,approvalTurn,approvalConfig,project,prompt:text,session:thread,provider,model,effort,options},(interim,index)=>storeInterim(jobId,participant,row.room,row.name,interim,index)):runCodex(project,text,thread,provider,model,effort,options);
@@ -502,7 +539,7 @@ async function cliTurn(participant, prompt, inputSeq){
     const structurePolicy=roomMode==='hierarchy'&&mainMember?(mainMember.id===participant
       ?' Room structure mode: hierarchy (User -> Main Agent -> Workers -> Subagents). You are the MAIN AGENT. User messages come to you first. Handle it yourself if appropriate, or if another agent should handle it, put [[FORWARD:participant-id]] on its own first line (alone to forward the user message directly without posting a reply, or followed by brief delegation instructions).'
       :' Room structure mode: hierarchy (User -> Main Agent -> Workers -> Subagents). The Main Agent is '+JSON.stringify(mainMember.name)+'. Focus on tasks forwarded or delegated to you by the Main Agent or directly addressed to you.'):'';
-    const received=inputSeq?all("SELECT messages.seq,members.name,messages.body FROM deliveries JOIN messages USING(seq) JOIN members ON members.id=messages.author WHERE deliveries.member=? AND deliveries.state='context_only' AND messages.seq<>? ORDER BY messages.seq DESC LIMIT 10",participant,inputSeq).reverse():[];
+    received=inputSeq?all("SELECT messages.seq,members.name,messages.body FROM deliveries JOIN messages USING(seq) JOIN members ON members.id=messages.author WHERE deliveries.member=? AND deliveries.state='context_only' AND messages.seq<>? ORDER BY messages.seq DESC LIMIT 10",participant,inputSeq).reverse():[];
     sentContext=received.map(item=>item.seq);
     const receivedSeqs=new Set(received.map(item=>item.seq));
     const contextHistory=session.thread?[]:all("SELECT messages.seq,members.name,messages.body FROM messages JOIN members ON members.id=messages.author WHERE messages.room=? AND (messages.recipient IS NULL OR messages.recipient=? OR messages.author=?) AND messages.retracted=0 AND messages.request NOT LIKE 'receipt:%' AND messages.seq<>? ORDER BY messages.seq DESC LIMIT 12",row.room,participant,participant,inputSeq??0).reverse().filter(item=>!receivedSeqs.has(item.seq));
@@ -946,29 +983,49 @@ function task({action,room,participant,name,text,request,replyTo,after=0,...extr
     return {seq};
   }catch(error){db.exec('ROLLBACK');throw error;}
 }
-function readSessionCwd(filePath){
-  let fd;
+function cleanSessionSnippet(raw){
+  if(typeof raw!=='string')return '';
+  const stripped=raw.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
+  if(!stripped||/^#?\s*AGENTS\.md instructions/i.test(stripped))return '';
+  return stripped.length>38?stripped.slice(0,37)+'…':stripped;
+}
+function readSessionMeta(filePath){
+  let fd, cwd=null, title='';
   try{
     fd=fs.openSync(filePath,'r');
-    const buf=Buffer.alloc(16384);
+    const buf=Buffer.alloc(32768);
     const n=fs.readSync(fd,buf,0,buf.length,0);
     const text=buf.subarray(0,n).toString('utf8');
     for(const line of text.split(/\r?\n/)){
       if(!line.trim())continue;
       try{
         const obj=JSON.parse(line);
-        const cwd=obj.cwd||obj.payload?.cwd||obj.session?.cwd;
-        if(typeof cwd==='string'&&cwd.trim()&&fs.existsSync(cwd.trim()))return cwd.trim();
+        if(!cwd){
+          const c=obj.cwd||obj.payload?.cwd||obj.session?.cwd;
+          if(typeof c==='string'&&c.trim()&&fs.existsSync(c.trim()))cwd=c.trim();
+        }
+        if(!title){
+          if(obj.type==='summary'&&obj.summary)title=cleanSessionSnippet(obj.summary);
+          else if(obj.type==='user'&&obj.message?.content){
+            const raw=typeof obj.message.content==='string'?obj.message.content:Array.isArray(obj.message.content)?obj.message.content.map(b=>b?.text||'').join(' '):'';
+            title=cleanSessionSnippet(raw);
+          }else if(obj.type==='event_msg'&&obj.payload?.type==='user_message'&&obj.payload.message){
+            title=cleanSessionSnippet(obj.payload.message);
+          }else if(obj.type==='response_item'&&obj.payload?.role==='user'&&Array.isArray(obj.payload.content)){
+            title=cleanSessionSnippet(obj.payload.content.map(b=>b?.text||'').join(' '));
+          }
+        }
+        if(cwd&&title)break;
       }catch{}
     }
   }catch{}
   finally{if(fd!==undefined)try{fs.closeSync(fd);}catch{}}
-  return null;
+  return {cwd,title};
 }
 function discoverSessions(provider){
   const os=require('node:os'), home=os.homedir(), out=[];
   const uuidRe=/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
-  const fmt=ms=>new Date(ms).toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false});
+  const fmt=ms=>{const d=new Date(ms);return `${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;};
   try{
     if(provider==='claude'){
       const base=path.join(home,'.claude','projects');
@@ -1006,15 +1063,23 @@ function discoverSessions(provider){
       if(fs.existsSync(base)){
         for(const entry of fs.readdirSync(base)){
           const m=entry.match(uuidRe);if(!m)continue;
-          try{const st=fs.statSync(path.join(base,entry));if(st.isDirectory())out.push({id:m[1],mtime:st.mtimeMs,file:null,shortProj:'AGY'});}catch{}
+          const dir=path.join(base,entry);
+          try{
+            const st=fs.statSync(dir);
+            if(st.isDirectory()){
+              const logFile=path.join(dir,'.system_generated','logs','transcript.jsonl');
+              out.push({id:m[1],mtime:st.mtimeMs,file:fs.existsSync(logFile)?logFile:null,shortProj:'AGY'});
+            }
+          }catch{}
         }
       }
     }
   }catch{}
   return out.sort((a,b)=>b.mtime-a.mtime).slice(0,15).map(({id,mtime,file,shortProj})=>{
-    const cwd=file?readSessionCwd(file):null;
+    const {cwd,title}=file?readSessionMeta(file):{cwd:null,title:''};
     const tag=cwd?path.basename(cwd):shortProj;
-    return {id,label:`${fmt(mtime)} · ${tag} (${id.slice(0,8)})`,...(cwd?{project:cwd}:{})};
+    const label=title?`${fmt(mtime)} · ${tag} — ${title}`:`${fmt(mtime)} · ${tag} (${id.slice(0,8)})`;
+    return {id,label,...(cwd?{project:cwd}:{})};
   });
 }
 function readActiveProject(){
@@ -1386,7 +1451,7 @@ server.listen(Number(process.env.ROOM_PORT||4317),'127.0.0.1',()=>{
   drainOutbox();
   recoverDetachedTurns();
   dispatchQueuedTurns();
-  setInterval(()=>{if(!draining){drainOutbox();dispatchRankings();dispatchQueuedTurns();dispatchDesktop();mirrorCodexDesktopReplies();}},1000).unref();
+  setInterval(()=>{if(!draining){drainOutbox();dispatchRankings();dispatchQueuedTurns();dispatchDesktop();mirrorSessionReplies();}},1000).unref();
   const refreshAllLimits=()=>{if(!draining){void refreshCodexLimits();void refreshAgyLimits(true);}};
   setTimeout(refreshAllLimits,2000).unref();
   setInterval(refreshAllLimits,20*60*1000).unref();
