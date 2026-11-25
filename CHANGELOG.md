@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.54
+- **에이전트 답변 후 후속 자동 순위 판정 (`hub.cjs`):** `ranking` 모드에서 에이전트가 답변을 올린 뒤 추가 조율/응답이 필요하면 `maybeRankAgentFollowup`이 자동 순위 판단기를 다시 실행해 `0순위`였던 동료를 `1순위`로 승격합니다(릴레이 4단계 상한 및 오류 시 `0` 폴백).
+- **열린 Claude 세션 감시자 (`bridge.cjs watch`, `hub.cjs`):** `node bridge.cjs watch <roomId> <participantId>`로 열린 Claude 세션에 새 메시지를 깨워 전달하며, 감시자가 활성화된 동안에는 헤드리스 `--resume` 충돌을 건너뜁니다.
+
 ## v0.2.53
 - **Codex 데스크톱 중복 컨텍스트 제거 (`hub.cjs`):** `active_writer` 폴백으로 데스크톱 앱에 전달한 미수신 메시지를 즉시 `context_seen`으로 마킹해, 다음 턴마다 이전 메시지가 중복 전송되던 문제를 해결했습니다.
 - **미러링 답변의 동료 호출(`[[CALL:...]]`) 연동 (`hub.cjs`):** 데스크톱 앱에서 작성한 일반 답변에도 `[[CALL:...]]`/`[[NEXT:...]]`/`[[TO:...]]`를 인식해 다음 동료를 자동으로 깨웁니다.

@@ -8,7 +8,35 @@ const local=path.join(__dirname,'local');
 const provider=process.argv[2];
 let thread=process.argv[3]||process.env.CODEX_THREAD_ID||'';
 const claude=provider==='claude';
-if(!['claude','codex','work','agy','approval','turn','say'].includes(provider))throw Error('Specify claude, codex, work, or agy.');
+if(!['claude','codex','work','agy','approval','turn','say','watch'].includes(provider))throw Error('Specify claude, codex, work, or agy.');
+async function runWatch(){
+  const [roomId,participantId]=process.argv.slice(3);
+  if(!roomId||!participantId)throw Error('Usage: node bridge.cjs watch <roomId> <participantId>');
+  fs.mkdirSync(local,{recursive:true});
+  const pidFile=path.join(local,'watcher-'+participantId+'.pid');
+  fs.writeFileSync(pidFile,JSON.stringify({pid:process.pid,room:roomId,participant:participantId,startedAt:Date.now()}));
+  const cleanup=()=>{try{fs.rmSync(pidFile,{force:true});}catch{}};
+  process.once('exit',cleanup);
+  process.once('SIGINT',()=>{cleanup();process.exit(0);});
+  process.once('SIGTERM',()=>{cleanup();process.exit(0);});
+  while(true){
+    try{
+      const list=await hub('/delivery',{room:roomId,participant:participantId,action:'pending',after:0,watch:true});
+      const out=[];
+      for(const m of list){
+        const claim=await hub('/delivery',{room:roomId,participant:participantId,action:'claim',seq:m.seq,watch:true});
+        if(!claim.claimed)continue;
+        await hub('/delivery',{room:roomId,participant:participantId,action:'settle',seq:m.seq,state:'accepted'});
+        out.push('[Agent Room #'+m.seq+' · '+m.author+']\n'+m.body);
+      }
+      if(out.length){
+        console.log(out.join('\n\n')+'\n\n(답변 후 감시자를 다시 실행하세요: node "'+__filename+'" watch "'+roomId+'" "'+participantId+'")');
+        return;
+      }
+    }catch(err){if(err.status===400||err.status===403)throw err;}
+    await new Promise(r=>setTimeout(r,2000));
+  }
+}
 async function runSay(){
   const args=process.argv.slice(3), positional=[];
   let name='외부 세션', wake=false, code=null;
@@ -260,6 +288,7 @@ async function invoke(req){
   }
 }
 if(provider==='say')void runSay().catch(error=>{console.error(error.message);process.exitCode=1;});
+else if(provider==='watch')void runWatch().catch(error=>{console.error(error.message);process.exitCode=1;});
 else if(provider==='turn')void runTurn(thread).catch(error=>{console.error(error.message);process.exitCode=1;});
 else createInterface({input:process.stdin}).on('close',()=>{clearInterval(timer);}).on('line',line=>{
   let request;
