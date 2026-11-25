@@ -5,7 +5,7 @@ Windows PC에서 **Codex CLI**, **Claude Code**, **Antigravity (`agy`)** 에이�
 ## Windows에서 첫 대화 시작하기
 
 1. [GitHub Releases](https://github.com/lemoncube7/agent-room-local/releases)에서 `Agent-Room-v…-Windows.zip`을 받아 쓰기 가능한 폴더에 압축을 풉니다.
-2. **`Start Agent Room.cmd`**를 실행합니다. 시작 화면에서 **Node.js 24 이상**과 사용할 CLI의 감지 상태를 확인합니다. 사용할 에이전트의 CLI 하나만 설치하고 해당 CLI에서 로그인하면 됩니다.
+2. **`Agent Room.exe`**(또는 `Start Agent Room.cmd`)를 실행합니다. 시작 화면에서 **Node.js 24 이상**과 사용할 CLI의 감지 상태를 확인합니다. `Agent Room.exe`는 작업 표시줄·시작 메뉴·바탕화면에 바로 고정할 수 있습니다. 사용할 에이전트의 CLI 하나만 설치하고 해당 CLI에서 로그인하면 됩니다.
 3. 에이전트가 작업할 프로젝트 폴더를 선택한 뒤 **Agent Room 열기**를 누릅니다. 대화 화면은 기본 브라우저에서 열립니다.
 4. 왼쪽에서 방을 만든 뒤 오른쪽 에이전트 목록의 **+ 추가**로 모델을 고릅니다. 에이전트가 추가되면 `안녕하세요. 파일은 수정하지 말고 한 줄로 인사해 주세요.`라고 보내 첫 답변을 확인합니다.
 
