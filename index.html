@@ -4,7 +4,7 @@
 *{box-sizing:border-box}body{margin:0;display:grid;grid-template-columns:clamp(150px,17vw,230px) minmax(0,1fr);grid-template-rows:minmax(0,1fr);height:100vh;height:100dvh;overflow:hidden}
 aside{background:#181d31;border-right:1px solid #2e3651;padding:28px 20px;overflow:auto}
 h1{font-size:21px;margin:0 0 24px}button,input{font:inherit;border-radius:9px;border:1px solid #384362;background:#252d46;color:inherit;padding:9px 12px}button{cursor:pointer}button:hover,button[aria-current=true]{background:#344265}form{display:flex;gap:5px}form[hidden]{display:none}input{width:100%;min-width:0}nav{display:grid;gap:8px;margin-top:20px}nav button{text-align:left}
-main{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}header{flex:none;padding:16px 25px;border-bottom:1px solid #2e3651;background:#111526}#room-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}#room-actions button{margin:0}#approvals{flex:none;display:grid;gap:8px;max-height:40vh;overflow:auto;padding:0 25px}#approvals:empty{display:none}#approvals>div{margin-bottom:8px;padding:10px 12px;background:#2c2a1f;border:1px solid #8a7433;border-radius:10px}#approvals pre{max-height:120px;overflow:auto;margin:6px 0;padding:8px;background:#14192a;border-radius:6px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}#approvals footer{display:flex;gap:6px;justify-content:flex-end}#compose{flex:none;align-items:flex-end;border-top:1px solid #2e3651}#draft{flex:1;min-width:0;min-height:68px;max-height:180px;resize:none;overflow-y:auto;font:inherit;line-height:1.45;color:inherit;background:#252d46;border:1px solid #384362;border-radius:9px;padding:9px 12px}header h2{margin:0;font-size:18px}header p{margin:8px 0 0;color:#b8c5e0}header code{color:#9ce6d2}header button{margin-top:10px}#people{display:flex;gap:8px;flex-wrap:wrap;max-height:24vh;overflow:auto;margin-top:12px}#people:empty{display:none}#people span{background:#202943;border-radius:9px;padding:6px 9px}#people button{margin-left:8px;font-size:12px}.history{flex:1 1 0;min-height:0;overscroll-behavior:contain;padding:14px;display:flex;flex-direction:column;gap:12px;overflow:auto}article{flex-shrink:0;max-width:96%;min-width:0;background:#222c43;border-radius:13px;padding:12px 16px;align-self:flex-start}article.own{align-self:flex-end;background:#203d40}article.own strong{color:#9ce6d2}article.codex{background:#202d48;border-inline-start:3px solid #8cb6ff}article.codex>strong{color:#a9c8ff}article.claude{background:#392b31;border-inline-start:3px solid #f3a880}article.claude>strong{color:#ffc2a2}article.agy{background:#293627;border-inline-start:3px solid #9fd87f}article.agy>strong{color:#bdeca2}dialog{width:min(420px,92vw);background:#202943;color:#edf0fa;border:1px solid #384362;border-radius:12px;padding:20px}#provider-buttons{display:flex;gap:6px;flex-wrap:wrap}#provider-buttons button[aria-pressed=true]{background:#345383;border-color:#8cb6ff}#handoff-dialog{width:min(740px,94vw);max-height:88vh}#task-form{display:grid;gap:8px}#task-form label{display:grid;gap:4px}#task-form textarea{resize:vertical;font:inherit;color:inherit;background:#252d46;border:1px solid #384362;border-radius:8px;padding:8px}#task-list{display:grid;gap:8px;margin:12px 0}#task-list article{max-width:100%;border:1px solid #384362}#task-list footer{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:8px}dialog::backdrop{background:#0a0e1bb8}#ranking-form{display:grid;gap:12px}#ranking-form p{margin:0}#ranking-form p:empty,#ranking-form small:empty{display:none}#ranking-form label{display:grid;gap:6px}#ranking-form select{font:inherit;padding:8px}#ranking-form footer{display:flex;gap:8px;justify-content:flex-end}#ranking-error{color:#ffb9ad}#ranking-form label.check,#agent-form label.check{display:flex;align-items:center;gap:8px}label.check[hidden]{display:none!important}label.check input{width:auto}#agent-form{display:grid;gap:12px}#agent-form label{display:grid;gap:6px}#agent-form select{font:inherit;padding:8px}#agent-form footer{display:flex;gap:8px;justify-content:flex-end}.markdown{color:#f4f6ff;overflow-wrap:anywhere;margin:7px 0}.markdown>*{margin:0 0 7px}.markdown>*:last-child{margin-bottom:0}.markdown pre{overflow:auto;max-width:100%;padding:8px;background:#14192a;border-radius:6px}.markdown pre code{white-space:pre}.markdown blockquote{margin-left:0;padding-left:10px;border-left:2px solid #7784a5}.markdown a{color:#b7d5ff}.markdown ul,.markdown ol{padding-left:22px}.markdown h3,.markdown h4,.markdown h5,.markdown h6{font-size:1em}article.typing small{display:block;margin-top:5px;color:#ffcf90}article p{white-space:pre-wrap;overflow-wrap:anywhere;margin:7px 0;color:#f4f6ff}small{color:#b8c5e0}article strong{color:#ffbf9e}#error{color:#ffb9ad;padding-top:8px}
+main{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}header{flex:none;padding:16px 25px;border-bottom:1px solid #2e3651;background:#111526}#room-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}#room-actions button{margin:0}#approvals{flex:none;display:grid;gap:8px;max-height:40vh;overflow:auto;padding:0 25px}#approvals:empty{display:none}#approvals>div{margin-bottom:8px;padding:10px 12px;background:#2c2a1f;border:1px solid #8a7433;border-radius:10px}#approvals details{margin:4px 0;font-size:12px;color:var(--muted)}#approvals details summary{cursor:pointer}#saved-rules-list{display:grid;gap:4px;margin-top:4px}#saved-rules-list[hidden]{display:none}.saved-rule-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;padding:4px 8px;background:var(--bg);border:1px solid var(--line);border-radius:6px}.saved-rule-row button{padding:1px 7px;font-size:11px}#approvals footer{display:flex;gap:6px;justify-content:flex-end}#compose{flex:none;align-items:flex-end;border-top:1px solid #2e3651}#draft{flex:1;min-width:0;min-height:68px;max-height:180px;resize:none;overflow-y:auto;font:inherit;line-height:1.45;color:inherit;background:#252d46;border:1px solid #384362;border-radius:9px;padding:9px 12px}header h2{margin:0;font-size:18px}header p{margin:8px 0 0;color:#b8c5e0}header code{color:#9ce6d2}header button{margin-top:10px}#people{display:flex;gap:8px;flex-wrap:wrap;max-height:24vh;overflow:auto;margin-top:12px}#people:empty{display:none}#people span{background:#202943;border-radius:9px;padding:6px 9px}#people button{margin-left:8px;font-size:12px}.history{flex:1 1 0;min-height:0;overscroll-behavior:contain;padding:14px;display:flex;flex-direction:column;gap:12px;overflow:auto}article{flex-shrink:0;max-width:96%;min-width:0;background:#222c43;border-radius:13px;padding:12px 16px;align-self:flex-start}article.own{align-self:flex-end;background:#203d40}article.own strong{color:#9ce6d2}article.codex{background:#202d48;border-inline-start:3px solid #8cb6ff}article.codex>strong{color:#a9c8ff}article.claude{background:#392b31;border-inline-start:3px solid #f3a880}article.claude>strong{color:#ffc2a2}article.agy{background:#293627;border-inline-start:3px solid #9fd87f}article.agy>strong{color:#bdeca2}dialog{width:min(420px,92vw);background:#202943;color:#edf0fa;border:1px solid #384362;border-radius:12px;padding:20px}#provider-buttons{display:flex;gap:6px;flex-wrap:wrap}#provider-buttons button[aria-pressed=true]{background:#345383;border-color:#8cb6ff}#handoff-dialog{width:min(740px,94vw);max-height:88vh}#task-form{display:grid;gap:8px}#task-form label{display:grid;gap:4px}#task-form textarea{resize:vertical;font:inherit;color:inherit;background:#252d46;border:1px solid #384362;border-radius:8px;padding:8px}#task-list{display:grid;gap:8px;margin:12px 0}#task-list article{max-width:100%;border:1px solid #384362}#task-list footer{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:8px}dialog::backdrop{background:#0a0e1bb8}#ranking-form{display:grid;gap:12px}#ranking-form p{margin:0}#ranking-form p:empty,#ranking-form small:empty{display:none}#ranking-form label{display:grid;gap:6px}#ranking-form select{font:inherit;padding:8px}#ranking-form footer{display:flex;gap:8px;justify-content:flex-end}#ranking-error{color:#ffb9ad}#ranking-form label.check,#agent-form label.check{display:flex;align-items:center;gap:8px}label.check[hidden]{display:none!important}label.check input{width:auto}#agent-form{display:grid;gap:12px}#agent-form label{display:grid;gap:6px}#agent-form select{font:inherit;padding:8px}#agent-form footer{display:flex;gap:8px;justify-content:flex-end}.markdown{color:#f4f6ff;overflow-wrap:anywhere;margin:7px 0}.markdown>*{margin:0 0 7px}.markdown>*:last-child{margin-bottom:0}.markdown pre{overflow:auto;max-width:100%;padding:8px;background:#14192a;border-radius:6px}.markdown pre code{white-space:pre}.markdown blockquote{margin-left:0;padding-left:10px;border-left:2px solid #7784a5}.markdown a{color:#b7d5ff}.markdown ul,.markdown ol{padding-left:22px}.markdown h3,.markdown h4,.markdown h5,.markdown h6{font-size:1em}article.typing small{display:block;margin-top:5px;color:#ffcf90}article p{white-space:pre-wrap;overflow-wrap:anywhere;margin:7px 0;color:#f4f6ff}small{color:#b8c5e0}article strong{color:#ffbf9e}#error{color:#ffb9ad;padding-top:8px}
 :root{--bg:#0f1117;--panel:#161922;--raised:#1e222d;--hover:#282d3a;--line:#2a2f3b;--text:#e8eaf0;--muted:#9aa1b0;--accent:#7c9cff;background:var(--bg);color:var(--text);font-family:"Pretendard","Malgun Gothic","Segoe UI",sans-serif;font-size:14px;line-height:1.55}
 body{grid-template-columns:clamp(200px,20vw,260px) minmax(0,1fr)}
 aside{display:flex;flex-direction:column;gap:10px;background:var(--panel);border-color:var(--line);padding:18px 14px}
@@ -25,7 +25,11 @@ header{padding:12px 22px;border-color:var(--line);background:var(--bg)}header h2
 .act-head{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:12px}
 .act-name{display:inline-flex;align-items:center;gap:6px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .act-dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--muted)}
-.act-dot.busy{background:#4fd1a5;animation:act-pulse 1.4s ease-in-out infinite}.act-dot.approval{background:#f5c451}.act-dot.error{background:#ff7b72}
+.act-dot.busy{background:#4fd1a5;animation:act-pulse 1.4s ease-in-out infinite}.act-dot.approval{background:#f5c451}.act-dot.error{background:#ff7b72}.act-dot.paused{background:transparent;border:2px solid var(--muted);box-sizing:border-box}
+.act-card.paused{opacity:.58;border-style:dashed;filter:saturate(.45)}.act-card.paused:hover{opacity:.88}
+.act-paused{flex:none;font-size:10px;font-weight:600;color:#ffd08a;background:#3a2f1d;border:1px solid #755b2b;border-radius:4px;padding:0 5px}
+.act-card[draggable=true]{cursor:grab}.act-card.dragging{opacity:.4;cursor:grabbing}.act-card.drag-over-top{box-shadow:inset 0 2px 0 var(--accent)}.act-card.drag-over-bottom{box-shadow:inset 0 -2px 0 var(--accent)}
+.act-actions button.resume-btn{color:#9ce6d2;border-color:#35695f;background:#1a302d}
 @keyframes act-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.82)}}
 .act-meta{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
 .act-step{font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -58,14 +62,15 @@ header{position:relative;padding:9px 16px}.head-row{display:flex;align-items:cen
 .history{padding-left:max(20px,calc((100% - 1240px)/2));padding-right:max(20px,calc((100% - 1240px)/2))}article{max-width:min(88%,1040px)}#task-list article{max-width:100%}
 .retract-btn{display:block;margin:4px 0 0 auto;padding:1px 8px;font-size:11px;color:var(--muted);background:transparent;border-color:transparent;opacity:0}article:hover>.retract-btn,.retract-btn:focus-visible{opacity:1}article.retracted{opacity:.6}article.retracted p{font-style:italic;color:var(--muted)}@media(hover:none){.retract-btn{opacity:1}}
 @media(max-width:1000px){body{grid-template-columns:minmax(0,1fr)}main{grid-column:1}body>aside,#agent-panel{position:fixed;z-index:30;top:0;bottom:0;width:min(300px,86vw);box-shadow:0 0 32px #000a}body>aside{left:0}#agent-panel{right:0}article{max-width:94%}#room-mode{display:none}}
-#work-dock{flex:none;margin:0 16px 4px}#work-dock:not([hidden]){display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--muted);font-size:12px}#work-dock button,.request-flow button{padding:3px 8px;font-size:12px}
+#work-dock{flex:none;margin:0;padding:6px max(22px,calc((100% - 1240px)/2));border-top:1px solid var(--line);background:var(--panel)}#work-dock:not([hidden]){display:flex;align-items:center;flex-wrap:wrap;gap:6px;color:var(--muted);font-size:12px}#work-dock button,.request-flow button{padding:3px 8px;font-size:12px}.work-chip{display:inline-flex;align-items:center;gap:6px;max-width:340px;padding:4px 10px!important;border-radius:999px;background:var(--raised);border:1px solid var(--line);color:var(--text);font-size:12px}.work-chip:hover{border-color:var(--accent)}.work-chip-step{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
 #work-panel{flex:0 0 34%;max-height:40vh;min-height:0;display:flex;flex-direction:column;background:var(--panel);border-top:1px solid var(--line)}#work-panel[hidden]{display:none}#work-output{flex:1;overflow:auto;min-height:0;overscroll-behavior:contain;padding:10px max(20px,calc((100% - 1240px)/2))}#work-panel select{min-width:0;max-width:65%}
 .request-flow{display:flex;align-items:center;flex-wrap:wrap;gap:5px;margin:8px 0;color:var(--muted);font-size:12px}.request-flow .flow-stage{display:inline-flex;flex-wrap:wrap;gap:4px}.request-flow small{flex-basis:100%}.history{position:relative}.history article.flow-focus{outline:2px solid var(--accent);outline-offset:2px}
 #rooms .room-entry{display:flex;align-items:center;gap:6px;min-width:0}#rooms .room-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#rooms .room-badges{display:flex;gap:4px;flex:none;margin-left:auto}#rooms .room-badge{padding:0 5px;border-radius:5px;font-size:10px;font-weight:650;white-space:nowrap}#rooms .room-badge-new{background:#293c65;color:#c6d8ff}#rooms .room-badge-approval{background:#554019;color:#ffdc95}
-#first-agent{align-self:center;margin:12px}#first-agent[hidden]{display:none}.dialog-options{display:grid;gap:10px;margin-top:10px} dialog summary{cursor:pointer} button#room-mode{display:inline-flex;font-size:12px;padding:4px 8px;white-space:nowrap} button#room-mode[hidden],#judge-fields[hidden]{display:none}
+#first-agent{align-self:center;margin:12px}#first-agent[hidden]{display:none}.dialog-options{display:grid;gap:10px;margin-top:10px} dialog summary{cursor:pointer} button#room-mode,button#room-work-mode{display:inline-flex;font-size:12px;padding:4px 8px;white-space:nowrap} button#room-mode[hidden],button#room-work-mode[hidden],#judge-fields[hidden]{display:none}
+#room-work-mode{flex:none;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--muted)}#room-work-mode.dev{border-color:#35695f;color:#9ce6d2;background:#162825}#room-work-mode.chat{border-color:#4b5582;color:#c7d2fe;background:#1e2338}
 </style>
 <aside><h1>Agent Room <small id="current-version" aria-label="현재 버전">버전 확인 중</small></h1><button id="project-btn" type="button" title="작업 프로젝트 폴더 변경">프로젝트: 확인 중…</button><form id="new" autocomplete="off"><input name="name" autocomplete="off" aria-label="채팅방 이름" placeholder="새 채팅방 이름" required maxlength="70"><button aria-label="채팅방 만들기">+</button></form><div id="error" role="status"></div><nav id="rooms"></nav><div id="side-foot"><button id="remote-btn" type="button" title="원격 Site 연결 설정">원격 연결: 꺼짐</button><button id="notify-toggle" type="button">완료 알림 꺼짐</button><button id="update">업데이트 확인</button><p id="update-result" role="status"></p></div></aside>
-<main><header><div class="head-row"><button id="rooms-toggle" class="icon-btn" type="button" title="방 목록 접기/펴기" aria-label="방 목록 접기/펴기">☰</button><h2 id="title">채팅방을 선택하세요</h2><button id="room-mode" type="button" hidden title="응답 방식 변경"></button><span class="head-space"></span><button id="agents-toggle" class="icon-btn" type="button" hidden title="에이전트 패널 접기/펴기" aria-label="에이전트 패널 접기/펴기">◧</button><button id="room-menu-btn" class="icon-btn" type="button" hidden title="방 설정" aria-label="방 설정" aria-haspopup="menu" aria-expanded="false">⋯</button></div><div id="room-actions" role="menu" hidden><button id="room-settings-btn" type="button" hidden role="menuitem">방 이름 · 설정</button><button id="reply-priority" hidden aria-pressed="false" title="방 구조 모드(자유/순위/계층형)와 메인 에이전트를 설정합니다.">구조 모드</button><button id="open-handoff" hidden>작업 인계</button><button id="open-approval-log">권한 승인 로그</button><button id="pair" hidden>기존 대화 연결 코드 만들기</button><button id="external-say" hidden>외부 메시지 코드 만들기</button></div><p id="pair-guide" hidden></p></header><section class="history" id="messages" aria-label="공용 대화"></section><section id="approvals" aria-label="허용 요청" aria-live="polite"></section><div id="attach-list" aria-label="첨부 파일 목록"></div><button type="button" id="first-agent" hidden>첫 에이전트 추가</button><form id="compose" autocomplete="off" hidden style="padding: 12px 25px"><input id="attach" type="file" multiple hidden><button id="attach-btn" type="button" title="파일 첨부 (드래그·붙여넣기 가능)">+ 파일</button><textarea id="draft" rows="1" autocomplete="off" aria-label="메시지" placeholder="방 전체에 메시지 보내기 (Shift+Enter 줄바꿈, 파일 드래그/붙여넣기)" maxlength="8000"></textarea><button type="submit">보내기</button></form></main><section id="agent-panel" aria-label="에이전트"><div class="panel-head"><strong>에이전트</strong><button id="add-agent" hidden>+ 추가</button></div><section id="activity" aria-label="에이전트 작업 현황"></section></section><dialog id="ranking-dialog"><form id="ranking-form"><h2>방 설정</h2><label>방 이름<input name="name" required maxlength="70" autocomplete="off" placeholder="채팅방 이름"></label><p id="mode-desc">사용자 메시지가 에이전트들에게 전달되는 방식을 선택합니다.</p><label>구조 모드<select name="mode"><option value="broadcast">자유 · 동시 응답 (모든 에이전트에게 전달)</option><option value="ranking">자동 · 순위 판정 (판단 모델이 담당자 선택)</option><option value="hierarchy">계층형 · 메인 → 하위 → 서브에이전트</option></select></label><label id="main-member-label" hidden>메인 에이전트<select name="mainMember"></select></label><div id="judge-fields" hidden><details id="judge-advanced"><summary>판단 모델 · 지침 설정</summary><div class="dialog-options"><label>판단 CLI<select name="provider"><option value="codex">Codex</option><option value="claude">Claude Code</option><option value="agy">Antigravity</option></select></label><label>모델<select name="model"><option value="">CLI 기본 모델</option></select></label><label>추론 강도<select name="effort"><option value="low">낮음</option><option value="medium">보통</option><option value="high">높음</option></select></label><label>판단 CLI 추가 지침<textarea name="judgePrompt" rows="3" maxlength="2000" placeholder="예: 코드 수정은 수소 우선, UI/문서는 오퍼스 우선, 단순 인사에는 아무도 답하지 마"></textarea></label></div></details></div><label>방 공유 메모 (모든 에이전트에게 항상 전달)<textarea name="memo" rows="3" maxlength="4000" placeholder="예: 배포는 release.ps1 사용, 공통 규칙·결정 사항 기록"></textarea></label><small id="ranking-status" role="status"></small><p id="ranking-error" role="status"></p><footer><button id="ranking-cancel" type="button">취소</button><button type="submit">저장</button></footer></form></dialog><dialog id="agent-dialog"><form id="agent-form" autocomplete="off"><h2 id="agent-title">에이전트 추가</h2><input type="hidden" name="provider" value="codex"><div id="provider-buttons" role="group" aria-label="CLI 종류"><button type="button" data-provider="codex">Codex</button><button type="button" data-provider="claude">Claude Code</button><button type="button" data-provider="agy">Antigravity</button></div><label>모델<select name="model"><option value="">CLI 기본 모델</option></select></label><label id="session-label">대화 시작 방식<select name="thread"><option value="">새 대화 시작</option></select></label><details id="agent-advanced"><summary>이름 · 역할 · 권한 설정</summary><div class="dialog-options"><label>추론 강도<select name="effort"><option value="">CLI 기본값</option><option value="low">낮음</option><option value="medium">보통</option><option value="high">높음</option></select></label><label>권한 (Claude · Antigravity)<select name="permission"><option value="edit">편집: 파일 수정만 자동 허용</option><option value="dev" selected>개발: 편집, 조회, 테스트·빌드, git 커밋</option><option value="full">전체: 모든 명령 자동 허용 (주의)</option></select></label><label id="clear-rules-label" class="check" hidden><input type="checkbox" name="clearRules"> <span id="clear-rules-text">항상 허용 목록 지우기</span></label><label>이름<input name="name" autocomplete="off" placeholder="비워 두면 모델명 사용" maxlength="120"></label><label>역할 · 담당 영역<input name="role" autocomplete="off" placeholder="예: 프론트엔드/UI, 허브 백엔드, 리뷰·테스트" maxlength="120"></label></div></details><small id="model-status" role="status"></small><small id="agent-error" role="status"></small><footer><button type="button" id="agent-cancel">취소</button><button id="agent-submit" type="submit">에이전트 추가</button></footer></form></dialog>
+<main><header><div class="head-row"><button id="rooms-toggle" class="icon-btn" type="button" title="방 목록 접기/펴기" aria-label="방 목록 접기/펴기">☰</button><h2 id="title">채팅방을 선택하세요</h2><button id="room-mode" type="button" hidden title="응답 방식 변경"></button><button id="room-work-mode" type="button" hidden title="대화 모드 / 개발 모드 전환"></button><span class="head-space"></span><button id="agents-toggle" class="icon-btn" type="button" hidden title="에이전트 패널 접기/펴기" aria-label="에이전트 패널 접기/펴기">◧</button><button id="room-menu-btn" class="icon-btn" type="button" hidden title="방 설정" aria-label="방 설정" aria-haspopup="menu" aria-expanded="false">⋯</button></div><div id="room-actions" role="menu" hidden><button id="room-settings-btn" type="button" hidden role="menuitem">방 이름 · 설정</button><button id="reply-priority" hidden aria-pressed="false" title="방 구조 모드(자유/순위/계층형)와 메인 에이전트를 설정합니다.">구조 모드</button><button id="open-handoff" hidden>작업 인계</button><button id="open-approval-log">권한 승인 로그</button><button id="pair" hidden>기존 대화 연결 코드 만들기</button><button id="external-say" hidden>외부 메시지 코드 만들기</button></div><p id="pair-guide" hidden></p></header><section class="history" id="messages" aria-label="공용 대화"></section><section id="approvals" aria-label="허용 요청" aria-live="polite"></section><div id="attach-list" aria-label="첨부 파일 목록"></div><button type="button" id="first-agent" hidden>첫 에이전트 추가</button><form id="compose" autocomplete="off" hidden style="padding: 12px 25px"><input id="attach" type="file" multiple hidden><button id="attach-btn" type="button" title="파일 첨부 (드래그·붙여넣기 가능)">+ 파일</button><textarea id="draft" rows="1" autocomplete="off" aria-label="메시지" placeholder="방 전체에 메시지 보내기 (Shift+Enter 줄바꿈, 파일 드래그/붙여넣기)" maxlength="8000"></textarea><button type="submit">보내기</button></form></main><section id="agent-panel" aria-label="에이전트"><div class="panel-head"><strong>에이전트</strong><button id="add-agent" hidden>+ 추가</button></div><section id="activity" aria-label="에이전트 작업 현황"></section></section><dialog id="ranking-dialog"><form id="ranking-form"><h2>방 설정</h2><label>방 이름<input name="name" required maxlength="70" autocomplete="off" placeholder="채팅방 이름"></label><label>방 성격<select name="workMode"><option value="dev">개발 모드 (코딩 · 파일 수정 · 자동 재호출 켜짐)</option><option value="chat">대화 모드 (아이디어 · 일반 대화 · 실행/재호출 꺼짐)</option></select></label><p id="mode-desc">사용자 메시지가 에이전트들에게 전달되는 방식을 선택합니다.</p><label>구조 모드<select name="mode"><option value="broadcast">자유 · 동시 응답 (모든 에이전트에게 전달)</option><option value="ranking">자동 · 순위 판정 (판단 모델이 담당자 선택)</option><option value="hierarchy">계층형 · 메인 → 하위 → 서브에이전트</option></select></label><label id="main-member-label" hidden>메인 에이전트<select name="mainMember"></select></label><div id="judge-fields" hidden><details id="judge-advanced"><summary>판단 모델 · 지침 설정</summary><div class="dialog-options"><label>판단 CLI<select name="provider"><option value="codex">Codex</option><option value="claude">Claude Code</option><option value="agy">Antigravity</option></select></label><label>모델<select name="model"><option value="">CLI 기본 모델</option></select></label><label>추론 강도<select name="effort"><option value="low">낮음</option><option value="medium">보통</option><option value="high">높음</option></select></label><label>판단 CLI 추가 지침<textarea name="judgePrompt" rows="3" maxlength="2000" placeholder="예: 코드 수정은 수소 우선, UI/문서는 오퍼스 우선, 단순 인사에는 아무도 답하지 마"></textarea></label></div></details></div><label>방 공유 메모 (모든 에이전트에게 항상 전달)<textarea name="memo" rows="3" maxlength="4000" placeholder="예: 배포는 release.ps1 사용, 공통 규칙·결정 사항 기록"></textarea></label><small id="ranking-status" role="status"></small><p id="ranking-error" role="status"></p><footer><button id="ranking-cancel" type="button">취소</button><button type="submit">저장</button></footer></form></dialog><dialog id="agent-dialog"><form id="agent-form" autocomplete="off"><h2 id="agent-title">에이전트 추가</h2><input type="hidden" name="provider" value="codex"><div id="provider-buttons" role="group" aria-label="CLI 종류"><button type="button" data-provider="codex">Codex</button><button type="button" data-provider="claude">Claude Code</button><button type="button" data-provider="agy">Antigravity</button></div><label>모델<select name="model"><option value="">CLI 기본 모델</option></select></label><label id="session-label">대화 시작 방식<select name="thread"><option value="">새 대화 시작</option></select></label><details id="agent-advanced"><summary>이름 · 역할 · 권한 설정</summary><div class="dialog-options"><label>추론 강도<select name="effort"><option value="">CLI 기본값</option><option value="low">낮음</option><option value="medium">보통</option><option value="high">높음</option></select></label><label>권한 (Claude · Antigravity)<select name="permission"><option value="edit">편집: 파일 수정만 자동 허용</option><option value="dev" selected>개발: 편집, 조회, 테스트·빌드, git 커밋</option><option value="full">전체: 모든 명령 자동 허용 (주의)</option></select></label><label id="clear-rules-label" class="check" hidden><input type="checkbox" name="clearRules"> <span id="clear-rules-text">항상 허용 목록 지우기</span></label><div id="saved-rules-list" hidden></div><label>이름<input name="name" autocomplete="off" placeholder="비워 두면 모델명 사용" maxlength="120"></label><label>역할 · 담당 영역<input name="role" autocomplete="off" placeholder="예: 프론트엔드/UI, 허브 백엔드, 리뷰·테스트" maxlength="120"></label></div></details><small id="model-status" role="status"></small><small id="agent-error" role="status"></small><footer><button type="button" id="agent-cancel">취소</button><button id="agent-submit" type="submit">에이전트 추가</button></footer></form></dialog>
 <dialog id="project-dialog"><form id="project-form" autocomplete="off"><h2>작업 프로젝트 변경</h2><p>새로 추가하는 CLI 에이전트가 사용할 프로젝트 폴더입니다.</p><label>프로젝트 경로<input name="project" required maxlength="500" placeholder="예: E:\my-project"></label><label class="check"><input type="checkbox" name="applyMcp" checked> 선택한 폴더 및 전역(Codex · Claude · Antigravity)에 MCP 설정 적용</label><div id="project-recent"></div><p id="project-error" role="status"></p><footer><button id="project-cancel" type="button">취소</button><button type="submit">적용</button></footer></form></dialog><dialog id="remote-dialog"><form id="remote-form" autocomplete="off" style="display:grid;gap:10px"><h2>원격 연결 설정</h2><p>비공개 ChatGPT Site(또는 호환 원격 서버)와 이 PC를 자동 연결합니다. 키는 이 PC의 <code>local/remote-config.json</code>에만 저장됩니다.</p><label style="display:grid;gap:4px">Site 주소<input name="site" maxlength="300" placeholder="https://your-site.chatgpt.site"></label><label style="display:grid;gap:4px">REMOTE_DEVICE_KEY<input name="deviceKey" type="password" maxlength="300" placeholder="32바이트 이상 비밀 키"></label><label style="display:grid;gap:4px">서비스 액세스 토큰 (선택)<input name="siteAccess" type="password" maxlength="500" placeholder="필요한 경우에만 입력"></label><label class="check"><input type="checkbox" name="enabled"> 원격 중계 켜기 (허브 시작 시 자동 실행)</label><p id="remote-error" role="status" style="color:#ffb9ad;margin:0;font-size:12px"></p><footer style="display:flex;gap:8px;justify-content:flex-end"><button id="remote-cancel" type="button">취소</button><button type="submit">저장</button></footer></form></dialog>
 <dialog id="handoff-dialog"><h2>작업 인계</h2><div id="task-list"></div><form id="task-form" autocomplete="off"><input type="hidden" name="id"><input type="hidden" name="revision"><label>작업 제목<input name="title" required maxlength="120"></label><label>작업 내용·검증 결과<textarea name="summary" rows="3" maxlength="8000"></textarea></label><label>다음 행동<textarea name="next" rows="2" required maxlength="2000"></textarea></label><label id="task-owner-label">첫 담당자<select name="target"></select></label><label>검증자 (선택)<select name="verifier"></select></label><label>완료 기준 (선택)<input name="doneWhen" maxlength="1000" placeholder="예: smoke-test.cjs 통과 및 UI 확인"></label><label>담당 파일 (선택, 쉼표 구분)<input name="files" maxlength="1000" placeholder="예: hub.cjs, index.html"></label><button type="submit" id="save-task">작업 만들기</button><button id="reset-task" type="button" hidden>새 작업 쓰기</button></form><p id="handoff-error" role="status"></p><button id="close-handoff">닫기</button></dialog><dialog id="approval-log-dialog" style="width:min(740px,94vw)"><h2>권한 승인 로그</h2><p>이 방의 권한 허용 요청 기록입니다. (<code>local/approvals.log</code>에도 저장됩니다)</p><div id="approval-log-list" style="display:grid;gap:8px;margin:12px 0"></div><button id="close-approval-log" type="button">닫기</button></dialog>
 <script>
@@ -353,6 +358,7 @@ function agentActions(m){
  }
  if(m.provider&&(m.state==='approved'||m.state==='start_failed')){
   const pauseBtn=el('button',m.paused?'재개':'일시정지');
+  if(m.paused)pauseBtn.className='resume-btn';
   pauseBtn.onclick=()=>control({action:'pause_agent',room:selected,participant:m.id,paused:!m.paused});
   box.append(pauseBtn);
  }
@@ -380,6 +386,10 @@ function render(){
  byId('reply-priority').textContent=roomMode==='hierarchy'?'계층형 · 메인: '+(mainMember?.name||'미지정'):roomMode==='ranking'?'자동 순위 · '+(ranking.judge_model||({codex:'Codex',claude:'Claude Code',agy:'Antigravity'})[ranking.judge_provider||'codex']):'자유 · 동시 응답';
  byId('reply-priority').setAttribute('aria-pressed',String(roomMode!=='broadcast'));
  byId('room-mode').hidden=!room; byId('room-mode').textContent=({ranking:'자동 순위',hierarchy:'계층형',broadcast:'동시 응답'})[roomMode];
+ const workMode=room?.work_mode==='chat'?'chat':'dev';
+ byId('room-work-mode').hidden=!room;
+ byId('room-work-mode').textContent=workMode==='chat'?'대화 모드':'개발 모드';
+ byId('room-work-mode').className=workMode;
  for(const id of ['pair','external-say','add-agent','open-handoff','reply-priority','room-settings-btn','room-menu-btn','agents-toggle'])byId(id).hidden=!room; byId('pair-guide').hidden=pairRoom!==selected;
  document.body.classList.toggle('no-room',!room);if(!room)closeRoomMenu();
  renderRoomList();
@@ -410,9 +420,10 @@ function formatResetTime(raw){
   ?d.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false})+' 초기화'
   :d.toLocaleDateString('ko-KR',{month:'numeric',day:'numeric'})+' '+d.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false})+' 초기화';
 }
+let draggingMemberId=null;
 function renderActivity(members,messages,mainMember){
  const box=byId('activity');
- if(!box)return;
+ if(!box||draggingMemberId)return;
  const windowLabels={five_hour:'5시간',seven_day:'7일',primary:'5시간',secondary:'7일','gemini-5h':'5시간','gemini-weekly':'7일','3p-5h':'5시간','3p-weekly':'7일'};
  const pickEntries=(m,lim)=>{
   const raw=lim?.windows&&typeof lim.windows==='object'?lim.windows:null;
@@ -423,17 +434,57 @@ function renderActivity(members,messages,mainMember){
   }
   return Object.entries(raw).filter(([,w])=>w&&typeof w==='object');
  };
+ const clearDropMarks=()=>{for(const el of box.children)el.classList.remove('drag-over-top','drag-over-bottom');};
  box.replaceChildren(...members.map(m=>{
   const card=document.createElement('div');
   const cls=m.provider==='agy'?'agy':m.provider==='codex'||agentPane(m.name)==='gpt'?'codex':m.provider==='claude'||agentPane(m.name)==='claude'?'claude':'';
-  card.className='act-card'+(cls?' '+cls:'');
+  card.className='act-card'+(cls?' '+cls:'')+(m.paused?' paused':'');
+  card.draggable=true;
+  card.dataset.memberId=m.id;
+  card.ondragstart=e=>{
+   draggingMemberId=m.id;
+   card.classList.add('dragging');
+   if(e.dataTransfer){e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',m.id);}
+  };
+  card.ondragover=e=>{
+   if(!draggingMemberId||draggingMemberId===m.id)return;
+   e.preventDefault();
+   if(e.dataTransfer)e.dataTransfer.dropEffect='move';
+   const rect=card.getBoundingClientRect();
+   const before=(e.clientY-rect.top)<rect.height/2;
+   clearDropMarks();
+   card.classList.add(before?'drag-over-top':'drag-over-bottom');
+  };
+  card.ondragleave=()=>{card.classList.remove('drag-over-top','drag-over-bottom');};
+  card.ondrop=e=>{
+   e.preventDefault();
+   const srcId=draggingMemberId;
+   draggingMemberId=null;
+   clearDropMarks();
+   if(!srcId||srcId===m.id)return;
+   const rect=card.getBoundingClientRect();
+   const before=(e.clientY-rect.top)<rect.height/2;
+   const ids=members.map(x=>x.id).filter(id=>id!==srcId);
+   const targetIdx=ids.indexOf(m.id);
+   if(targetIdx<0)return;
+   ids.splice(before?targetIdx:targetIdx+1,0,srcId);
+   const orderMap=new Map(ids.map((id,i)=>[id,i]));
+   const inRoom=snapshot.members.filter(x=>x.room===selected);
+   const other=snapshot.members.filter(x=>x.room!==selected);
+   inRoom.sort((a,b)=>(orderMap.get(a.id)??999)-(orderMap.get(b.id)??999));
+   snapshot.members=[...other,...inRoom];
+   renderActivity(members.slice().sort((a,b)=>(orderMap.get(a.id)??999)-(orderMap.get(b.id)??999)),messages,mainMember);
+   void control({action:'reorder_members',room:selected,order:ids});
+  };
+  card.ondragend=()=>{draggingMemberId=null;card.classList.remove('dragging');clearDropMarks();};
   const pendingApproval=(snapshot.approvals||[]).find(a=>a.room===selected&&a.name===m.name);
   const lastUserSeq=[...messages].reverse().find(msg=>msg.author==='human:'+selected)?.seq;
   const appWorking=!m.busy&&lastUserSeq&&(snapshot.deliveries||[]).some(d=>d.seq===lastUserSeq&&d.member===m.id&&d.state==='accepted');
   const dot=document.createElement('span');
-  dot.className='act-dot'+(pendingApproval||m.conflict?' approval':m.paused?'':m.busy||appWorking?' busy':m.cliError||m.state==='start_failed'?' error':'');
+  dot.className='act-dot'+(pendingApproval||m.conflict?' approval':m.paused?' paused':m.busy||appWorking?' busy':m.cliError||m.state==='start_failed'?' error':'');
   const name=el('span',m.name);name.className='act-name';name.prepend(dot);
   if(mainMember?.id===m.id){const tag=el('span','메인');tag.className='act-main';name.append(tag);}
+  if(m.paused){const ptag=el('span','일시정지');ptag.className='act-paused';name.append(ptag);}
   const lim=m.provider?snapshot.limits?.[m.provider]:null;
   const entries=pickEntries(m,lim);
   const meta=el('span',entries.length?(formatLimitAge(lim.updatedAt)||'잔여량'):'잔여량 정보 없음');meta.className='act-meta';
@@ -478,18 +529,38 @@ function renderActivity(members,messages,mainMember){
   return card;
  }));
 }
+function formatApprovalSummary(raw){
+ try{
+  const parsed=JSON.parse(raw);
+  if(parsed&&typeof parsed==='object'){
+   const lines=[];
+   const cmd=parsed.CommandLine||parsed.command;
+   const file=parsed.file_path||parsed.TargetFile||parsed.path;
+   if(cmd)lines.push('명령: '+cmd);
+   if(file)lines.push('대상: '+file);
+   if(parsed.Cwd||parsed.cwd)lines.push('위치: '+(parsed.Cwd||parsed.cwd));
+   if(parsed.description)lines.push('설명: '+parsed.description);
+   if(lines.length)return {summary:lines.join('\n'),raw:JSON.stringify(parsed,null,2)};
+  }
+ }catch{}
+ return {summary:String(raw||''),raw:null};
+}
 function renderApprovals(){
- byId('approvals').replaceChildren(...(snapshot.approvals||[]).map(item=>{
+ byId('approvals').replaceChildren(...(snapshot.approvals||[]).filter(item=>item.room===selected).map(item=>{
   const box=el('div',''),room=snapshot.rooms.find(r=>r.id===item.room)?.name||'',buttons=el('footer','');
   const decide=(allow,always=false)=>async()=>{for(const b of buttons.children)b.disabled=true;if(!await control({action:'approval_decide',id:item.id,allow,always}))for(const b of buttons.children)b.disabled=false;};
   const deny=el('button','거부'),allow=el('button','이번만 허용');deny.onclick=decide(false);allow.onclick=decide(true);buttons.append(deny,allow);
   if(item.rule){const always=el('button','항상 허용');always.title=item.rule.replace(/^[^:]+:/,'')+' 명령을 이 에이전트에게 다시 묻지 않습니다.';always.onclick=decide(true,true);buttons.append(always);}
-  box.append(el('strong',item.name+' · '+item.tool+' 실행 허용 요청'),el('small',' '+room),el('pre',item.input),buttons);
+  const info=formatApprovalSummary(item.input);
+  box.append(el('strong',item.name+' · '+item.tool+' 실행 허용 요청'),el('small',' '+room),el('pre',info.summary));
+  if(info.raw){const det=document.createElement('details');det.append(el('summary','상세 입력 보기'),el('pre',info.raw));box.append(det);}
+  box.append(buttons);
   return box;
  }));
 }
-const workDock=el('div'),workSummary=el('span'),workOpen=el('button','작업 보기');
-workDock.id='work-dock';workDock.hidden=true;workDock.append(workSummary,workOpen);byId('compose').before(workDock);
+const workDock=el('div'),workChips=el('div'),workOpen=el('button','작업 보기');
+workChips.style.cssText='display:flex;align-items:center;flex-wrap:wrap;gap:6px;flex:1;min-width:0';
+workDock.id='work-dock';workDock.hidden=true;workDock.append(workChips,workOpen);byId('compose').before(workDock);
 const workPanel=el('section'),workHead=el('div'),workSelect=el('select'),workClose=el('button','닫기'),workOutput=el('div');
 workPanel.id='work-panel';workPanel.hidden=true;workPanel.setAttribute('aria-label','작업 출력');
 workHead.className='panel-head';workSelect.setAttribute('aria-label','작업 에이전트');workOutput.id='work-output';
@@ -508,9 +579,28 @@ function renderWork(people,roomChanged=false){
  workPeople=people;
  const busy=people.filter(a=>a.busy), approvals=(snapshot.approvals||[]).filter(a=>a.room===selected);
  workDock.hidden=!busy.length&&!approvals.length;
- workSummary.textContent=[busy.length?'작업 '+busy.length+'개':'',approvals.length?'승인 대기 '+approvals.length+'개':''].filter(Boolean).join(' · ');
- workOpen.textContent=busy.length?'작업 보기':'승인 보기';
- workOpen.onclick=busy.length?()=>showWork():()=>byId('approvals').querySelector('button')?.focus();
+ const chips=busy.map(a=>{
+  const chip=el('button','');chip.type='button';chip.className='work-chip';
+  const dot=el('i','');dot.className='act-dot busy';
+  const name=el('strong',a.name);
+  const started=a.progress?.startedAt||a.progress?.updatedAt;
+  const sec=started?Math.max(0,Math.floor((Date.now()-started)/1000)):0;
+  const label=(a.progress?.task||a.progress?.step||'작업 중…')+(sec>=2?' ('+sec+'초)':'');
+  const step=el('span',label);step.className='work-chip-step';
+  chip.title=a.name+' · '+label+' (클릭해 출력 보기)';
+  chip.onclick=()=>showWork(a.id);
+  chip.append(dot,name,step);
+  return chip;
+ });
+ if(approvals.length){
+  const ap=el('button','승인 대기 '+approvals.length+'개');ap.type='button';ap.className='work-chip';
+  ap.style.borderColor='#8a7433';ap.onclick=()=>byId('approvals').querySelector('button')?.focus();
+  chips.push(ap);
+ }
+ workChips.replaceChildren(...chips);
+ workOpen.hidden=!busy.length;
+ workOpen.textContent=workPanel.hidden?'출력 열기':'출력 닫기';
+ workOpen.onclick=()=>{if(workPanel.hidden)showWork();else workPanel.hidden=true;renderWork(workPeople);};
  if(workPanel.hidden)return;
  const agent=people.find(a=>a.id===workAgent)||busy[0]||people[0];
  if(!agent){workPanel.hidden=true;return;}
@@ -697,15 +787,34 @@ function openAgentDialog(agent){
  form.reset();byId('agent-advanced').open=Boolean(agent);byId('agent-submit').textContent=agent?'저장':'에이전트 추가';editingAgent=agent;agentRoom=selected;byId('clear-rules-label').hidden=true;
  form.elements.provider.value=agent?.provider||'codex';
  selectProvider(form.elements.provider.value,Boolean(agent));
+ function renderSavedRules(agentId){
+  const list=byId('saved-rules-list');
+  const savedRules=(snapshot.approvalRules||[]).filter(item=>item.member===agentId);
+  byId('clear-rules-text').textContent='항상 허용 목록 모두 지우기 ('+savedRules.length+'개)';
+  byId('clear-rules-label').hidden=!savedRules.length;
+  list.hidden=!savedRules.length;
+  list.replaceChildren(...savedRules.map(item=>{
+   const row=document.createElement('div');row.className='saved-rule-row';
+   const label=el('span',item.rule);
+   const del=el('button','삭제');del.type='button';
+   del.onclick=async()=>{
+    del.disabled=true;
+    if(await control({action:'delete_approval_rule',member:agentId,rule:item.rule})){
+     snapshot.approvalRules=(snapshot.approvalRules||[]).filter(r=>!(r.member===agentId&&r.rule===item.rule));
+     renderSavedRules(agentId);
+    }else del.disabled=false;
+   };
+   row.append(label,del);
+   return row;
+  }));
+ }
  if(agent){
   form.elements.effort.value=agent.effort||'';
   form.elements.permission.value=agent.permission_profile||'dev';
-  const savedRules=(snapshot.approvalRules||[]).filter(item=>item.member===agent.id);
-  byId('clear-rules-text').textContent='항상 허용 목록 지우기 ('+savedRules.length+'개)';
-  byId('clear-rules-label').hidden=!savedRules.length;
+  renderSavedRules(agent.id);
   form.elements.name.value=agent.name===agent.model?'':agent.name;
   form.elements.role.value=agent.role||'';
- }
+ }else byId('saved-rules-list').hidden=true;
  byId('session-label').hidden=Boolean(agent);
  byId('agent-title').textContent=agent?'에이전트 설정':'에이전트 추가';
  byId('agent-error').textContent='';
@@ -911,6 +1020,7 @@ function openRoomSettings(focusName=false){
  mainSel.replaceChildren(...approved.map(m=>new Option(m.name,m.id)));
  if(current?.main_member&&approved.some(m=>m.id===current.main_member))mainSel.value=current.main_member;
  rankingForm.elements.name.value=roomObj?.name||'';
+ rankingForm.elements.workMode.value=roomObj?.work_mode==='chat'?'chat':'dev';
  rankingForm.elements.mode.value=mode;
  rankingForm.elements.provider.value=current?.judge_provider||'codex';
  rankingForm.elements.effort.value=current?.judge_effort||'low';
@@ -925,14 +1035,20 @@ function openRoomSettings(focusName=false){
  void loadRankingModels(current?.judge_model||'');
 }
 byId('room-mode').onclick=byId('reply-priority').onclick=()=>openRoomSettings(false);
+byId('room-work-mode').onclick=()=>{
+ const roomObj=snapshot.rooms.find(r=>r.id===selected);
+ if(!roomObj)return;
+ const next=roomObj.work_mode==='chat'?'dev':'chat';
+ void control({action:'set_work_mode',room:selected,workMode:next});
+};
 byId('room-settings-btn').onclick=()=>openRoomSettings(true);
 rankingForm.elements.mode.onchange=syncModeFields;
 rankingForm.elements.provider.onchange=()=>void loadRankingModels();
 byId('ranking-cancel').onclick=()=>byId('ranking-dialog').close();
 rankingForm.onsubmit=async event=>{
  event.preventDefault();
- const {name,mode,mainMember,provider,model,effort,judgePrompt,memo}=rankingForm.elements;
- if(await control({action:'room_ranking',room:rankingRoom,name:name.value,mode:mode.value,enabled:mode.value==='ranking',mainMember:mainMember.value||null,provider:provider.value,model:model.value,effort:effort.value,prompt:judgePrompt.value,memo:memo.value}))byId('ranking-dialog').close();
+ const {name,workMode,mode,mainMember,provider,model,effort,judgePrompt,memo}=rankingForm.elements;
+ if(await control({action:'room_ranking',room:rankingRoom,name:name.value,workMode:workMode.value,mode:mode.value,enabled:mode.value==='ranking',mainMember:mainMember.value||null,provider:provider.value,model:model.value,effort:effort.value,prompt:judgePrompt.value,memo:memo.value}))byId('ranking-dialog').close();
  else byId('ranking-error').textContent=byId('error').textContent;
 };
 let pendingFiles=[];

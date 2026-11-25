@@ -196,10 +196,16 @@ function isSafeDevPart(part){
   if(['cargo','go','dotnet'].includes(base))return /^(test|build)$/.test(words[1]||'');
   return safeDevCommands.has(base);
 }
+function isTempOnlyRemoval(cmd){
+  if(!/\b(remove-item|rm|rmdir|del)\b/i.test(cmd))return false;
+  if(/[;&|`]|(\.\.)/.test(cmd.replace(/^(remove-item|rm|rmdir|del)\s+/i,'')))return false;
+  return /(\$env:TEMP|%TEMP%|\\AppData\\Local\\Temp\\)/i.test(cmd)&&!/\b(system32|windows|program files|users\\[^\\]+\\(?!appdata\\local\\temp))/i.test(cmd);
+}
 function isDangerousDevCommand(command){
   const cmd=String(command||'').trim();
   if(!cmd)return true;
-  if(/\b(rm\s+-[a-z]*[rf]|rmdir|del\s+\/|erase\b|remove-item\b|format\s+[a-z]:|diskpart|shutdown|restart-computer|stop-computer|reg\s+(add|delete|import)|set-executionpolicy|bcdedit|icacls|takeown|iex|invoke-expression)\b/i.test(cmd))return true;
+  if(/\b(rm\s+-[a-z]*[rf]|rmdir|del\s+\/|erase\b|remove-item\b)/i.test(cmd)&&!isTempOnlyRemoval(cmd))return true;
+  if(/\b(format\s+[a-z]:|diskpart|shutdown|restart-computer|stop-computer|reg\s+(add|delete|import)|set-executionpolicy|bcdedit|icacls|takeown|iex|invoke-expression)\b/i.test(cmd))return true;
   if(/\bgit\b[^\r\n;|&]*\b(push|reset\s+--hard|clean\s+-[a-z]*f|rebase|branch\s+-D|checkout\s+--\s+\.|filter-branch|config\s+--global)\b/i.test(cmd))return true;
   if(/\b(gh\s+(release|pr\s+(create|merge|close)|issue\s+(create|close)|repo\s+(create|delete))|npm\s+publish|ssh|scp|sftp)\b/i.test(cmd))return true;
   if(/\b(curl|wget|invoke-webrequest|invoke-restmethod|iwr|irm)\b/i.test(cmd)&&!/https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\b/i.test(cmd))return true;

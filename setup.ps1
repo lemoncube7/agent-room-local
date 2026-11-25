@@ -100,7 +100,7 @@ function Find-AgentCli($provider) {
     if ($app) { return $app.Source }
     $candidates = if ($provider -eq 'codex') {
         if (Get-Command Get-AppxPackage -ErrorAction SilentlyContinue) {
-            Get-AppxPackage -Name OpenAI.Codex | ForEach-Object { Join-Path $_.InstallLocation 'app/resources/codex.exe' }
+            Get-AppxPackage -Name OpenAI.Codex -ErrorAction SilentlyContinue | ForEach-Object { Join-Path $_.InstallLocation 'app/resources/codex.exe' }
         }
         Join-Path $env:APPDATA 'npm/node_modules/@openai/codex/bin/codex.js'
     } elseif ($provider -eq 'agy') {

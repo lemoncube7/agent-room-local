@@ -47,6 +47,7 @@ function initDb(rootDir) {
   const hasCol = (table, name) => all(`PRAGMA table_info(${table})`).some(col => col.name === name);
 
   if (!hasCol('rooms', 'memo')) db.exec("ALTER TABLE rooms ADD COLUMN memo TEXT NOT NULL DEFAULT ''");
+  if (!hasCol('rooms', 'work_mode')) db.exec("ALTER TABLE rooms ADD COLUMN work_mode TEXT NOT NULL DEFAULT 'dev'");
   if (!hasCol('members', 'parent')) db.exec('ALTER TABLE members ADD COLUMN parent TEXT');
   if (!hasCol('members', 'paused')) db.exec('ALTER TABLE members ADD COLUMN paused INTEGER NOT NULL DEFAULT 0');
   if (!hasCol('members', 'role')) db.exec("ALTER TABLE members ADD COLUMN role TEXT NOT NULL DEFAULT ''");
@@ -97,6 +98,8 @@ function initDb(rootDir) {
     if (!rankingColumns.has(column)) db.exec(`ALTER TABLE room_ranking ADD COLUMN ${column} ${def}`);
   }
   run("UPDATE room_ranking SET mode=CASE WHEN enabled=1 THEN 'ranking' ELSE 'broadcast' END WHERE mode IS NULL");
+  const memberColumns = new Set(all('PRAGMA table_info(members)').map(column => column.name));
+  if (!memberColumns.has('position')) db.exec('ALTER TABLE members ADD COLUMN position INTEGER');
 
   db.exec('CREATE TABLE IF NOT EXISTS handoff_alerts (seq INTEGER PRIMARY KEY, task INTEGER NOT NULL, revision INTEGER NOT NULL)');
 

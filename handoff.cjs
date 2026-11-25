@@ -40,6 +40,7 @@ function createHandoff({db,all,one,run,member,notify}){
     db.exec('BEGIN IMMEDIATE');
     try{
       let id=input.id;
+      let overrodeInactiveOwner=false;
       if(action==='handoff_create'){
         const owner=human?(input.target?member(input.target,room).id:null):actor;
         const verifier=input.verifier?member(input.verifier,room).id:null;
@@ -58,7 +59,9 @@ function createHandoff({db,all,one,run,member,notify}){
           run("UPDATE handoff_tasks SET owner=?,offered_to=NULL,status='open' WHERE id=?",action==='handoff_accept'?row.offered_to:row.owner,id);
         }else{
           const isVerifier=Boolean(row.verifier&&row.verifier===actor);
-          if(!human&&row.owner!==actor&&!(action==='handoff_complete'&&isVerifier))fail('Only the task owner can make this change.');
+          const ownerActive=Boolean(row.owner&&one("SELECT 1 FROM members WHERE id=? AND state='approved'",row.owner));
+          if(!human&&row.owner!==actor&&ownerActive&&!(action==='handoff_complete'&&isVerifier))fail('Only the task owner can make this change.');
+          overrodeInactiveOwner=!human&&row.owner!==actor&&!ownerActive;
           if(action==='handoff_offer'){
             if(row.status!=='open')fail('This task already has a pending handoff.');
             const target=member(input.target,room);
@@ -82,7 +85,7 @@ function createHandoff({db,all,one,run,member,notify}){
         }
         run('UPDATE handoff_tasks SET revision=revision+1,updated=? WHERE id=?',now(),id);
       }
-      run('INSERT INTO handoff_history(task,action,actor,note,created) VALUES(?,?,?,?,?)',id,action,actor,note,now());
+      run('INSERT INTO handoff_history(task,action,actor,note,created) VALUES(?,?,?,?,?)',id,action,actor,(overrodeInactiveOwner?'[inactive owner override] ':'')+note,now());
       db.exec('COMMIT');
       return {task:one('SELECT * FROM handoff_tasks WHERE id=?',id)};
     }catch(error){db.exec('ROLLBACK');throw error;}
