@@ -252,17 +252,66 @@ $window.Add_Drop({
 })
 
 $ui.BrowseBtn.Add_Click({
-    $picker = New-Object Windows.Forms.FolderBrowserDialog
-    $picker.Description = 'Agent Room에서 사용할 프로젝트 폴더를 선택하세요.'
-    $picker.ShowNewFolderButton = $true
     $cur = $ui.ProjectBox.Text.Trim()
-    if ($cur -and (Test-Path -LiteralPath $cur -PathType Container)) { $picker.SelectedPath = $cur }
+    $initial = if ($cur -and (Test-Path -LiteralPath $cur -PathType Container)) { $cur } else { '' }
+    $picked = $null
     try {
-        if ($picker.ShowDialog() -eq [Windows.Forms.DialogResult]::OK) {
-            $ui.ProjectBox.Text = $picker.SelectedPath
-            Sync-OpenButton
+        if (-not ('AgentRoomModernFolderPicker' -as [type])) {
+            Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class AgentRoomModernFolderPicker {
+    [ComImport, Guid("DC1C5A9C-E88A-4dde-A5A1-60F82A20AEF7")] class FileOpenDialogRCW {}
+    [ComImport, Guid("42f85136-db7e-439c-85f1-e4075d135fc8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IFileOpenDialog {
+        [PreserveSig] int Show(IntPtr parent);
+        void SetFileTypes(); void SetFileTypeIndex(); void GetFileTypeIndex(); void Advise(); void Unadvise();
+        void SetOptions(uint fos); void GetOptions(out uint fos);
+        void SetDefaultFolder(IShellItem si); void SetFolder(IShellItem si);
+        void GetFolder(); void GetCurrentSelection();
+        void SetFileName([MarshalAs(UnmanagedType.LPWStr)] string name); void GetFileName();
+        void SetTitle([MarshalAs(UnmanagedType.LPWStr)] string title);
+        void SetOkButtonLabel([MarshalAs(UnmanagedType.LPWStr)] string text);
+        void SetFileNameLabel(); void GetResult(out IShellItem si);
+    }
+    [ComImport, Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IShellItem {
+        void BindToHandler(); void GetParent();
+        void GetDisplayName(uint sigdn, [MarshalAs(UnmanagedType.LPWStr)] out string name);
+    }
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
+    static extern void SHCreateItemFromParsingName(string path, IntPtr pbc, [MarshalAs(UnmanagedType.LPStruct)] Guid riid, out IShellItem item);
+    public static string Pick(IntPtr owner, string title, string initial) {
+        var dlg = (IFileOpenDialog)new FileOpenDialogRCW();
+        dlg.SetOptions(0x20 | 0x40 | 0x800);
+        dlg.SetTitle(title);
+        dlg.SetOkButtonLabel("이 폴더 선택");
+        if (!string.IsNullOrEmpty(initial)) {
+            try { IShellItem f; SHCreateItemFromParsingName(initial, IntPtr.Zero, typeof(IShellItem).GUID, out f); dlg.SetFolder(f); } catch { }
         }
-    } finally { $picker.Dispose() }
+        if (dlg.Show(owner) != 0) return null;
+        IShellItem result; dlg.GetResult(out result);
+        string path; result.GetDisplayName(0x80058000, out path);
+        return path;
+    }
+}
+'@
+        }
+        $hwnd = (New-Object System.Windows.Interop.WindowInteropHelper($window)).Handle
+        $picked = [AgentRoomModernFolderPicker]::Pick($hwnd, 'Agent Room 작업 폴더 선택', $initial)
+    } catch {
+        $picker = New-Object Windows.Forms.FolderBrowserDialog
+        $picker.Description = 'Agent Room에서 사용할 프로젝트 폴더를 선택하세요.'
+        $picker.ShowNewFolderButton = $true
+        if ($initial) { $picker.SelectedPath = $initial }
+        try {
+            if ($picker.ShowDialog() -eq [Windows.Forms.DialogResult]::OK) { $picked = $picker.SelectedPath }
+        } finally { $picker.Dispose() }
+    }
+    if ($picked) {
+        $ui.ProjectBox.Text = $picked
+        Sync-OpenButton
+    }
 })
 
 $ui.OpenBtn.Add_Click({

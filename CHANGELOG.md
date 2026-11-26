@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.13
+- **시작 창 최신 탐색기 폴더 선택기 (`start.ps1`):** `폴더 찾기...` 클릭 시 구버전 트리 창(`FolderBrowserDialog`) 대신 최신 Windows 탐색기 스타일(`IFileOpenDialog`) 폴더 선택 창이 열리도록 교체했습니다.
+- **작업 출력 패널 개선 (`index.html`):** `#work-panel`의 고정 빈 공간(`34%`)을 제거해 내용에 맞춰 자동 높이로 표시하고, 작업 제목과 실시간 진행 단계·경과 시간을 함께 표시합니다.
+- **문서 최신화 (`README.md`, `SECURITY.md`):** 로컬 쿠키 인증, 새 방 기본 비공유, 전역 설정 미변경, `SHA256SUMS.txt` 검증, `대화 모드` 실제 읽기 전용 제한, 최신 UI 메뉴 경로를 반영했습니다.
+
 ## v1.0.12
 - **네이티브 창 High-DPI 선명화 (`launcher.cs`, `Agent Room.exe`):** Windows 배율(125%·150% 등)에서 WebView2 앱 창 글씨가 흐릿하게 번지던 문제를 `Per-Monitor V2 DPI Awareness` 적용으로 해결해 브라우저와 동일한 해상도로 선명하게 표시합니다.
 - **업데이트 종료 안정화 & UI 초기화 버그 수정 (`hub.cjs`, `update.ps1`, `index.html`):** `/shutdown_for_update` 후 즉시 연결 해제·강제 종료 폴백, `update.ps1` 15초 초과 시 강제 종료 폴백, 방 설정 프리셋 삽입 위치(`firstRankingLabel.before`) 오류를 수정했습니다.
