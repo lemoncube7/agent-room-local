@@ -60,8 +60,9 @@ header{position:relative;padding:9px 16px}.head-row{display:flex;align-items:cen
 #agent-panel{min-height:0;display:flex;flex-direction:column;background:var(--panel);border-left:1px solid var(--line)}.panel-head{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 12px;border-bottom:1px solid var(--line);font-size:13px}.panel-head button{font-size:12px;padding:4px 10px}
 #activity{flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;max-height:none;margin:0;padding:10px;overflow:auto}#activity:empty{display:none}.act-card{flex:none;background:var(--bg)}.act-step,.act-preview{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}.act-actions{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;padding-top:6px;border-top:1px solid var(--line)}.act-actions button{padding:2px 8px;font-size:11px;color:var(--muted);background:transparent;border-radius:6px}.act-actions button:hover{color:var(--text);background:var(--hover)}.act-main{flex:none;font-size:10px;font-weight:600;color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:0 4px}.act-parent{font-size:11px;color:var(--muted)}.act-card.subagent{margin-left:16px;border-left-style:dashed}
 .history{padding-left:max(20px,calc((100% - 1240px)/2));padding-right:max(20px,calc((100% - 1240px)/2))}article{max-width:min(88%,1040px)}#task-list article{max-width:100%}
+.msg-row{display:flex;flex-direction:column;align-items:flex-start;align-self:flex-start;flex-shrink:0;min-width:0;max-width:96%}.msg-row.own{align-self:flex-end;align-items:flex-end}.msg-row>article{max-width:100%;align-self:inherit}.msg-outside{display:flex;flex-direction:column;align-items:inherit;gap:2px;padding:3px 10px 0;max-width:100%;font-size:11px;color:var(--muted)}.msg-outside .request-flow{margin:2px 0}.msg-row.flow-focus>article{outline:2px solid var(--accent)}
 .msg-foot{display:flex;align-items:center;gap:8px;margin-top:4px}.msg-foot>small{margin-top:0;flex:1;min-width:0}
-.retract-btn{flex:none;margin-left:auto;padding:1px 8px;font-size:11px;color:var(--muted);background:transparent;border-color:transparent;opacity:0}article:hover .retract-btn,.retract-btn:focus-visible{opacity:1}article.retracted{opacity:.6}article.retracted p{font-style:italic;color:var(--muted)}@media(hover:none){.retract-btn{opacity:1}}
+.retract-btn{flex:none;margin-left:auto;padding:1px 8px;font-size:11px;color:var(--muted);background:transparent;border-color:transparent;opacity:0}article:hover .retract-btn,.msg-row:hover .retract-btn,.retract-btn:focus-visible{opacity:1}article.retracted{opacity:.6}article.retracted p{font-style:italic;color:var(--muted)}@media(hover:none){.retract-btn{opacity:1}}
 @media(max-width:1000px){body{grid-template-columns:minmax(0,1fr)}main{grid-column:1}body>aside,#agent-panel{position:fixed;z-index:30;top:0;bottom:0;width:min(300px,86vw);box-shadow:0 0 32px #000a}body>aside{left:0}#agent-panel{right:0}article{max-width:94%}#room-mode{display:none}}
 #work-dock{flex:none;margin:0;padding:6px max(22px,calc((100% - 1240px)/2));border-top:1px solid var(--line);background:var(--panel)}#work-dock:not([hidden]){display:flex;align-items:center;flex-wrap:wrap;gap:6px;color:var(--muted);font-size:12px}#work-dock button,.request-flow button{padding:3px 8px;font-size:12px}.work-chip{display:inline-flex;align-items:center;gap:6px;max-width:340px;padding:4px 10px!important;border-radius:999px;background:var(--raised);border:1px solid var(--line);color:var(--text);font-size:12px}.work-chip:hover{border-color:var(--accent)}.work-chip strong{white-space:nowrap;flex:none}.work-chip-step{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
 #work-panel{flex:0 0 34%;max-height:40vh;min-height:0;display:flex;flex-direction:column;background:var(--panel);border-top:1px solid var(--line)}#work-panel[hidden]{display:none}#work-output{flex:1;overflow:auto;min-height:0;overscroll-behavior:contain;padding:10px max(20px,calc((100% - 1240px)/2))}#work-panel select{min-width:0;max-width:65%}
@@ -829,7 +830,10 @@ function renderHistory(view,messages,roomChanged){
   const key='message:'+m.seq, prev=existing.get(key);
   if(prev&&prev.dataset.sig===sig)return prev;
   const isOwn=m.author==='human:'+selected;
-  const card=agentCard(m.name,isOwn,author?.provider);card.dataset.key=key;card.dataset.sig=sig;
+  const card=agentCard(m.name,isOwn,author?.provider);
+  // Time, delivery state and request flow sit under the bubble so the bubble stays compact.
+  const row=el('div');row.className='msg-row'+(isOwn?' own':'');row.dataset.key=key;row.dataset.sig=sig;
+  const outside=el('div');outside.className='msg-outside';
   if(m.retracted)card.classList.add('retracted');
   if(progressMsg)card.classList.add('progress-msg');
   const title=el('strong',isOwn?(target?'→ '+target.name:''):m.name+(target?' → '+target.name:''));
@@ -845,10 +849,10 @@ function renderHistory(view,messages,roomChanged){
   if(showFinalDivider){const div=el('div');div.className='final-divider';div.append(el('span','최종'));card.append(div);}
   const meta=el('small',new Date(m.created).toLocaleTimeString('ko-KR')+' · '+(delivery||'방에 저장됨'));
   const foot=el('div');foot.className='msg-foot';foot.append(meta);
-  card.append(m.retracted?el('p','철회한 메시지입니다.'):markdown(m.body),foot);
+  card.append(m.retracted?el('p','철회한 메시지입니다.'):markdown(m.body));outside.append(foot);row.append(card,outside);
   if(m.author==='human:'+selected&&!m.retracted){
    const flow=(sorted.some(d=>d.priority>0)||handoffs.length)?requestFlow(sorted,replies,handoffs,status):null;
-   if(flow)card.append(flow);
+   if(flow)outside.append(flow);
    const actionTarget=flow||foot;
    if(sorted.some(d=>d.state==='coordination_blocked')){
     const retry=el('button','조율 다시 시도');retry.type='button';retry.className='retract-btn';
@@ -867,7 +871,7 @@ function renderHistory(view,messages,roomChanged){
    retract.onclick=()=>{if(confirm('이 메시지를 철회할까요? 아직 안 간 에이전트에게는 전달을 취소하고, 이미 받은 에이전트에게는 무시하라고 알립니다.'))control({action:'retract_message',room:selected,seq:m.seq});};
    actionTarget.append(retract);
   }
-  return card;
+  return row;
  });
  if(messages.length>visibleMessages.length){
   const hiddenCount=messages.length-visibleMessages.length;
