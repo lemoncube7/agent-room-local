@@ -117,7 +117,11 @@ async function main(){
           continue;
         }
         if(!allowed.has(command.room))continue;
-        await request(hub.url+'/tool',post({Authorization:'Bearer '+hub.token},{action:'remote_user_message',room:command.room,request:command.id,text:command.text}));
+        let msgText=command.text, attachments=[];
+        if(typeof command.text==='string'&&command.text.startsWith('{"__msg":true,')){
+          try{const parsed=JSON.parse(command.text);msgText=String(parsed.text||'');attachments=Array.isArray(parsed.attachments)?parsed.attachments:[];}catch{}
+        }
+        await request(hub.url+'/tool',post({Authorization:'Bearer '+hub.token},{action:'remote_user_message',room:command.room,request:command.id,text:msgText,attachments}));
         acknowledged.push(command.id);
       }
       try{const alive=path.join(localDir,'remote-alive.json');fs.writeFileSync(alive+'.tmp',JSON.stringify({pid:process.pid,site:site.origin,at:Date.now(),siteVersion:response.siteVersion}));fs.renameSync(alive+'.tmp',alive);}catch{}

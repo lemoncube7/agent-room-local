@@ -149,7 +149,8 @@ body:not(.agents-hidden){grid-template-columns:clamp(170px,18vw,230px) minmax(0,
  <section id="approvals" aria-label="허용 요청" aria-live="polite"></section>
  <div id="compose-wrap">
   <div id="remote-slash-menu" hidden aria-label="빠른 명령어"></div>
-  <form id="compose" autocomplete="off"><textarea id="draft" rows="1" aria-label="메시지" placeholder="메시지 보내기 (/ 입력으로 빠른 명령, Shift+Enter 줄바꿈)" maxlength="8000" required></textarea><button type="submit">보내기</button></form>
+  <div id="remote-attach-list" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px"></div>
+  <form id="compose" autocomplete="off"><input id="remote-attach" type="file" multiple hidden><button id="remote-attach-btn" type="button" title="파일·이미지 첨부 (드래그·붙여넣기 가능)" style="flex:none;background:var(--raised);border:1px solid var(--line);color:var(--text)">+ 파일</button><textarea id="draft" rows="1" aria-label="메시지" placeholder="메시지 보내기 (/ 입력으로 빠른 명령, Shift+Enter 줄바꿈)" maxlength="8000"></textarea><button type="submit">보내기</button></form>
   <p id="status" role="status"></p>
  </div>
  <dialog id="remote-help-dialog"><div class="rhelp-head"><h2>원격 1분 사용법</h2><button id="remote-help-close" type="button" aria-label="닫기">✕</button></div><div class="rhelp-list"><div class="rhelp-item"><strong>1. PC와 자동 동기화</strong>PC의 Agent Room이 켜져 있으면 보낸 메시지가 바로 AI에게 전달되고, 답변이 이 화면에 표시됩니다.</div><div class="rhelp-item"><strong>2. PC가 꺼져 있어도 OK</strong>이전 대화는 폰에 캐시되어 바로 볼 수 있고, 보낸 메시지는 대기열에 저장되어 PC가 켜지면 자동 처리됩니다.</div><div class="rhelp-item"><strong>3. 빠른 명령어 (/)</strong>입력창에 <b>/방목록</b>, <b>/에이전트</b>, <b>/테마</b>, <b>/새로고침</b>, <b>/도움말</b>을 입력해 바로 실행할 수 있습니다.</div><div class="rhelp-item"><strong>4. 앱처럼 쓰기</strong>브라우저 메뉴에서 <b>홈 화면에 추가</b>를 누르면 모바일 앱처럼 전체 화면으로 쓸 수 있습니다.</div></div></dialog>
@@ -572,6 +573,38 @@ function renderRemoteSlashMenu(){
  menu.hidden=false;
 }
 draft.addEventListener('input',renderRemoteSlashMenu);
+let remoteAttachments=[];
+const attachInput=document.querySelector('#remote-attach'),attachList=document.querySelector('#remote-attach-list');
+function renderRemoteAttachments(){
+ attachList.replaceChildren(...remoteAttachments.map((item,idx)=>{
+  const chip=el('span',item.name+' ');
+  chip.style.cssText='display:inline-flex;align-items:center;gap:4px;background:var(--raised);border:1px solid var(--line);border-radius:8px;padding:2px 8px;font-size:12px';
+  const rm=el('button','✕');rm.type='button';rm.style.cssText='border:0;background:transparent;color:var(--muted);padding:0 2px;font-size:12px';
+  rm.onclick=()=>{remoteAttachments.splice(idx,1);renderRemoteAttachments();};
+  chip.append(rm);return chip;
+ }));
+}
+async function addRemoteFiles(files){
+ for(const file of files){
+  if(remoteAttachments.length>=5){statusLine.textContent='원격 첨부는 한 번에 최대 5개까지 가능합니다.';break;}
+  if(file.size>900*1024){statusLine.textContent=file.name+': 원격 첨부는 파일당 900KB 이하만 가능합니다.';continue;}
+  const buf=await file.arrayBuffer();
+  const bytes=new Uint8Array(buf);let bin='';
+  for(let i=0;i<bytes.length;i++)bin+=String.fromCharCode(bytes[i]);
+  const data=btoa(bin);
+  const total=remoteAttachments.reduce((s,a)=>s+a.data.length,0)+data.length;
+  if(total>1200000){statusLine.textContent='원격 첨부 전체 크기는 1.2MB(base64) 이하여야 합니다.';break;}
+  remoteAttachments.push({name:file.name||'image.png',data});
+ }
+ renderRemoteAttachments();
+}
+document.querySelector('#remote-attach-btn').onclick=()=>attachInput.click();
+attachInput.onchange=()=>{if(attachInput.files?.length)void addRemoteFiles([...attachInput.files]);attachInput.value='';};
+draft.onpaste=e=>{const files=[...(e.clipboardData?.files||[])];if(files.length){e.preventDefault();void addRemoteFiles(files);}};
+for(const zone of [form,historyView]){
+ zone.ondragover=e=>e.preventDefault();
+ zone.ondrop=e=>{if(e.dataTransfer?.files?.length){e.preventDefault();void addRemoteFiles([...e.dataTransfer.files]);}};
+}
 form.onsubmit=async event=>{
  event.preventDefault();
  const trimmed=draft.value.trim();
@@ -579,13 +612,17 @@ form.onsubmit=async event=>{
   const exact=remoteSlashCommands.find(it=>it.cmd===trimmed);
   if(exact){draft.value='';fitDraft();const m=document.querySelector('#remote-slash-menu');if(m)m.hidden=true;exact.run();return;}
  }
- if(!selected||!trimmed)return;
- if(pending?.text!==draft.value||pending.room!==selected)pending={id:crypto.randomUUID(),room:selected,text:draft.value};
+ if(!selected||(!trimmed&&!remoteAttachments.length))return;
+ const curAttKey=remoteAttachments.map(a=>a.name+':'+a.data.length).join(',');
+ if(pending?.text!==draft.value||pending.room!==selected||pending.attKey!==curAttKey){
+  pending={id:crypto.randomUUID(),room:selected,text:draft.value,attachments:remoteAttachments.slice(),attKey:curAttKey};
+ }
  const button=event.submitter;button.disabled=true;
  try{
-  const r=await fetch('/api/room/browser',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(pending)});
+  const body={id:pending.id,room:pending.room,text:pending.text,attachments:pending.attachments};
+  const r=await fetch('/api/room/browser',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(!r.ok)throw Error('전송하지 못했어요. 다시 시도해 주세요.');
-  draft.value='';fitDraft();pending=null;statusLine.textContent='PC로 보낼 메시지를 대기열에 넣었어요.';
+  draft.value='';fitDraft();remoteAttachments=[];renderRemoteAttachments();pending=null;statusLine.textContent='PC로 보낼 메시지를 대기열에 넣었어요.';
   void refresh();
  }catch(e){statusLine.textContent=formatNetError(e);}
  finally{button.disabled=false;}

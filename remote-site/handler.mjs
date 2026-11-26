@@ -101,7 +101,7 @@ export async function handleRoom(request,env){
     return json({rooms,events,snapshot});
   }
   if(request.method!=='POST'||request.headers.get('origin')!==new URL(request.url).origin)return json({error:'Forbidden'},403);
-  let payload;try{payload=await readBody(request,40000);}catch{return json({error:'Invalid payload'},400);}
+  let payload;try{payload=await readBody(request,1500000);}catch{return json({error:'Invalid payload'},400);}
   if(!isId(payload.id))return json({error:'Invalid message'},400);
   let storedText=payload.text, targetRoom=payload.room;
   if(payload.control){
@@ -117,10 +117,22 @@ export async function handleRoom(request,env){
       storedText=JSON.stringify({__control:true,control:payload.control,id:payload.id_target,allow:payload.allow,participant:payload.participant,paused:payload.paused,enabled:payload.enabled,mode:payload.mode,mainMember:payload.mainMember});
     }
   }else{
-    if(!isText(payload.text,8000))return json({error:'Invalid message'},400);
-    // Plain messages must never look like the stored control envelope the PC relay parses.
-    if(payload.text.trimStart().startsWith('{"__control"'))return json({error:'Invalid message'},400);
+    const rawAttachments=Array.isArray(payload.attachments)?payload.attachments:[];
+    if(rawAttachments.length>5)return json({error:'Too many attachments'},400);
+    const attachments=[];
+    let totalData=0;
+    for(const item of rawAttachments){
+      if(!isText(item?.name,120)||typeof item?.data!=='string'||!/^[A-Za-z0-9+/=]+$/.test(item.data))return json({error:'Invalid attachment'},400);
+      totalData+=item.data.length;
+      if(totalData>1200000)return json({error:'Attachments too large'},400);
+      attachments.push({name:item.name.trim(),data:item.data});
+    }
+    const textVal=typeof payload.text==='string'?payload.text:'';
+    if((!textVal.trim()&&!attachments.length)||textVal.length>8000)return json({error:'Invalid message'},400);
+    // Plain messages must never look like the stored control/msg envelope the PC relay parses.
+    if(textVal.trimStart().startsWith('{"__control"')||textVal.trimStart().startsWith('{"__msg"'))return json({error:'Invalid message'},400);
     if(!isId(targetRoom)||!await env.DB.prepare('SELECT id FROM remote_rooms WHERE id=?').bind(targetRoom).first())return json({error:'Room is not shared'},404);
+    storedText=attachments.length?JSON.stringify({__msg:true,text:textVal,attachments}):textVal;
   }
   const old=await env.DB.prepare('SELECT text,room FROM remote_commands WHERE id=?').bind(payload.id).first();
   if(old&&(old.text!==storedText||(old.room??null)!==(targetRoom??null)))return json({error:'Request ID already used'},409);

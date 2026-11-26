@@ -68,7 +68,7 @@ function approvalTool({action,turn,tool,input,id,expire,rule}){
   }
   const item=approvals.get(id);
   if(!item||item.member!==owner.participant)throw Error('Approval request not found.');
-  if(expire&&item.state==='pending'){item.state='expired';logApproval(item,'expired');}
+  if(expire&&item.state==='pending'){item.state='expired';logApproval(item,'expired');notifyApprovalDenied(item,'응답 시간 초과');}
   const state=item.state;
   if(state!=='pending')approvals.delete(id);
   return {state};
@@ -611,6 +611,10 @@ function storeInterim(jobId,author,room,sender,text,index){
     run('INSERT OR IGNORE INTO deliveries(seq,member,state,priority) VALUES(?,?,?,0)',seq,id,'context_only');
   }
 }
+function notifyApprovalDenied(item,reason){
+  if(!item?.room||!item?.member)return;
+  storeInterim('approval-'+randomUUID(),item.member,item.room,item.name||'',`⛔ 권한 거부됨 (${reason}): \`${String(item.tool||'Tool').slice(0,120)}\``,0);
+}
 function drainInterim(file,onInterim){
   if(!onInterim||!fs.existsSync(file))return;
   const lines=fs.readFileSync(file,'utf8').split('\n');
@@ -834,8 +838,8 @@ function isSafeAgyAction(permission,req){
 }
 async function requestUiApproval(participant,room,name,permission,req){
   if(isSafeAgyAction(permission,req))return 'allow_once';
-  if(permission==='chat')return 'deny';
   const tool=String(req.tool||'Tool').slice(0,120);
+  if(permission==='chat'){notifyApprovalDenied({room,member:participant,name,tool},'대화 모드 제한');return 'deny';}
   const inputStr=JSON.stringify(req.input||{}).slice(0,2000);
   const cmd=String(req.input?.CommandLine||req.input?.command||'').trim();
   const base=cmd.split(/\s+/)[0]?.toLowerCase()||'';
@@ -846,7 +850,7 @@ async function requestUiApproval(participant,room,name,permission,req){
     logApproval({id:randomUUID(),room,member:participant,name,tool,input:inputStr,rule:safeRule,created:Date.now()},'auto_allowed');
     return 'allow_always';
   }
-  if([...approvals.values()].filter(i=>i.member===participant&&i.state==='pending').length>=5)return 'deny';
+  if([...approvals.values()].filter(i=>i.member===participant&&i.state==='pending').length>=5){notifyApprovalDenied({room,member:participant,name,tool},'대기 요청 초과');return 'deny';}
   const item={id:randomUUID(),room,member:participant,name,tool,input:inputStr,rule:safeRule,state:'pending',created:Date.now()};
   approvals.set(item.id,item);
   logApproval(item,'pending');
@@ -857,6 +861,7 @@ async function requestUiApproval(participant,room,name,permission,req){
     if(item.state!=='pending'){approvals.delete(item.id);return 'deny';}
   }
   logApproval(item,'expired');
+  notifyApprovalDenied(item,'응답 시간 초과');
   approvals.delete(item.id);
   return 'deny';
 }
@@ -1339,7 +1344,7 @@ function task({action,room,participant,name,text,request,replyTo,after=0,...extr
   if(action==='remote_user_message'){
     if(remoteConfigured()&&!one('SELECT room FROM remote_rooms WHERE room=?',room))throw Error('Remote access is disabled for this room.');
     if(!/^[a-f0-9-]{36}$/i.test(request||''))throw Error('Invalid remote message identifier.');
-    const seq=recordUserMessage(room,text,'remote:'+request);
+    const seq=recordUserMessage(room,text,'remote:'+request,Array.isArray(extra.attachments)?extra.attachments:[]);
     dispatchQueuedTurns();
     return {seq};
   }
@@ -1356,6 +1361,7 @@ function task({action,room,participant,name,text,request,replyTo,after=0,...extr
       if(!item||item.room!==room||item.state!=='pending'||typeof extra.allow!=='boolean')throw Error('Approval is no longer pending.');
       item.state=extra.allow?'allowed':'denied';
       logApproval(item,item.state);
+      if(!extra.allow)notifyApprovalDenied(item,'원격에서 거부됨');
       return {ok:true};
     }
     if(extra.control==='retry_agent'){
@@ -1739,6 +1745,55 @@ function browserAuthorized(req,isLocal=true){
 const readAuthorized=(req,isLocal=true)=>authorized(req)||browserAuthorized(req,isLocal);
 const pwaIconSvg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#0f1117"/><circle cx="20" cy="32" r="7" fill="#4fd1a5"/><circle cx="32" cy="20" r="7" fill="#f0a27a"/><circle cx="44" cy="32" r="7" fill="#5ea0ff"/><path d="M22 44h20" stroke="#7c9cff" stroke-width="5" stroke-linecap="round"/></svg>';
 const lockedPage='<!doctype html><meta charset="utf-8"><title>Agent Room</title><body style="font-family:sans-serif;background:#111;color:#ddd;padding:40px"><h2>Agent Room</h2><p>보안을 위해 이 주소를 직접 열 수 없습니다. <b>Agent Room.exe</b>(또는 발급된 접속 링크)로 다시 열어 주세요.</p>';
+async function checkUpdateWithSite(){
+  const res=await checkUpdate();
+  const cfg=readRemoteConfig();
+  if(cfg.site){
+    let current=null;
+    try{
+      const alive=JSON.parse(fs.readFileSync(path.join(local,'remote-alive.json'),'utf8'));
+      if(alive.site===new URL(cfg.site).origin&&Date.now()-alive.at<15000&&typeof alive.siteVersion==='string'&&/^\d+\.\d+\.\d+$/.test(alive.siteVersion))current=alive.siteVersion;
+    }catch{}
+    try{
+      res.siteUpdate=await checkSiteUpdate(res.latest,current,version);
+      if(res.siteUpdate?.available&&cfg.autoSiteUpdate&&res.latest){
+        res.siteUpdateJob=await runDedicatedSiteUpdate(res.latest,'auto');
+      }
+    }catch{res.siteUpdate={current,failed:true};}
+  }
+  return res;
+}
+async function applyUpdateRelease(requestedTag){
+  if(process.platform!=='win32')throw Error('자동 설치는 Windows에서 사용할 수 있어요.');
+  if(updating)throw Error('이미 업데이트를 준비하고 있어요.');
+  const update=await checkUpdate();
+  const targetTag=requestedTag||update.latest;
+  if(!update.download||!targetTag||update.latest!==targetTag)throw Error('업데이트를 다시 확인해 주세요.');
+  fs.writeFileSync(updateLog,'업데이트 프로그램을 시작하는 중…\n');
+  const powershell=path.join(process.env.SystemRoot||'C:/Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
+  const worker=spawn(powershell,['-NoProfile','-NonInteractive','-Command',updaterLaunchCommand(powershell,update.latest)],{stdio:'ignore',windowsHide:true});
+  updating=true;updatePending=true;updaterProcess=worker;
+  const stopUpdate=message=>{
+    updating=false;updatePending=false;updaterProcess=undefined;
+    if(message)try{fs.appendFileSync(updateLog,'\n'+message+'\n');}catch{}
+  };
+  worker.once('exit',(code,signal)=>{
+    if(code!==0)return stopUpdate('업데이트 실패 (종료 상태 '+(signal??code)+'). Windows ZIP으로 다시 시도해 주세요.');
+    const started=Date.now();
+    const watch=setInterval(()=>{
+      if(draining)return clearInterval(watch);
+      let text='';try{text=readUpdateLog(updateLog);}catch{}
+      const age=Date.now()-started;
+      if(/Update failed/.test(text)){clearInterval(watch);stopUpdate();}
+      else if(!text.trim()&&age>30000){clearInterval(watch);stopUpdate('업데이트 실패: 30초 안에 업데이트 프로그램이 시작되지 않았어요. Windows ZIP으로 다시 시도해 주세요.');}
+      else if(age>420000){clearInterval(watch);stopUpdate('업데이트 실패: 제한 시간 안에 끝나지 않았어요. Windows ZIP으로 다시 시도해 주세요.');}
+    },2000);
+    watch.unref();
+  });
+  try{await new Promise((resolve,reject)=>{worker.once('spawn',resolve);worker.once('error',reject);});}
+  catch(error){updating=false;updatePending=false;fs.appendFileSync(updateLog,'업데이트 실패: '+error.message+'\n');throw error;}
+  return {started:true,latest:update.latest};
+}
 const server=http.createServer(async(req,res)=>{
   const port=server.address().port;
   const localHost='127.0.0.1:'+port;
@@ -2066,57 +2121,10 @@ const server=http.createServer(async(req,res)=>{
         result={sessions:discoverSessions(args.provider)};
       }
       else if(args.action==='check_update'){
-        result=await checkUpdate();
-        const cfg=readRemoteConfig();
-        if(cfg.site){
-          let current=null;
-          try{
-            const alive=JSON.parse(fs.readFileSync(path.join(local,'remote-alive.json'),'utf8'));
-            if(alive.site===new URL(cfg.site).origin&&Date.now()-alive.at<15000&&typeof alive.siteVersion==='string'&&/^\d+\.\d+\.\d+$/.test(alive.siteVersion))current=alive.siteVersion;
-          }catch{}
-          try{
-            result.siteUpdate=await checkSiteUpdate(result.latest,current,version);
-            if(result.siteUpdate?.available&&cfg.autoSiteUpdate&&result.latest){
-              result.siteUpdateJob=await runDedicatedSiteUpdate(result.latest,'auto');
-            }
-          }
-          catch{result.siteUpdate={current,failed:true};}
-        }
+        result=await checkUpdateWithSite();
       }
       else if(args.action==='apply_update'){
-        if(process.platform!=='win32')throw Error('자동 설치는 Windows에서 사용할 수 있어요.');
-        if(updating)throw Error('이미 업데이트를 준비하고 있어요.');
-        const update=await checkUpdate();
-        if(!update.download||update.latest!==args.tag)throw Error('업데이트를 다시 확인해 주세요.');
-        fs.writeFileSync(updateLog,'업데이트 프로그램을 시작하는 중…\n');
-        const powershell=path.join(process.env.SystemRoot||'C:/Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
-        const worker=spawn(powershell,['-NoProfile','-NonInteractive','-Command',updaterLaunchCommand(powershell,update.latest)],{stdio:'ignore',windowsHide:true});
-        updating=true;
-        updatePending=true;
-        updaterProcess=worker;
-        const stopUpdate=message=>{
-          updating=false;
-          updatePending=false;
-          updaterProcess=undefined;
-          if(message)try{fs.appendFileSync(updateLog,'\n'+message+'\n');}catch{}
-        };
-        worker.once('exit',(code,signal)=>{
-          if(code!==0)return stopUpdate('업데이트 실패 (종료 상태 '+(signal??code)+'). Windows ZIP으로 다시 시도해 주세요.');
-          const started=Date.now();
-          const watch=setInterval(()=>{
-            if(draining)return clearInterval(watch);
-            let text='';
-            try{text=readUpdateLog(updateLog);}catch{}
-            const age=Date.now()-started;
-            if(/Update failed/.test(text)){clearInterval(watch);stopUpdate();}
-            else if(!text.trim()&&age>30000){clearInterval(watch);stopUpdate('업데이트 실패: 30초 안에 업데이트 프로그램이 시작되지 않았어요. Windows ZIP으로 다시 시도해 주세요.');}
-            else if(age>420000){clearInterval(watch);stopUpdate('업데이트 실패: 제한 시간 안에 끝나지 않았어요. Windows ZIP으로 다시 시도해 주세요.');}
-          },2000);
-          watch.unref();
-        });
-        try{await new Promise((resolve,reject)=>{worker.once('spawn',resolve);worker.once('error',reject);});}
-        catch(error){updating=false;updatePending=false;fs.appendFileSync(updateLog,'업데이트 실패: '+error.message+'\n');throw error;}
-        result={started:true};
+        result=await applyUpdateRelease(args.tag);
       }
       else if(['new_agent','new_codex','new_claude'].includes(args.action)){
         if(draining)throw Error('업데이트 중이에요. 잠시 후 다시 시도하세요.');
@@ -2188,6 +2196,7 @@ const server=http.createServer(async(req,res)=>{
         if(args.allow&&args.always===true&&item.rule)run('INSERT OR IGNORE INTO approval_rules(member,rule) VALUES(?,?)',item.member,item.rule);
         item.state=args.allow?'allowed':'denied';
         logApproval(item,args.allow&&args.always===true?'allowed_always':item.state);
+        if(!args.allow)notifyApprovalDenied(item,'사용자가 거부함');
       }
       else if(args.action==='delete_approval_rule'){
         run('DELETE FROM approval_rules WHERE member=? AND rule=?',str(args.member,120),str(args.rule,120));
@@ -2266,6 +2275,8 @@ const server=http.createServer(async(req,res)=>{
         }
       } else throw Error('Unknown control.');
       result??=state(typeof args.room==='string'&&args.room?args.room:null);
+    } else if(req.url==='/tool'&&(args.action==='check_update'||args.action==='apply_update')){
+      result=args.action==='check_update'?await checkUpdateWithSite():await applyUpdateRelease(args.tag);
     } else result=req.url==='/tool'?task(args):deliver(args);
     res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'}).end(JSON.stringify(result));
   } catch(error){res.writeHead(400,{'Content-Type':'application/json'}).end(JSON.stringify({error:error.message}));}

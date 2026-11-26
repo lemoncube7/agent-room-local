@@ -74,6 +74,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1 -Project 'E:\my-
 ## 업데이트 · 검증 · 보안
 
 - **자동 업데이트:** **⚙ 설정 → 업데이트 확인 → 업데이트 설치**에서 진행합니다. 업데이트는 GitHub 릴리스의 `SHA256SUMS.txt`로 ZIP 무결성을 검증한 뒤 `local/`을 보존하며 적용하고, 새 허브 기동 실패 시 이전 파일로 자동 복구합니다.
+- **에이전트용 업데이트 경로:** 실행 중인 허브에는 `POST /tool` (`Authorization: Bearer <token>`)로 `{"action":"check_update"}` · `{"action":"apply_update"}`를 호출하거나, 설치 폴더(`app/`)에서 `powershell -NoProfile -ExecutionPolicy Bypass -File .\update.ps1`을 인자 없이 실행하면 최신 정식 릴리스로 자동 업데이트됩니다.
 - **통합 테스트:** Windows ZIP에서는 `node smoke-test.cjs`를, 소스 체크아웃에서는 `node remote-site/smoke-test.mjs`도 실행할 수 있습니다. `start.ps1 -Check`는 실행 창 로드 검사입니다.
 - **데이터·보안·백업·제거·문제 신고:** [SECURITY.md](SECURITY.md) 참고
 - **라이선스:** [MIT License](LICENSE)

@@ -1,7 +1,7 @@
 ﻿param(
-    [Parameter(Mandatory)][ValidatePattern('^v\d+\.\d+\.\d+$')][string]$Tag,
-    [Parameter(Mandatory)][int]$HubId,
-    [Parameter(Mandatory)][string]$NodePath
+    [ValidatePattern('^(latest|v\d+\.\d+\.\d+)$')][string]$Tag = 'latest',
+    [int]$HubId = 0,
+    [string]$NodePath = ''
 )
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -15,6 +15,13 @@ $failed = $false
 $newHub = $null
 $keepBackup = $false
 $oldVersion = (Get-Content -LiteralPath (Join-Path $PSScriptRoot 'VERSION') -Raw).Trim()
+if (-not $NodePath) { $NodePath = (Get-Command node.exe -ErrorAction Stop).Source }
+if (-not $Tag -or $Tag -eq 'latest') {
+    $latestRel = Invoke-RestMethod -Uri 'https://api.github.com/repos/lemoncube7/agent-room-local/releases/latest' -Headers @{'User-Agent'='agent-room-updater'} -TimeoutSec 20
+    $Tag = [string]$latestRel.tag_name
+    if ($Tag -notmatch '^v\d+\.\d+\.\d+$') { throw '최신 릴리스 태그를 확인하지 못했습니다.' }
+    if ($Tag.Substring(1) -eq $oldVersion) { Write-Output ('이미 최신 버전(v' + $oldVersion + ')입니다.'); exit 0 }
+}
 
 function Start-RoomHub {
     Start-Process -FilePath $NodePath -ArgumentList ('"' + (Join-Path $PSScriptRoot 'hub.cjs') + '"') -WorkingDirectory $PSScriptRoot -WindowStyle Hidden -PassThru
@@ -33,7 +40,11 @@ function Wait-RoomHub($process, [string]$expectedVersion) {
     return $false
 }
 try {
-    $hub = Get-Process -Id $HubId
+    $hub = if ($HubId -gt 0) { Get-Process -Id $HubId } else {
+        $esc = [regex]::Escape((Join-Path $PSScriptRoot 'hub.cjs'))
+        $m = Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.CommandLine -match ('(?:^|\s)"?' + $esc + '"?(?:\s|$)') } | Select-Object -First 1
+        if ($m) { Get-Process -Id $m.ProcessId -ErrorAction SilentlyContinue } else { $null }
+    }
     $zip = Join-Path $stage 'update.zip'
     $unpacked = Join-Path $stage 'unpacked'
     $backup = Join-Path $stage 'backup'
@@ -67,25 +78,27 @@ try {
         $current = Join-Path $PSScriptRoot $file
         if (Test-Path -LiteralPath $current) { Copy-Item -LiteralPath $current -Destination (Join-Path $backup $file) }
     }
-    $hubConfig = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'local/hub.json') -Raw | ConvertFrom-Json
-    if ($hubConfig.url -ne 'http://127.0.0.1:4317') { throw '예상하지 못한 Agent Room 주소입니다.' }
-    Write-Output 'Agent Room 허브 종료를 기다리는 중...'
-    $shutdownDeadline = (Get-Date).AddSeconds(330)
-    $announced = $false
-    while ($true) {
-        try {
-            Invoke-RestMethod -Method Post -Uri ($hubConfig.url + '/shutdown_for_update') -Headers @{Authorization='Bearer ' + $hubConfig.token} -ContentType 'application/json' -Body '{}' -TimeoutSec 10 | Out-Null
-            $restart = $true
-            break
-        } catch {
-            if ($_.Exception.Response -eq $null -or [int]$_.Exception.Response.StatusCode -ne 409 -or (Get-Date) -gt $shutdownDeadline) { throw }
-            if (-not $announced) { Write-Output '에이전트 답변이 마무리되는 대로 자동 설치됩니다. 새 메시지는 보존됩니다.'; $announced = $true }
-            Start-Sleep -Seconds 2
+    if ($hub -and -not $hub.HasExited) {
+        $hubConfig = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'local/hub.json') -Raw | ConvertFrom-Json
+        if ($hubConfig.url -ne 'http://127.0.0.1:4317') { throw '예상하지 못한 Agent Room 주소입니다.' }
+        Write-Output 'Agent Room 허브 종료를 기다리는 중...'
+        $shutdownDeadline = (Get-Date).AddSeconds(330)
+        $announced = $false
+        while ($true) {
+            try {
+                Invoke-RestMethod -Method Post -Uri ($hubConfig.url + '/shutdown_for_update') -Headers @{Authorization='Bearer ' + $hubConfig.token} -ContentType 'application/json' -Body '{}' -TimeoutSec 10 | Out-Null
+                $restart = $true
+                break
+            } catch {
+                if ($_.Exception.Response -eq $null -or [int]$_.Exception.Response.StatusCode -ne 409 -or (Get-Date) -gt $shutdownDeadline) { throw }
+                if (-not $announced) { Write-Output '에이전트 답변이 마무리되는 대로 자동 설치됩니다. 새 메시지는 보존됩니다.'; $announced = $true }
+                Start-Sleep -Seconds 2
+            }
         }
-    }
-    if (-not $hub.WaitForExit(15000)) {
-        try { Stop-Process -InputObject $hub -Force -ErrorAction SilentlyContinue } catch { }
-        if (-not $hub.WaitForExit(5000)) { throw 'Agent Room 종료 시간이 초과되어 파일을 교체하지 않았습니다.' }
+        if (-not $hub.WaitForExit(15000)) {
+            try { Stop-Process -InputObject $hub -Force -ErrorAction SilentlyContinue } catch { }
+            if (-not $hub.WaitForExit(5000)) { throw 'Agent Room 종료 시간이 초과되어 파일을 교체하지 않았습니다.' }
+        }
     }
     Write-Output '새 버전 파일을 설치하는 중...'
     foreach ($file in $files) {
