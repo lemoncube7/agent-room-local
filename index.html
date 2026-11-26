@@ -44,7 +44,7 @@ header{padding:12px 22px;border-color:var(--line);background:var(--bg)}header h2
 article{max-width:min(82%,720px);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 14px}article>strong{font-size:13px}article>small{display:block;margin-top:4px;font-size:11px;color:var(--muted)}
 article.own{background:#1f2a4a;border-color:#2f3f6e}article.own strong{color:#b6c8ff}
 article.codex,article.claude,article.agy{background:var(--panel);border-color:var(--line);border-inline-start-width:3px}article.codex{border-inline-start-color:#6ea8ff}article.claude{border-inline-start-color:#f0a27a}article.agy{border-inline-start-color:#8fd16f}
-.markdown,article p{color:var(--text)}.markdown .code-wrap{position:relative}.markdown pre{background:var(--bg);border:1px solid var(--line);padding:30px 10px 10px;margin:0}.markdown .copy-btn{position:absolute;top:6px;right:6px;z-index:2;padding:2px 8px;font-size:11px;border-radius:6px;background:var(--raised)}.markdown :not(pre)>code{background:var(--raised);border-radius:4px;padding:1px 5px;font-size:.92em}.markdown a{color:var(--accent)}.flow-badge{display:inline-block;margin-left:6px;font-size:10px;font-weight:600;padding:1px 6px;border-radius:999px;background:var(--raised);border:1px solid var(--line);color:var(--muted);vertical-align:middle}
+.markdown,article p{color:var(--text)}.markdown .code-wrap{position:relative}.markdown pre{background:var(--bg);border:1px solid var(--line);padding:30px 10px 10px;margin:0}.markdown .copy-btn{position:absolute;top:6px;right:6px;z-index:2;padding:2px 8px;font-size:11px;border-radius:6px;background:var(--raised)}.markdown :not(pre)>code{background:var(--raised);border-radius:4px;padding:1px 5px;font-size:.92em}.markdown a{color:var(--accent)}.flow-badge{display:inline-block;margin-left:6px;font-size:10px;font-weight:600;padding:1px 6px;border-radius:999px;background:var(--raised);border:1px solid var(--line);color:var(--muted);vertical-align:middle}.coord-badge{display:inline-block;margin-left:6px;font-size:10px;font-weight:600;padding:1px 7px;border-radius:999px;background:#223052;border:1px solid #3c5488;color:#b8d0ff;vertical-align:middle}article.progress-msg{opacity:.88}.final-divider{display:flex;align-items:center;gap:8px;margin:6px 0 8px;color:var(--muted);font-size:11px;font-weight:600;letter-spacing:.02em}.final-divider::before,.final-divider::after{content:"";flex:1;height:1px;background:var(--line)}
 #approvals{padding:0 max(22px,calc((100% - 1240px)/2))}
 #compose{gap:8px;border-color:var(--line);background:var(--bg);padding:12px max(22px,calc((100% - 1240px)/2))!important}#draft{background:var(--panel);border-color:var(--line);border-radius:10px;padding:10px 14px}#compose button{flex:none;padding:10px 18px;border-radius:10px}
 dialog{background:var(--panel);color:var(--text);border-color:var(--line);border-radius:14px;padding:22px;margin:auto;max-height:88vh;overflow:auto}dialog h2{margin:0 0 8px;font-size:17px}dialog p{color:var(--muted);font-size:13px}
@@ -306,6 +306,7 @@ const reconnectText='앱 서버에 다시 연결하는 중이에요. 업데이�
 let loadedVersion,serverLost=false;
 function update(next){
  if(!Array.isArray(next?.rooms))return;
+ if(next.authRequired){err('보안 연결이 필요합니다. Agent Room.exe(또는 start.ps1)로 다시 열어 주세요.');return;}
  if(serverLost){serverLost=false;if(byId('error').textContent===reconnectText)err('');}
  if(loadedVersion&&next.version&&next.version!==loadedVersion){
   sessionStorage.setItem('agentRoomDraft',byId('draft').value);
@@ -367,6 +368,8 @@ setupPane(byId('rooms-toggle'),'rooms-collapsed','agentRoomRoomsCollapsed');
 setupPane(byId('agents-toggle'),'agents-collapsed','agentRoomAgentsCollapsed');
 const quickRoomButton=el('button','방 빠른 준비');
 quickRoomButton.type='button';byId('new').after(quickRoomButton);
+const remoteShareButton=el('button','원격 공유 켜기');
+remoteShareButton.type='button';remoteShareButton.setAttribute('role','menuitem');byId('room-actions').append(remoteShareButton);
 const deleteRoomButton=el('button','이 방 삭제');
 deleteRoomButton.type='button';deleteRoomButton.setAttribute('role','menuitem');byId('room-actions').append(deleteRoomButton);
 const quickRoomDialog=el('dialog'),quickRoomForm=el('form'),quickRoomSource=el('select'),quickRoomName=el('input');
@@ -401,6 +404,12 @@ quickRoomForm.onsubmit=async event=>{
   quickRoomDialog.close();if(narrowView())document.body.classList.add('rooms-collapsed');
  }else quickRoomError.textContent=byId('error').textContent;
  quickRoomSubmit.disabled=false;
+};
+remoteShareButton.onclick=()=>{
+ const room=snapshot.rooms.find(item=>item.id===selected);
+ if(!room)return;
+ const shared=Array.isArray(snapshot.remoteRooms)&&snapshot.remoteRooms.includes(room.id);
+ void control({action:'remote_share',room:room.id,shared:!shared});
 };
 deleteRoomButton.onclick=()=>{
  const room=snapshot.rooms.find(item=>item.id===selected);
@@ -470,6 +479,10 @@ function render(){
  byId('room-work-mode').textContent=workMode==='chat'?'대화 모드':'개발 모드';
  byId('room-work-mode').className=workMode;
  for(const id of ['pair','external-say','add-agent','open-handoff','reply-priority','room-settings-btn','room-menu-btn','agents-toggle'])byId(id).hidden=!room; byId('pair-guide').hidden=pairRoom!==selected;
+ const isRemoteShared=Boolean(room&&Array.isArray(snapshot.remoteRooms)&&snapshot.remoteRooms.includes(room.id));
+ remoteShareButton.hidden=!room;
+ remoteShareButton.textContent=isRemoteShared?'원격 공유 끄기 (공유 중)':'원격 공유 켜기';
+ remoteShareButton.setAttribute('aria-pressed',String(isRemoteShared));
  document.body.classList.toggle('no-room',!room);if(!room)closeRoomMenu();
  renderRoomList();
  if(composeRoom!==selected){byId('draft').value='';fitDraft();}
@@ -765,7 +778,8 @@ function renderHistory(view,messages,roomChanged){
   if(!repliesByRoot.has(message.relay_root))repliesByRoot.set(message.relay_root,[]);
   repliesByRoot.get(message.relay_root).push(message);
  }
- const nodes=visibleMessages.map(m=>{
+ const isProgressMsg=msg=>Boolean(msg&&(msg.kind==='progress'||/^(?:progress|interim):/.test(String(msg.request||''))||/\[\[CONTINUE\]\]/.test(msg.body||'')));
+ const nodes=visibleMessages.map((m,idx)=>{
   const author=snapshot.members.find(member=>member.id===m.author);
   const target=m.recipient?snapshot.members.find(member=>member.id===m.recipient):null;
   const sorted=(deliveryBySeq.get(m.seq)||[]).sort((a,b)=>(a.priority||Infinity)-(b.priority||Infinity));
@@ -792,25 +806,42 @@ function renderHistory(view,messages,roomChanged){
   }else if(activeDeliveries.length){
    delivery='모두 응답 생략 (0순위)';
   }
-  const fallback=snapshot.replyPlans?.some(plan=>plan.seq===m.seq&&plan.state==='fallback');
+  const plan=snapshot.replyPlans?.find(p=>p.seq===m.seq);
+  const fallback=plan?.state==='fallback';
   if(fallback)delivery+=(delivery?' · ':'')+'기본 순서 사용';
+  let coordLabel='';
+  if(m.author==='human:'+selected){
+   const cm=plan?.coordinate_mode||plan?.mode||'';
+   const roundTxt=plan?.round?(plan?.max_rounds?` ${plan.round}/${plan.max_rounds}`:` ${plan.round}`):'';
+   if(cm==='work')coordLabel=`조율${roundTxt} → 작업`;
+   else if(cm==='discuss'||cm==='meeting'||cm==='plan')coordLabel=roundTxt?`조율${roundTxt} · 회의만`:'회의만';
+   else if(sorted.some(d=>String(d.state||'').startsWith('coordination_')))coordLabel=`조율${roundTxt}`;
+  }
+  const progressMsg=isProgressMsg(m);
+  const prevMsg=idx>0?visibleMessages[idx-1]:null;
+  const showFinalDivider=!m.retracted&&m.author!=='human:'+selected&&!progressMsg&&(m.kind==='final'||(prevMsg&&prevMsg.author===m.author&&isProgressMsg(prevMsg))||Boolean(m.relay_root&&messages.some(p=>p.seq<m.seq&&p.relay_root===m.relay_root&&p.author===m.author&&isProgressMsg(p))));
   const replies=repliesByRoot.get(m.seq)||[];
   const handoffs=replies.filter(source=>!source.retracted).flatMap(source=>(deliveryBySeq.get(source.seq)||[])
    .filter(target=>target.priority===1||source.recipient===target.member)
    .map(target=>({source,target})));
-  const sig=JSON.stringify([m.retracted?1:0,delivery,target?.name||'',author?.provider||'',m.relay_root||0,replies.map(reply=>[reply.seq,reply.retracted]),handoffs.map(({source,target})=>[source.seq,target.member,target.name])]);
+  const sig=JSON.stringify([m.retracted?1:0,delivery,target?.name||'',author?.provider||'',m.relay_root||0,coordLabel,progressMsg?1:0,showFinalDivider?1:0,replies.map(reply=>[reply.seq,reply.retracted]),handoffs.map(({source,target})=>[source.seq,target.member,target.name])]);
   const key='message:'+m.seq, prev=existing.get(key);
   if(prev&&prev.dataset.sig===sig)return prev;
   const card=agentCard(m.name,m.author==='human:'+selected,author?.provider);card.dataset.key=key;card.dataset.sig=sig;
   if(m.retracted)card.classList.add('retracted');
+  if(progressMsg)card.classList.add('progress-msg');
   const title=el('strong',m.name+(target?' → '+target.name:''));
+  if(coordLabel){const cb=el('span',coordLabel);cb.className='coord-badge';title.append(cb);}
+  if(progressMsg){const pb=el('span','중간 출력');pb.className='flow-badge';title.append(pb);}
   if(m.relay_root&&author){
    const rootDel=snapshot.deliveries.find(d=>d.seq===m.relay_root&&d.member===m.author);
    const caller=messages.slice().reverse().find(p=>p.seq<m.seq&&p.seq>=m.relay_root&&p.author!==m.author&&p.author!=='human:'+selected&&snapshot.deliveries.some(d=>d.seq===p.seq&&d.member===m.author&&d.priority===1&&['queued','working','answered','accepted','submitting'].includes(d.state)));
    const flowText=caller?caller.name+' → '+m.name+' 호출':rootDel?.priority?'자동 '+rootDel.priority+'순위':'';
    if(flowText){const fb=el('span',flowText);fb.className='flow-badge';title.append(fb);}
   }
-  card.append(title,m.retracted?el('p','철회한 메시지입니다.'):markdown(m.body),el('small',new Date(m.created).toLocaleTimeString('ko-KR')+' · '+(delivery||'방에 저장됨')));
+  card.append(title);
+  if(showFinalDivider){const div=el('div');div.className='final-divider';div.append(el('span','최종'));card.append(div);}
+  card.append(m.retracted?el('p','철회한 메시지입니다.'):markdown(m.body),el('small',new Date(m.created).toLocaleTimeString('ko-KR')+' · '+(delivery||'방에 저장됨')));
   if(m.author==='human:'+selected&&!m.retracted){
    if(sorted.some(d=>d.state==='coordination_blocked')){
     const retry=el('button','조율 다시 시도');retry.type='button';retry.className='retract-btn';

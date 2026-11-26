@@ -14,7 +14,7 @@ async function post(body){
 }
 async function main(){
   if(!roomLabel||!thread)throw Error('Usage: node bind-desktop.cjs "<room name>" "<Codex thread UUID>" [participant ID] [--test]');
-  const state=await (await fetch(config.url+'/state',{signal:AbortSignal.timeout(5000)})).json();
+  const state=await (await fetch(config.url+'/state',{headers:{Authorization:'Bearer '+config.token},signal:AbortSignal.timeout(5000)})).json();
   const rooms=state.rooms.filter(room=>room.name===roomLabel||room.id===roomLabel);
   if(rooms.length!==1)throw Error('Select one room by name or ID.');
   const room=rooms[0].id;

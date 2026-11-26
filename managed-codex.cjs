@@ -87,8 +87,13 @@ function diagnoseCliFailure(provider,error,diagnostic){
     return failure('windows_runtime','Windows에서 작업 명령을 실행하는 환경이 시작되지 않았어요.','기존 데스크톱 대화를 연결하거나 독립 CLI 설치를 확인하세요.');
   if(/oauth.{0,35}(?:expired|refresh)|failed to authenticate|not logged in|please log in|authentication failed|not authenticated|login required/i.test(diagnostic))
     return failure('auth_expired','로그인이 만료됐거나 인증에 실패했어요.',provider==='claude'?'터미널에서 claude auth login을 실행한 뒤 다시 보내세요.':provider==='codex'?'터미널에서 codex login을 실행한 뒤 다시 보내세요.':'Antigravity를 열어 로그인한 뒤 다시 보내세요.');
-  if(/rate limit|resource_exhausted|usage limit|quota exceeded|hit your.{0,20}limit|5-hour limit|(?:http|status)\s*429/i.test(diagnostic))
-    return failure('usage_limit','요청 또는 사용량 한도에 걸렸어요.','한도 초기화 후 다시 시도하거나 사용 가능한 모델을 선택하세요.');
+  if(/rate limit|resource_exhausted|usage limit|quota exceeded|third-party quota reached|quota reached|hit your.{0,20}limit|5-hour limit|(?:http|status)\s*429/i.test(diagnostic)){
+    const error=failure('usage_limit','요청 또는 사용량 한도에 걸렸어요.','한도 초기화 후 다시 시도하거나 사용 가능한 모델을 선택하세요.');
+    const reset=diagnostic.match(/resets in\s+(?:(\d+)h\s*)?(?:(\d+)m\s*)?(?:(\d+)s)?/i);
+    const seconds=reset?Number(reset[1]||0)*3600+Number(reset[2]||0)*60+Number(reset[3]||0):0;
+    if(seconds>0)error.quotaResetAt=Date.now()+seconds*1000;
+    return error;
+  }
   if(/model.{0,100}(?:invalid|not available|not found|not supported)|invalid model/i.test(diagnostic))
     return failure('model_unavailable','선택한 모델을 사용할 수 없어요.','모델 목록에서 다른 모델을 선택하세요.');
   if(error?.code==='ENOENT')return failure('cli_missing','실행 파일이나 작업 폴더를 찾지 못했어요.','CLI를 설치하고 시작 화면에서 프로젝트를 다시 선택하세요.');
@@ -291,20 +296,21 @@ function describeStreamProgress(event){
 function buildStreamArgs(provider,session,model,effort,options={}){
   const permission=options.permission||'dev';
   if(provider==='claude'){
-    const args=['--print','--output-format','stream-json','--input-format','stream-json','--verbose','--permission-mode',permission==='full'?'bypassPermissions':'acceptEdits',...(session?['--resume',session]:[])];
+    const args=['--print','--output-format','stream-json','--input-format','stream-json','--verbose','--permission-mode',permission==='full'?'bypassPermissions':permission==='chat'?'plan':'acceptEdits',...(session?['--resume',session]:[])];
     if(options.rank){
       const i=args.indexOf('--permission-mode');
       if(i>=0)args[i+1]='plan';
       args.push('--tools','','--no-session-persistence','--strict-mcp-config');
     }else{
-      if(permission==='dev')args.push('--allowedTools',devAllowedTools);
+      if(permission==='chat')args.push('--allowedTools','Read,Glob,Grep,WebSearch,WebFetch');
+      else if(permission==='dev')args.push('--allowedTools',devAllowedTools);
       if(permission!=='full'&&options.approvalConfig)args.push('--mcp-config',options.approvalConfig,'--permission-prompt-tool','mcp__agent-room-approval__permission_prompt');
     }
     if(model)args.push('--model',model);
     if(effort)args.push('--effort',effort);
     return args;
   }
-  const agyPerm=options.rank?['--mode','plan']:permission==='full'?['--dangerously-skip-permissions']:['--mode',permission==='edit'?'accept-edits':'auto'];
+  const agyPerm=(options.rank||permission==='chat')?['--mode','plan']:permission==='full'?['--dangerously-skip-permissions']:['--mode',permission==='edit'?'accept-edits':'auto'];
   const args=['--input-format','stream-json','--output-format','stream-json',...agyPerm,...(session?['--conversation',session]:[]),'--print-timeout','1800s'];
   if(model)args.push('--model',model);
   if(effort)args.push('--effort',effort);
@@ -475,8 +481,9 @@ function createAcpHost(file,prefix,project,session,model,effort,options={},onExi
     sessionId=res?.sessionId||sessionId;
     if(!sessionId)throw Error('ACP session initialization failed.');
     const permission=options.permission||'dev';
-    const modeId=permission==='edit'?'accept-edits':'default';
-    try{await rpc('session/set_mode',{sessionId,modeId});}catch{}
+    const modeId=permission==='chat'?'plan':permission==='edit'?'accept-edits':'default';
+    try{await rpc('session/set_mode',{sessionId,modeId});}
+    catch(error){if(permission==='chat')throw Error('대화 모드(plan) 권한 적용에 실패해 실행을 중단했습니다: '+(error?.message||error));}
     if(model)try{await rpc('session/set_model',{sessionId,modelId:model});}catch{}
     return sessionId;
   })();
@@ -580,6 +587,7 @@ function createAcpHost(file,prefix,project,session,model,effort,options={},onExi
         const res=await Promise.race([promptPromise,timeoutPromise]);
         turnsCompleted++;
         const reply=(turn.emittedInterim?turn.pendingInterim.trim():turn.text.trim())||'[[AGENT_ROOM_NO_REPLY]]';
+        if(/^\s*⚠?\s*(?:third-party quota reached|quota reached)/i.test(reply))throw diagnoseCliFailure('agy',null,reply);
         return {id:sessionId,reply,usage:{turns:1,inputTokens:0,outputTokens:0,costUsd:0},stopReason:res?.stopReason};
       }catch(err){
         throw Object.assign(err.cliCode?err:diagnoseCliFailure('agy',err,stderr),{warmReused:turnsCompleted>0});
@@ -722,15 +730,16 @@ async function runCodex(project, prompt, session, provider='codex',model=null,ef
   const [file,...prefix]=cliCommand(provider);
   const codexArgs=session?['exec','resume','--json','--skip-git-repo-check',session,'-']:['exec','--json','--skip-git-repo-check','-'];
   if(provider==='codex'&&process.platform==='win32'&&(process.env.AGENT_ROOM_CODEX_SANDBOX||cliSettings().codexSandbox)==='mxc')codexArgs.unshift('-c','windows.sandbox="mxc"');
-  if(options.rank)codexArgs.splice(-1,0,'--sandbox','read-only');
   const permission=options.permission||'dev';
-  const claudeArgs=['--print','--output-format','json','--permission-mode',options.rank?'plan':permission==='full'?'bypassPermissions':'acceptEdits',...(session?['--resume',session]:[])];
+  if(options.rank||permission==='chat')codexArgs.splice(-1,0,'--sandbox','read-only');
+  const claudeArgs=['--print','--output-format','json','--permission-mode',(options.rank||permission==='chat')?'plan':permission==='full'?'bypassPermissions':'acceptEdits',...(session?['--resume',session]:[])];
   if(options.rank)claudeArgs.push('--tools','','--no-session-persistence','--strict-mcp-config');
   else{
-    if(permission==='dev')claudeArgs.push('--allowedTools',devAllowedTools);
+    if(permission==='chat')claudeArgs.push('--allowedTools','Read,Glob,Grep,WebSearch,WebFetch');
+    else if(permission==='dev')claudeArgs.push('--allowedTools',devAllowedTools);
     if(permission!=='full'&&options.approvalConfig)claudeArgs.push('--mcp-config',options.approvalConfig,'--permission-prompt-tool','mcp__agent-room-approval__permission_prompt');
   }
-  const agyPerm=options.rank?['--mode','plan']:permission==='full'?['--dangerously-skip-permissions']:['--mode',permission==='edit'?'accept-edits':'auto'];
+  const agyPerm=(options.rank||permission==='chat')?['--mode','plan']:permission==='full'?['--dangerously-skip-permissions']:['--mode',permission==='edit'?'accept-edits':'auto'];
   const agyArgs=['-p',prompt,'--output-format','json',...agyPerm,...(session?['--conversation',session]:[]),'--print-timeout',options.rank?'24s':'285s'];
   if(model){codexArgs.splice(-1,0,'--model',model);claudeArgs.push('--model',model);agyArgs.push('--model',model);}
   if(effort){
@@ -753,6 +762,7 @@ async function runCodex(project, prompt, session, provider='codex',model=null,ef
   if(provider==='codex'&&!options.rank&&options.inboxFile){
     const args=[...prefix];
     if(codexArgs[0]==='-c')args.push(...codexArgs.slice(0,2));
+    if(permission==='chat')args.push('-c','sandbox_mode="read-only"');
     let lastInterim='';
     try{
       const result=await require('./codex-app-server.cjs').runAppServer({

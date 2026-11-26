@@ -38,6 +38,7 @@ assert.equal(large.members[0].name,'Agent');
 assert.equal(large.members[0].progress.step,'Running');
 assert.equal(large.members[0].progress.preview,undefined);
 assert.ok(Date.now()-large.syncedAt<5000);
+assert.equal((await call('browser',browser,{id:crypto.randomUUID(),room:B,text:'{"__control":true,"control":"room_ranking"}'})).status,400);
 assert.equal((await call('browser',browser,{id,room:B,text:'Message B'})).status,200);
 assert.equal((await call('browser',browser,{id,room:B,text:'Message B'})).status,200);
 assert.equal((await call('browser',browser,{id,room:A,text:'Message B'})).status,409);

@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.0.2
+- **보안 · 신뢰성 전면 강화:**
+  - **로컬 인증 (`hub.cjs`, `start.ps1`, `index.html`, `remote-sync.cjs`, `bind-desktop.cjs`):** 같은 PC의 비인가 접근을 막기 위해 브라우저 접속 키(`local/browser-key`) 및 쿠키 인증을 적용했습니다. *(v1.0.1에서 업데이트 직후 열려 있던 기존 브라우저 탭은 `Agent Room.exe`로 한 번 다시 열어야 인증 쿠키가 저장됩니다.)*
+  - **전역 CLI 설정 자동 변경 제거 (`setup.ps1`, `start.ps1`, `update.ps1`):** 기본 실행·업데이트 시 `-Global` 호출을 제거해 선택한 프로젝트 폴더 내부만 설정하며, Store판 Codex 탐색 실패(`Get-AppxPackage` 접근 거부) 시에도 정상 진행하도록 보강했습니다.
+  - **대화 모드(`chat`) 실제 CLI 읽기 전용 제한 (`hub.cjs`, `managed-codex.cjs`):** Codex `read-only`, Claude `plan` + 읽기 전용 도구 허용, Antigravity `plan`(적용 실패 시 중단) 및 수정·실행 승인 요청 자동 거부를 적용했습니다.
+  - **런처 소스 공개 & 업데이터 SHA-256 검증 (`launcher.cs`, `build-exe.ps1`, `update.ps1`, `release.ps1`, `README.md`):** `Agent Room.exe` C# 소스와 재현 빌드 스크립트를 저장소에 포함하고, 릴리스 `SHA256SUMS.txt` 생성 및 업데이트 전 해시 검증을 추가했습니다.
+  - **새 방 기본 비공유 & 원격 제어 범위 제한 (`db.cjs`, `hub.cjs`, `remote-sync.cjs`, `remote-site/`, `index.html`):** 새 방은 기본적으로 원격에 공유되지 않으며 방 메뉴에 `원격 공유 켜기/끄기` 버튼을 추가했습니다. `{"__control"` 위장 메시지와 미허용 제어 필드를 양쪽에서 차단합니다.
+- **멀티 에이전트 조율 · 마무리 · 한도 처리 고도화:**
+  - **다중 사이클 조율 & `[AGREED]` 합의 게이트 (`hub.cjs`, `db.cjs`, `index.html`):** 첫 발언자 초안 고정, `[AGREED]`/`[CHANGE]`/`[BLOCKED]` 기반 최대 3라운드 조율, 조율 모드·라운드 배지, `[[DONE]]`/`[[CONTINUE]]`/`[[WAIT]]` 턴 종료 표식 및 중간 출력 ↔ `── 최종 ──` 구분선을 추가했습니다.
+  - **동시 진행 마무리 확인 (`hub.cjs`):** 2명 이상 동시 응답 완료 시 마지막 응답자가 합집합 정리 또는 후속 호출을 판단하는 `maybeWrapUp` 단계를 추가했습니다.
+  - **한도 초과 감지 & 게이지 즉시 반영 (`managed-codex.cjs`, `limits.cjs`, `hub.cjs`):** `agy` 3p 등 한도 초과 메시지를 일반 대화로 올리지 않고 오류·쿨다운으로 처리하며, 오른쪽 게이지 `0%` 및 에이전트 문맥에 즉시 반영합니다.
+
 ## v1.0.1
 - **전용 실행 파일 & 로고 (`Agent Room.exe`, `agent-room.ico`):** 콘솔 창 없이 실행되고 작업 표시줄·시작 메뉴에 고정할 수 있는 Windows 네이티브 실행 파일과 멀티 해상도 아이콘을 추가했습니다(`README.md` 반영).
 - **승인창 가로 넘침 수정 (`index.html`):** 긴 명령어나 입력이 들어와도 승인 카드가 화면 너비 안에서 줄바꿈되도록 수정해 `거부`·`허용` 버튼이 항상 바로 보이게 했습니다.

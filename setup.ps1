@@ -3,6 +3,7 @@ param(
   [string]$Project = (Get-Location).Path,
   [switch]$Apply,
   [switch]$Global,
+  [switch]$TrustProject,
   [switch]$SelectProject,
   [switch]$Connect,
   [switch]$Test,
@@ -99,9 +100,11 @@ function Find-AgentCli($provider) {
     $app = Get-Command "$provider.exe" -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($app) { return $app.Source }
     $candidates = if ($provider -eq 'codex') {
-        if (Get-Command Get-AppxPackage -ErrorAction SilentlyContinue) {
-            Get-AppxPackage -Name OpenAI.Codex -ErrorAction SilentlyContinue | ForEach-Object { Join-Path $_.InstallLocation 'app/resources/codex.exe' }
-        }
+        try {
+            if (Get-Command Get-AppxPackage -ErrorAction SilentlyContinue) {
+                Get-AppxPackage -Name OpenAI.Codex -ErrorAction SilentlyContinue | ForEach-Object { Join-Path $_.InstallLocation 'app/resources/codex.exe' }
+            }
+        } catch {}
         Join-Path $env:APPDATA 'npm/node_modules/@openai/codex/bin/codex.js'
     } elseif ($provider -eq 'agy') {
         Join-Path $env:LOCALAPPDATA 'agy/bin/agy.exe'
@@ -130,7 +133,8 @@ if ($CodexCli) {
 if ($Apply -and $Global) {
   $globalCodexPath = Join-Path $env:USERPROFILE '.codex/config.toml'
   $globalClaudePath = Join-Path $env:USERPROFILE '.claude.json'
-  [void](Sync-CodexMcp $globalCodexPath $true $projectPath)
+  $trustTarget = if ($TrustProject) { $projectPath } else { $null }
+  [void](Sync-CodexMcp $globalCodexPath $true $trustTarget)
   [void](Sync-ClaudeMcp $globalClaudePath $true)
   if ($env:APPDATA -and (Test-Path -LiteralPath (Join-Path $env:APPDATA 'Claude') -PathType Container)) {
     [void](Sync-ClaudeMcp (Join-Path $env:APPDATA 'Claude/claude_desktop_config.json') $true)

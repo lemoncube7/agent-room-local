@@ -61,7 +61,7 @@ async function runTurn(jobFile){
   try{
     const result=await require('./managed-codex.cjs').runCodex(job.project,job.prompt,job.session,job.provider,job.model,job.effort,job.options);
     output={ok:true,result};
-  }catch(error){output={ok:false,message:error.message,cliCode:error.cliCode};}
+  }catch(error){output={ok:false,message:error.message,cliCode:error.cliCode,quotaResetAt:error.quotaResetAt};}
   fs.writeFileSync(job.resultFile+'.tmp',JSON.stringify(output));
   fs.renameSync(job.resultFile+'.tmp',job.resultFile);
 }

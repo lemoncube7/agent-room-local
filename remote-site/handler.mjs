@@ -103,6 +103,8 @@ export async function handleRoom(request,env){
     }
   }else{
     if(!isText(payload.text,8000))return json({error:'Invalid message'},400);
+    // Plain messages must never look like the stored control envelope the PC relay parses.
+    if(payload.text.trimStart().startsWith('{"__control"'))return json({error:'Invalid message'},400);
     if(!isId(targetRoom)||!await env.DB.prepare('SELECT id FROM remote_rooms WHERE id=?').bind(targetRoom).first())return json({error:'Room is not shared'},404);
   }
   const old=await env.DB.prepare('SELECT text,room FROM remote_commands WHERE id=?').bind(payload.id).first();

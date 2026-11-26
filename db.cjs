@@ -77,11 +77,15 @@ function initDb(rootDir) {
   db.exec('CREATE TABLE IF NOT EXISTS approval_logs(id TEXT PRIMARY KEY,room TEXT NOT NULL,member TEXT NOT NULL,name TEXT NOT NULL,tool TEXT NOT NULL,input TEXT NOT NULL,rule TEXT,decision TEXT NOT NULL,created TEXT NOT NULL,decided TEXT); CREATE INDEX IF NOT EXISTS approval_logs_room ON approval_logs(room,created DESC);');
   db.exec('CREATE TABLE IF NOT EXISTS desktop_bindings(member TEXT PRIMARY KEY, thread TEXT NOT NULL UNIQUE, pipe TEXT, since INTEGER NOT NULL)');
   db.exec('CREATE TABLE IF NOT EXISTS remote_rooms (room TEXT PRIMARY KEY, since INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS remote_options (enabled INTEGER NOT NULL)');
-  db.exec("BEGIN; INSERT OR IGNORE INTO remote_rooms(room,since) SELECT id,(SELECT COALESCE(MAX(seq),0) FROM messages WHERE messages.room=rooms.id) FROM rooms; INSERT INTO remote_options SELECT 1 WHERE NOT EXISTS(SELECT 1 FROM remote_options); CREATE TRIGGER IF NOT EXISTS enroll_new_remote_room AFTER INSERT ON rooms BEGIN INSERT OR IGNORE INTO remote_rooms(room,since) VALUES(NEW.id,0); END; COMMIT;");
+  // Rooms are private by default: only the one-time legacy migration shares existing rooms,
+  // and new rooms are shared explicitly (remote_share) or when created from the Site.
+  db.exec("BEGIN; INSERT OR IGNORE INTO remote_rooms(room,since) SELECT id,(SELECT COALESCE(MAX(seq),0) FROM messages WHERE messages.room=rooms.id) FROM rooms WHERE NOT EXISTS(SELECT 1 FROM remote_options); INSERT INTO remote_options SELECT 1 WHERE NOT EXISTS(SELECT 1 FROM remote_options); DROP TRIGGER IF EXISTS enroll_new_remote_room; COMMIT;");
 
-  db.exec('CREATE TABLE IF NOT EXISTS room_ranking(room TEXT PRIMARY KEY,enabled INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS reply_plans(seq INTEGER PRIMARY KEY,room TEXT NOT NULL,state TEXT NOT NULL,coordinate_mode TEXT)');
+  db.exec('CREATE TABLE IF NOT EXISTS room_ranking(room TEXT PRIMARY KEY,enabled INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS reply_plans(seq INTEGER PRIMARY KEY,room TEXT NOT NULL,state TEXT NOT NULL,coordinate_mode TEXT,round INTEGER NOT NULL DEFAULT 1,max_rounds INTEGER NOT NULL DEFAULT 3)');
   const replyPlanColumns = new Set(all('PRAGMA table_info(reply_plans)').map(column => column.name));
   if (!replyPlanColumns.has('coordinate_mode')) db.exec('ALTER TABLE reply_plans ADD COLUMN coordinate_mode TEXT');
+  if (!replyPlanColumns.has('round')) db.exec('ALTER TABLE reply_plans ADD COLUMN round INTEGER NOT NULL DEFAULT 1');
+  if (!replyPlanColumns.has('max_rounds')) db.exec('ALTER TABLE reply_plans ADD COLUMN max_rounds INTEGER NOT NULL DEFAULT 3');
   db.exec(`CREATE TABLE IF NOT EXISTS coordination_turns (
     seq INTEGER NOT NULL, member TEXT NOT NULL, position INTEGER NOT NULL,
     state TEXT NOT NULL, note TEXT, PRIMARY KEY(seq,member)

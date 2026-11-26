@@ -8,7 +8,7 @@ $ProgressPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $stage = Join-Path ([IO.Path]::GetTempPath()) ('agent-room-update-' + [guid]::NewGuid())
-$files = @('hub.cjs','db.cjs','limits.cjs','updater.cjs','bridge.cjs','codex-ipc.cjs','managed-codex.cjs','codex-app-server.cjs','index.html','setup.ps1','start.ps1','update.ps1','Start Agent Room.cmd','README.md','LICENSE','SECURITY.md','CHANGELOG.md','VERSION','smoke-test.cjs','native-chat.ps1','remote-sync.cjs','REMOTE-SETUP.md','HANDOFF.md','bind-desktop.cjs','handoff.cjs')
+$files = @('hub.cjs','db.cjs','limits.cjs','updater.cjs','bridge.cjs','codex-ipc.cjs','managed-codex.cjs','codex-app-server.cjs','index.html','setup.ps1','start.ps1','update.ps1','launcher.cs','build-exe.ps1','Start Agent Room.cmd','README.md','LICENSE','SECURITY.md','CHANGELOG.md','VERSION','smoke-test.cjs','native-chat.ps1','remote-sync.cjs','REMOTE-SETUP.md','HANDOFF.md','bind-desktop.cjs','handoff.cjs')
 $applied = [Collections.Generic.List[string]]::new()
 $restart = $false
 $failed = $false
@@ -24,7 +24,8 @@ function Wait-RoomHub($process, [string]$expectedVersion) {
     $deadline = (Get-Date).AddSeconds(20)
     while ((Get-Date) -lt $deadline -and -not $process.HasExited) {
         try {
-            $state = Invoke-RestMethod -Uri ($hubConfig.url + '/state') -TimeoutSec 2
+            $headers = if ($hubConfig -and $hubConfig.token) { @{Authorization='Bearer ' + $hubConfig.token} } else { @{} }
+            $state = Invoke-RestMethod -Uri ($hubConfig.url + '/state') -Headers $headers -TimeoutSec 2
             if ($state.version -eq $expectedVersion -and $state.PSObject.Properties['rooms'] -and -not $process.HasExited) { return $true }
         } catch { }
         Start-Sleep -Milliseconds 500
@@ -37,8 +38,21 @@ try {
     $unpacked = Join-Path $stage 'unpacked'
     $backup = Join-Path $stage 'backup'
     [void][IO.Directory]::CreateDirectory($backup)
+    $zipName = "Agent-Room-$Tag-Windows.zip"
+    $sumsFile = Join-Path $stage 'SHA256SUMS.txt'
     Write-Output '업데이트 패키지를 내려받는 중...'
-    Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/lemoncube7/agent-room-local/releases/download/$Tag/Agent-Room-$Tag-Windows.zip" -OutFile $zip -TimeoutSec 60
+    Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/lemoncube7/agent-room-local/releases/download/$Tag/$zipName" -OutFile $zip -TimeoutSec 60
+    Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/lemoncube7/agent-room-local/releases/download/$Tag/SHA256SUMS.txt" -OutFile $sumsFile -TimeoutSec 30
+    Write-Output '업데이트 패키지 SHA-256 해시를 검증하는 중...'
+    $expectedHash = $null
+    foreach ($line in (Get-Content -LiteralPath $sumsFile -Encoding utf8)) {
+        if ($line -match '^\s*([0-9a-fA-F]{64})\s+\*?(.+?)\s*$') {
+            if ($Matches[2] -eq $zipName) { $expectedHash = $Matches[1].ToLowerInvariant(); break }
+        }
+    }
+    if (-not $expectedHash) { throw "SHA256SUMS.txt에서 $zipName 해시를 찾을 수 없습니다." }
+    $actualHash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualHash -ne $expectedHash) { throw "업데이트 패키지 SHA-256 해시가 일치하지 않습니다." }
     Write-Output '업데이트 패키지를 검증하는 중...'
     Expand-Archive -LiteralPath $zip -DestinationPath $unpacked
     $payload = Join-Path $unpacked 'Agent-Room'
@@ -76,7 +90,7 @@ try {
         $projectFile = Join-Path $PSScriptRoot 'local/project.txt'
         $savedProject = if (Test-Path -LiteralPath $projectFile) { (Get-Content -LiteralPath $projectFile -Raw).Trim() } else { $PSScriptRoot }
         if (-not $savedProject -or -not (Test-Path -LiteralPath $savedProject -PathType Container)) { $savedProject = $PSScriptRoot }
-        & (Join-Path $PSScriptRoot 'setup.ps1') -Project $savedProject -Apply -SelectProject -Global | Out-Null
+        & (Join-Path $PSScriptRoot 'setup.ps1') -Project $savedProject -Apply -SelectProject | Out-Null
     } catch { }
     Write-Output '업데이트된 Agent Room 허브를 시작하고 확인하는 중...'
     $newHub = Start-RoomHub

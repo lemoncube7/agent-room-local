@@ -59,8 +59,7 @@ function agentQuotaSummary(provider, model, limits) {
   return min === null ? null : { minRemainingPct: min, windows };
 }
 
-function formatLimitsContext(localDir) {
-  const limits = readLimits(localDir);
+function formatLimitsContext(localDir, limits = readLimits(localDir)) {
   const out = {};
   for (const [provider, data] of Object.entries(limits)) {
     if (!data?.windows || typeof data.windows !== 'object') continue;

@@ -49,7 +49,12 @@ function Test-RoomHub {
 }
 
 function Open-AgentRoomClient {
-    Start-Process 'http://127.0.0.1:4317'
+    $target = 'http://127.0.0.1:4317'
+    try {
+        $hubInfo = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'local/hub.json') -Raw | ConvertFrom-Json
+        if ($hubInfo.browserUrl -like 'http://127.0.0.1:4317/?key=*') { $target = $hubInfo.browserUrl }
+    } catch { }
+    Start-Process $target
 }
 
 function Start-AgentRoom([string]$projectDir, [bool]$skipSetupIfConfigured = $false) {
@@ -61,15 +66,12 @@ function Start-AgentRoom([string]$projectDir, [bool]$skipSetupIfConfigured = $fa
     if (-not $node) { throw 'Node.js 24 이상을 먼저 설치한 뒤 Agent Room을 다시 열어 주세요.' }
     $nodeMajor = [int]((& $node.Source -p "process.versions.node.split('.')[0]") | Select-Object -First 1)
     if ($nodeMajor -lt 24) { throw "현재 Node.js v$nodeMajor 이(가) 설치되어 있습니다. Node.js 24 이상으로 업데이트해 주세요." }
-    $globalCodex = Join-Path $env:USERPROFILE '.codex\config.toml'
-    $globalClaude = Join-Path $env:USERPROFILE '.claude.json'
-    $hasGlobalMcp = (Test-Path -LiteralPath $globalCodex) -and (Select-String -LiteralPath $globalCodex -Pattern '\[mcp_servers\.(?:agent-room|"agent-room"|''agent-room'')\]' -Quiet) -and (Test-Path -LiteralPath $globalClaude) -and (Select-String -LiteralPath $globalClaude -Pattern '"agent-room"\s*:' -Quiet)
-    $needsSetup = -not $skipSetupIfConfigured -or -not $hasGlobalMcp -or -not (
+    $needsSetup = -not $skipSetupIfConfigured -or -not (
         (Test-Path -LiteralPath (Join-Path $resolved '.codex\config.toml')) -or
         (Test-Path -LiteralPath (Join-Path $resolved '.mcp.json'))
     )
     if ($needsSetup) {
-        & (Join-Path $PSScriptRoot 'setup.ps1') -Project $resolved -Apply -SelectProject -Global | Out-Null
+        & (Join-Path $PSScriptRoot 'setup.ps1') -Project $resolved -Apply -SelectProject | Out-Null
     } else {
         [void][IO.Directory]::CreateDirectory($localDir)
         [IO.File]::WriteAllText($lastProjectFile, $resolved)

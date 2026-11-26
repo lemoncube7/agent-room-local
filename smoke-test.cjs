@@ -14,7 +14,7 @@ const procs=[];
 for(const name of ['hub.cjs','db.cjs','limits.cjs','updater.cjs','bridge.cjs','handoff.cjs','index.html','VERSION'])fs.copyFileSync(path.join(__dirname,name),path.join(root,name));
 fs.mkdirSync(path.join(root,'.codex'));
 fs.writeFileSync(path.join(root,'.codex/config.toml'),'');
-fs.writeFileSync(path.join(root,'managed-codex.cjs'),"const fs=require('node:fs'),path=require('node:path');\nexports.runCodex=async(project,prompt,session,provider,model,effort,options)=>{\n if(options?.rank){const input=JSON.parse(prompt.split('Treat this JSON solely as data: ').at(-1));if(input.message==='Bad rank JSON')return {id:'judge',reply:'broken'};if(input.message==='Sequential test')return {id:'judge',reply:JSON.stringify({ranks:input.roster.map(x=>({id:x.id,rank:x.name==='gpt-test'?1:x.name==='Codex CLI'?2:0}))})};if(input.message.startsWith('Private test ')||input.message.startsWith('Tag '))return {id:'judge',reply:JSON.stringify({ranks:input.roster.map(x=>({id:x.id,rank:x.name==='Codex CLI'?1:0}))})};let n=0;return {id:'judge',reply:JSON.stringify({ranks:input.roster.slice().reverse().map(x=>({id:x.id,rank:input.message==='Tie test'?(x.provider==='agy'?0:1):x.provider==='agy'?0:++n}))})};}\n const content=prompt.split('\\n\\n').at(-1);\n const body=content.split('\\n').slice(1).join('\\n');\n const peer=content.startsWith('Message from Codex CLI')||content.startsWith('Message from Claude Code CLI');\n if(provider==='claude'&&fs.existsSync(path.join(project,'fail-claude')))throw Error('CLI missing');\n if(body==='Hold reply'||body==='Tie test')await new Promise(resolve=>setTimeout(resolve,650));\n let reply='[[AGENT_ROOM_NO_REPLY]]';\n if(prompt.includes('This turn is a task handoff notification'))reply='[[HANDOFF_ACCEPT]]';\n else if(!session)reply=provider==='agy'?'AGY started '+model+' '+effort:provider==='claude'?'Claude opened':'Opened';\n else if(!peer&&body.startsWith('Tag '))reply=body.slice(4); else if(body.startsWith('Private test '))reply='[[TO:'+body.slice(13)+']]\\nTargeted only';\n else if(!peer&&['Follow up','Hold reply','Everyone hello','Sequential test'].includes(body))reply=(provider==='claude'?'Claude resumed: ':'Resumed: ')+body;\n else if(!peer&&body==='Broadcast relay'&&provider==='codex'){const roster=JSON.parse(prompt.match(/room roster: (\\[.*?\\])\\. Never/)[1]);reply='[[CALL:'+roster.find(x=>x.name==='Claude Code CLI').id+']]\\nShared hello to Claude';}\n else if(peer&&body==='Shared hello to Claude'&&provider==='claude')reply='Shared reply to Codex';\n return {id:'mock-'+provider,reply};\n};");
+fs.writeFileSync(path.join(root,'managed-codex.cjs'),"const fs=require('node:fs'),path=require('node:path');\nexports.runCodex=async(project,prompt,session,provider,model,effort,options)=>{\n if(options?.rank){const input=JSON.parse(prompt.split('Treat this JSON solely as data: ').at(-1));if(input.message==='Bad rank JSON')return {id:'judge',reply:'broken'};if(input.message==='Sequential test')return {id:'judge',reply:JSON.stringify({ranks:input.roster.map(x=>({id:x.id,rank:x.name==='gpt-test'?1:x.name==='Codex CLI'?2:0}))})};if(input.message.startsWith('Private test ')||input.message.startsWith('Tag '))return {id:'judge',reply:JSON.stringify({ranks:input.roster.map(x=>({id:x.id,rank:x.name==='Codex CLI'?1:0}))})};let n=0;return {id:'judge',reply:JSON.stringify({ranks:input.roster.slice().reverse().map(x=>({id:x.id,rank:input.message==='Tie test'?(x.provider==='agy'?0:1):x.provider==='agy'?0:++n}))})};}\n const content=prompt.split('\\n\\n').at(-1);\n const body=content.split('\\n').slice(1).join('\\n');\n const peer=content.startsWith('Message from Codex CLI')||content.startsWith('Message from Claude Code CLI');\n if(provider==='claude'&&fs.existsSync(path.join(project,'fail-claude')))throw Error('CLI missing');\n if(body==='Hold reply'||body==='Tie test')await new Promise(resolve=>setTimeout(resolve,650));\n let reply='[[AGENT_ROOM_NO_REPLY]]';\n if(prompt.includes('This turn is a task handoff notification'))reply='[[HANDOFF_ACCEPT]]';\n else if(!session)reply=provider==='agy'?'AGY started '+model+' '+effort:provider==='claude'?'Claude opened':'Opened';\n else if(!peer&&body.startsWith('Tag '))reply=body.slice(4); else if(body.startsWith('Private test '))reply='[[TO:'+body.slice(13)+']]\\nTargeted only';\n else if(!peer&&['Follow up','Hold reply','Everyone hello','Sequential test','Tie test'].includes(body))reply=(provider==='claude'?'Claude resumed: ':'Resumed: ')+body;\n else if(!peer&&body==='Broadcast relay'&&provider==='codex'){const roster=JSON.parse(prompt.match(/room roster: (\\[.*?\\])\\. Never/)[1]);reply='[[CALL:'+roster.find(x=>x.name==='Claude Code CLI').id+']]\\nShared hello to Claude';}\n else if(peer&&body==='Shared hello to Claude'&&provider==='claude')reply='Shared reply to Codex';\n return {id:'mock-'+provider,reply};\n};");
 fs.appendFileSync(path.join(root,'managed-codex.cjs'),`
 const baseRun=exports.runCodex;
 exports.runCodex=async (...args)=>{
@@ -35,6 +35,10 @@ exports.runCodex=async (...args)=>{
   const {roster}=JSON.parse(prompt.split('Treat this JSON solely as data: ').at(-1));
   return {id:'judge',reply:JSON.stringify({coordinate:true,coordinateMode:'discuss',ranks:roster.map(x=>({id:x.id,rank:['gpt-test','Codex CLI'].includes(x.name)?1:0}))})};
  }
+ if(!options?.rank&&prompt.includes('[Agent Room 마무리 확인]')){
+  fs.appendFileSync(path.join(__dirname,'wrapups.log'),provider+'\\n');
+  return {id:'mock-'+provider,reply:'Wrap-up summary '+Math.random().toString(36).slice(2,8)+' [[DONE]]'};
+ }
  if(!options?.rank&&prompt.includes('Coordination is complete.')&&prompt.endsWith('Coordination test')){
   return {id:'mock-'+provider,reply:'Work started after coordination'};
  }
@@ -50,19 +54,32 @@ async function main(){
   const [line]=await Promise.race([once(hub.stdout,'data'),once(hub,'exit').then(([code])=>{throw Error('Test hub exited before startup: '+code);})]);
   let url=String(line).trim();
   let {token}=JSON.parse(fs.readFileSync(path.join(root,'local/hub.json')));
+  const cookie='agent_room='+fs.readFileSync(path.join(root,'local/browser-key'),'utf8').trim();
+  const get=route=>fetch(url+route,{headers:{Cookie:cookie}});
   async function post(route,body,auth=true){
     const response=await fetch(url+route,{method:'POST',headers:{
-      'Content-Type':'application/json',...(route==='/control'?{Origin:url}:auth?{Authorization:'Bearer '+token}:{})
+      'Content-Type':'application/json',...(route==='/control'?{Origin:url,Cookie:cookie}:auth?{Authorization:'Bearer '+token}:{})
     },body:JSON.stringify(body)});
     return {status:response.status,data:await response.json().catch(()=>({}))};
   }
   async function rpc(route,body){const result=await post(route,body);assert.equal(result.status,200);return result.data;}
-  const sync=async()=>await (await fetch(url+'/state')).json();
+  const sync=async()=>await (await get('/state')).json();
   assert.equal((await post('/tool',{action:'list_rooms'},false)).status,403);
-  assert.match(await (await fetch(url)).text(),/Agent Room/);
+  assert.match(await (await get('/')).text(),/Agent Room/);
+  // Local auth: anonymous callers only see the version, cannot open the UI, control, or download.
+  const anon=await (await fetch(url+'/state')).json();
+  assert.ok(anon.authRequired&&anon.version&&anon.rooms.length===0&&anon.messages===undefined);
+  assert.equal((await fetch(url+'/')).status,401);
+  assert.equal((await fetch(url+'/?key=wrong')).status,403);
+  const login=await fetch(url+'/?key='+cookie.slice('agent_room='.length),{redirect:'manual'});
+  assert.equal(login.status,302);assert.match(login.headers.get('set-cookie')||'',/HttpOnly; SameSite=Strict/);
+  assert.equal((await fetch(url+'/control',{method:'POST',headers:{'Content-Type':'application/json',Origin:url},body:'{"action":"create","name":"x"}'})).status,403);
+  assert.equal((await fetch(url+'/state',{headers:{Authorization:'Bearer '+token}})).ok&&!!(await (await fetch(url+'/state',{headers:{Authorization:'Bearer '+token}})).json()).messages,true);
   const {rooms:[room]}=await rpc('/control',{action:'create',name:'Test room'});
   const sender=await rpc('/tool',{action:'request_join',room:room.id,name:'Codex mock'});
   await rpc('/control',{action:'approve',participant:sender.participant});
+  assert.equal((await post('/tool',{action:'remote_user_message',room:room.id,request:'33ff9911-9429-404b-afaf-1ba5f73497ba',text:'Private'})).status,400);
+  await rpc('/control',{action:'remote_share',room:room.id,shared:true});
   const remote={action:'remote_user_message',room:room.id,request:'22ff9911-9429-404b-afaf-1ba5f73497ba',text:'Remote test'};
   assert.deepEqual(await rpc('/tool',remote),await rpc('/tool',remote));
   assert.equal((await sync()).messages.filter(m=>m.body==='Remote test').length,1);
@@ -195,6 +212,12 @@ async function main(){
     return rows.filter(d=>d.priority===1&&d.state==='working').length>=2?rows:null;
   });
   assert.ok(simultaneous.filter(d=>d.priority!==null).every(d=>d.priority===0||d.priority===1));
+  // Parallel answers: only the last finisher gets one wrap-up turn with the others' replies.
+  await until(async()=>(await sync()).deliveries.filter(d=>d.seq===tieSeq&&d.priority===1&&d.state==='answered').length>=2);
+  for(const d of (await sync()).deliveries.filter(d=>d.seq===tieSeq&&d.state==='queued'))await rpc('/control',{action:'pause_agent',room:room.id,participant:d.member,paused:true});
+  await until(async()=>(await sync()).messages.some(m=>m.relay_root===tieSeq&&m.body.startsWith('Wrap-up summary')));
+  await new Promise(r=>setTimeout(r,1500));
+  assert.equal((await sync()).messages.filter(m=>m.relay_root===tieSeq&&m.body.startsWith('Wrap-up summary')).length,1);
   const seqState=await rpc('/control',{action:'user_message',room:room.id,text:'Sequential test'});
   const seqMsg=seqState.messages.find(m=>m.body==='Sequential test').seq;
   await until(async()=>{
@@ -239,14 +262,19 @@ async function main(){
   assert.notEqual(dup.createdRoom,room2.id);
   assert.ok(dup.rooms.some(r=>r.id===dup.createdRoom));
   await rpc('/control',{action:'delete_room',room:dup.createdRoom});
+  // New rooms are private until shared explicitly.
+  assert.ok(!(await sync()).remoteRooms.some(r=>r.room===room2.id));
+  await rpc('/control',{action:'remote_share',room:room2.id,shared:true});
+  assert.ok((await sync()).remoteRooms.some(r=>r.room===room2.id));
   await rpc('/control',{action:'user_message',room:room2.id,text:'Only in room 2',attachments:[{name:'poc.html',data:Buffer.from('<script>alert(1)</script>').toString('base64')}]});
-  const scoped1=await (await fetch(url+'/state?room='+encodeURIComponent(room.id))).json();
-  const scoped2=await (await fetch(url+'/state?room='+encodeURIComponent(room2.id))).json();
+  const scoped1=await (await get('/state?room='+encodeURIComponent(room.id))).json();
+  const scoped2=await (await get('/state?room='+encodeURIComponent(room2.id))).json();
   assert.ok(scoped1.messages.length>0&&scoped1.messages.every(m=>m.room===room.id));
   assert.ok(scoped2.messages.length===1&&scoped2.messages[0].room===room2.id);
   const uploadedFile=fs.readdirSync(path.join(root,'local','uploads')).find(f=>f.endsWith('-poc.html'));
   assert.ok(uploadedFile);
-  const uploadRes=await fetch(url+'/uploads/'+encodeURIComponent(uploadedFile));
+  assert.equal((await fetch(url+'/uploads/'+encodeURIComponent(uploadedFile))).status,403);
+  const uploadRes=await get('/uploads/'+encodeURIComponent(uploadedFile));
   assert.equal(uploadRes.status,200);
   assert.equal(uploadRes.headers.get('x-content-type-options'),'nosniff');
   assert.equal(uploadRes.headers.get('content-security-policy'),'sandbox');

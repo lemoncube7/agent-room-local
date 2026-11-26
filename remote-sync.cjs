@@ -44,7 +44,8 @@ async function main(){
     if(config.url!=='http://127.0.0.1:4317')throw Error('Unexpected local hub address.');
     return config;
   };
-  const first=await request(readHub().url+'/state');
+  const hubAuth=()=>({headers:{Authorization:'Bearer '+readHub().token}});
+  const first=await request(readHub().url+'/state',hubAuth());
   const matches=first.rooms.filter(r=>r.name===roomName||r.id===roomName);
   if(matches.length!==1)throw Error('Choose exactly one room by its name or ID.');
   const initialRoom=matches[0].id;
@@ -58,7 +59,7 @@ async function main(){
   while(true){
     try{
       const hub=readHub();
-      const state=await request(hub.url+'/state');
+      const state=await request(hub.url+'/state',{headers:{Authorization:'Bearer '+hub.token}});
       const selection=state.remoteConfigured?state.remoteRooms:[{room:initialRoom,since:Math.max(0,...first.messages.filter(m=>m.room===initialRoom).map(m=>m.seq))}];
       const allowed=new Set(selection.map(item=>item.room));
       const rooms=state.rooms.filter(room=>allowed.has(room.id)).map(({id,name})=>({id,name}));
@@ -86,7 +87,10 @@ async function main(){
             let ok=false;
             if(ctrl.control==='create'||allowed.has(command.room)){
               try{
-                await request(hub.url+'/tool',post({Authorization:'Bearer '+hub.token},{action:'remote_control',room:command.room,...ctrl}));
+                const allowedControls=['approval_decide','retry_agent','pause_agent','room_ranking','create'];
+                if(!allowedControls.includes(ctrl.control))throw Object.assign(Error('Unsupported control'),{status:400});
+                const {control,name,id,allow,participant,paused,enabled,mode,mainMember}=ctrl;
+                await request(hub.url+'/tool',post({Authorization:'Bearer '+hub.token},{action:'remote_control',room:command.room,control,name,id,allow,participant,paused,enabled,mode,mainMember}));
                 ok=true;
               }catch(error){if(error.status!==400&&error.status!==403)throw error;}
             }
