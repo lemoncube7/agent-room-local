@@ -214,10 +214,12 @@ async function main(){
   assert.ok(simultaneous.filter(d=>d.priority!==null).every(d=>d.priority===0||d.priority===1));
   // Parallel answers: only the last finisher gets one wrap-up turn with the others' replies.
   await until(async()=>(await sync()).deliveries.filter(d=>d.seq===tieSeq&&d.priority===1&&d.state==='answered').length>=2);
-  for(const d of (await sync()).deliveries.filter(d=>d.seq===tieSeq&&d.state==='queued'))await rpc('/control',{action:'pause_agent',room:room.id,participant:d.member,paused:true});
+  const pausedForWrap=(await sync()).deliveries.filter(d=>d.seq===tieSeq&&d.state==='queued').map(d=>d.member);
+  for(const member of pausedForWrap)await rpc('/control',{action:'pause_agent',room:room.id,participant:member,paused:true});
   await until(async()=>(await sync()).messages.some(m=>m.relay_root===tieSeq&&m.body.startsWith('Wrap-up summary')));
   await new Promise(r=>setTimeout(r,1500));
   assert.equal((await sync()).messages.filter(m=>m.relay_root===tieSeq&&m.body.startsWith('Wrap-up summary')).length,1);
+  for(const member of pausedForWrap)await rpc('/control',{action:'pause_agent',room:room.id,participant:member,paused:false});
   const seqState=await rpc('/control',{action:'user_message',room:room.id,text:'Sequential test'});
   const seqMsg=seqState.messages.find(m=>m.body==='Sequential test').seq;
   await until(async()=>{
@@ -266,6 +268,16 @@ async function main(){
   assert.ok(!(await sync()).remoteRooms.some(r=>r.room===room2.id));
   await rpc('/control',{action:'remote_share',room:room2.id,shared:true});
   assert.ok((await sync()).remoteRooms.some(r=>r.room===room2.id));
+  // "Always share" is a standing policy that also covers rooms created later.
+  await rpc('/control',{action:'remote_share_all',shared:true});
+  const later=await rpc('/control',{action:'create',name:'Shared later'});
+  assert.ok(later.remoteShareAll&&later.remoteRooms.some(r=>r.room===later.createdRoom));
+  await rpc('/control',{action:'remote_share_all',shared:false});
+  const privateLater=await rpc('/control',{action:'create',name:'Private later'});
+  assert.ok(!privateLater.remoteShareAll&&!privateLater.remoteRooms.some(r=>r.room===privateLater.createdRoom));
+  for(const id of [later.createdRoom,privateLater.createdRoom])await rpc('/control',{action:'delete_room',room:id});
+  await rpc('/control',{action:'remote_share',room:room.id,shared:true});
+  await rpc('/control',{action:'remote_share',room:room2.id,shared:true});
   await rpc('/control',{action:'user_message',room:room2.id,text:'Only in room 2',attachments:[{name:'poc.html',data:Buffer.from('<script>alert(1)</script>').toString('base64')}]});
   const scoped1=await (await get('/state?room='+encodeURIComponent(room.id))).json();
   const scoped2=await (await get('/state?room='+encodeURIComponent(room2.id))).json();

@@ -36,7 +36,7 @@ function buildRelayBatch(messages,body){
 async function main(){
   const site=new URL(siteText);
   if(site.protocol!=='https:'||!site.hostname.endsWith('.chatgpt.site')||site.username||site.password||site.pathname!=='/'||site.search||site.hash)throw Error('Use the private https://…chatgpt.site origin.');
-  if(!roomName||!deviceKey||deviceKey.length<32)throw Error('A room name and AGENT_ROOM_DEVICE_KEY are required.');
+  if(!deviceKey||deviceKey.length<32)throw Error('AGENT_ROOM_DEVICE_KEY is required.');
   const relay=new URL('/api/room/device',site);
   const headers={'X-Agent-Room-Key':deviceKey,...(siteAccess?{'OAI-Sites-Authorization':'Bearer '+siteAccess}:{})};
   const readHub=()=>{
@@ -46,9 +46,9 @@ async function main(){
   };
   const hubAuth=()=>({headers:{Authorization:'Bearer '+readHub().token}});
   const first=await request(readHub().url+'/state',hubAuth());
-  const matches=first.rooms.filter(r=>r.name===roomName||r.id===roomName);
-  if(matches.length!==1)throw Error('Choose exactly one room by its name or ID.');
-  const initialRoom=matches[0].id;
+  const matches=roomName?first.rooms.filter(r=>r.name===roomName||r.id===roomName):[];
+  if(roomName&&matches.length!==1)throw Error('Choose exactly one room by its name or ID.');
+  const initialRoom=matches[0]?.id;
   const cursorPath=path.join(localDir,'remote-cursor.json');
   const cursor=fs.existsSync(cursorPath)?JSON.parse(fs.readFileSync(cursorPath,'utf8')):{};
   const key=room=>site.origin+' '+room;
@@ -60,7 +60,7 @@ async function main(){
     try{
       const hub=readHub();
       const state=await request(hub.url+'/state',{headers:{Authorization:'Bearer '+hub.token}});
-      const selection=state.remoteConfigured?state.remoteRooms:[{room:initialRoom,since:Math.max(0,...first.messages.filter(m=>m.room===initialRoom).map(m=>m.seq))}];
+      const selection=state.remoteConfigured?state.remoteRooms:initialRoom?[{room:initialRoom,since:Math.max(0,...first.messages.filter(m=>m.room===initialRoom).map(m=>m.seq))}]:[];
       const allowed=new Set(selection.map(item=>item.room));
       const rooms=state.rooms.filter(room=>allowed.has(room.id)).map(({id,name})=>({id,name}));
       const floors=new Map(selection.map(x=>[x.room,Math.max(x.since,cursor[key(x.room)]||0)]));

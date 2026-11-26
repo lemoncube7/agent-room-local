@@ -313,6 +313,7 @@ function saveRemoteConfig(cfg){
   fs.renameSync(remoteConfigFile+'.tmp',remoteConfigFile);
 }
 function stopRemoteSync(){
+  clearTimeout(remoteRestartTimer);
   if(remoteProc){try{remoteProc.kill();}catch{}remoteProc=null;}
 }
 const legacyRelay={pids:[],at:0,busy:false};
@@ -326,6 +327,7 @@ function refreshLegacyRelays(){
     legacyRelay.pids=error?[]:String(stdout).split(/\s+/).map(Number).filter(n=>Number.isInteger(n)&&n>0&&n!==process.pid&&n!==remoteProc?.pid);
   });
 }
+let remoteRestartTimer=null,remoteRestartDelay=0;
 function startRemoteSync(){
   stopRemoteSync();
   const cfg=readRemoteConfig();
@@ -341,7 +343,18 @@ function startRemoteSync(){
   });
   remoteProc=child;
   child.stderr.on('data',d=>{const line=String(d).trim().split(/\r?\n/).at(-1);if(line)remoteLastError=line.slice(0,220);});
-  child.once('exit',code=>{if(remoteProc===child){remoteProc=null;if(code&&!draining)remoteLastError=remoteLastError||'원격 중계가 종료됐어요 (코드 '+code+').';}});
+  const startedAt=Date.now();
+  child.once('exit',code=>{
+    if(remoteProc!==child)return;
+    remoteProc=null;
+    if(draining)return;
+    if(code)remoteLastError=remoteLastError||'원격 중계가 종료됐어요 (코드 '+code+').';
+    // Keep the relay alive: restart with backoff while remote sync stays enabled.
+    remoteRestartDelay=Date.now()-startedAt>60000?2000:Math.min(60000,remoteRestartDelay*2||2000);
+    clearTimeout(remoteRestartTimer);
+    remoteRestartTimer=setTimeout(()=>{if(!remoteProc&&!draining&&readRemoteConfig().enabled)startRemoteSync();},remoteRestartDelay);
+    remoteRestartTimer.unref?.();
+  });
 }
 function remoteSyncState(){
   const cfg=readRemoteConfig();
@@ -1502,7 +1515,7 @@ function state(roomId=null){
   const editCounts=new Map();
   for(const m of members)if(m.editing){const k=m.room+':'+m.editing;editCounts.set(k,(editCounts.get(k)||0)+1);}
   for(const m of members){m.conflict=m.editing&&editCounts.get(m.room+':'+m.editing)>1?m.editing:null;delete m.editing;}
-  return {version,project:readActiveProject(),recentProjects:readRecentProjects(),approvals:[...approvals.values()].filter(item=>item.state==='pending').map(({id,room,name,tool,input,rule,created})=>({id,room,name,tool,input,rule,created})),approvalRules:all('SELECT member,rule FROM approval_rules'),approvalLogs:scoped?all('SELECT * FROM approval_logs WHERE room=? ORDER BY created DESC LIMIT 100',scoped):all('SELECT * FROM approval_logs ORDER BY created DESC LIMIT 100'),limits:readLimits(),ranking:all('SELECT room,enabled,mode,main_member,judge_provider,judge_model,judge_effort,judge_prompt FROM room_ranking'),replyPlans:scoped?all('SELECT seq,state,coordinate_mode,round,max_rounds FROM reply_plans WHERE room=?',scoped):all('SELECT seq,state,coordinate_mode,round,max_rounds FROM reply_plans'),remoteConfigured:remoteConfigured(),remoteRooms:selectedRemoteRooms(),remoteSync:remoteSyncState(),tasks:handoff.list(scoped),updateStatus:readUpdateLog(updateLog).trim().split(/\r?\n/).at(-1)||null,rooms:all('SELECT rooms.*,m.latest_incoming_seq FROM rooms LEFT JOIN (SELECT room,MAX(seq) AS last_seq,MAX(CASE WHEN author<>\'human:\'||room AND retracted=0 AND request NOT LIKE \'receipt:%\' THEN seq END) AS latest_incoming_seq FROM messages GROUP BY room) m ON m.room=rooms.id ORDER BY COALESCE(m.last_seq,0) DESC, rooms.rowid DESC'),
+  return {version,project:readActiveProject(),recentProjects:readRecentProjects(),approvals:[...approvals.values()].filter(item=>item.state==='pending').map(({id,room,name,tool,input,rule,created})=>({id,room,name,tool,input,rule,created})),approvalRules:all('SELECT member,rule FROM approval_rules'),approvalLogs:scoped?all('SELECT * FROM approval_logs WHERE room=? ORDER BY created DESC LIMIT 100',scoped):all('SELECT * FROM approval_logs ORDER BY created DESC LIMIT 100'),limits:readLimits(),ranking:all('SELECT room,enabled,mode,main_member,judge_provider,judge_model,judge_effort,judge_prompt FROM room_ranking'),replyPlans:scoped?all('SELECT seq,state,coordinate_mode,round,max_rounds FROM reply_plans WHERE room=?',scoped):all('SELECT seq,state,coordinate_mode,round,max_rounds FROM reply_plans'),remoteConfigured:remoteConfigured(),remoteShareAll:Boolean(one('SELECT share_all FROM remote_options LIMIT 1')?.share_all),remoteRooms:selectedRemoteRooms(),remoteSync:remoteSyncState(),tasks:handoff.list(scoped),updateStatus:readUpdateLog(updateLog).trim().split(/\r?\n/).at(-1)||null,rooms:all('SELECT rooms.*,m.latest_incoming_seq FROM rooms LEFT JOIN (SELECT room,MAX(seq) AS last_seq,MAX(CASE WHEN author<>\'human:\'||room AND retracted=0 AND request NOT LIKE \'receipt:%\' THEN seq END) AS latest_incoming_seq FROM messages GROUP BY room) m ON m.room=rooms.id ORDER BY COALESCE(m.last_seq,0) DESC, rooms.rowid DESC'),
     members,
     messages:scoped?all("SELECT messages.*,members.name FROM messages JOIN members ON messages.author=members.id WHERE messages.room=? AND messages.request NOT LIKE 'receipt:%' ORDER BY seq",scoped):all("SELECT messages.*,members.name FROM messages JOIN members ON messages.author=members.id WHERE messages.request NOT LIKE 'receipt:%' ORDER BY seq"),
     deliveries:scoped?all('SELECT deliveries.seq,deliveries.member,members.name,deliveries.state,deliveries.priority FROM deliveries JOIN messages ON messages.seq=deliveries.seq JOIN members ON deliveries.member=members.id WHERE messages.room=?',scoped):all('SELECT deliveries.seq,deliveries.member,members.name,deliveries.state,deliveries.priority FROM deliveries JOIN members ON deliveries.member=members.id')};
@@ -1716,6 +1729,16 @@ const server=http.createServer(async(req,res)=>{
         if(!one('SELECT id FROM rooms WHERE id=?',String(args.room||'')))throw Error('Room not found.');
         if(args.shared===true)run('INSERT OR IGNORE INTO remote_rooms(room,since) VALUES(?,(SELECT COALESCE(MAX(seq),0) FROM messages WHERE room=?))',args.room,args.room);
         else run('DELETE FROM remote_rooms WHERE room=?',args.room);
+      }
+      else if(args.action==='remote_share_all'){
+        if(typeof args.shared!=='boolean')throw Error('Invalid remote share setting.');
+        if(args.shared){
+          run(`INSERT OR IGNORE INTO remote_rooms(room,since)
+            SELECT r.id, COALESCE(MAX(m.seq),0) FROM rooms r
+            LEFT JOIN messages m ON m.room=r.id GROUP BY r.id`);
+        }else run('DELETE FROM remote_rooms');
+        // The switch is a standing policy: rooms created later follow it too (db trigger).
+        run('UPDATE remote_options SET share_all=?',args.shared?1:0);
       }
       else if(args.action==='create'){
         const room=randomUUID();

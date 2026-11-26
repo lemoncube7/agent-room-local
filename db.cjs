@@ -79,7 +79,10 @@ function initDb(rootDir) {
   db.exec('CREATE TABLE IF NOT EXISTS remote_rooms (room TEXT PRIMARY KEY, since INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS remote_options (enabled INTEGER NOT NULL)');
   // Rooms are private by default: only the one-time legacy migration shares existing rooms,
   // and new rooms are shared explicitly (remote_share) or when created from the Site.
-  db.exec("BEGIN; INSERT OR IGNORE INTO remote_rooms(room,since) SELECT id,(SELECT COALESCE(MAX(seq),0) FROM messages WHERE messages.room=rooms.id) FROM rooms WHERE NOT EXISTS(SELECT 1 FROM remote_options); INSERT INTO remote_options SELECT 1 WHERE NOT EXISTS(SELECT 1 FROM remote_options); DROP TRIGGER IF EXISTS enroll_new_remote_room; COMMIT;");
+  db.exec("BEGIN; INSERT OR IGNORE INTO remote_rooms(room,since) SELECT id,(SELECT COALESCE(MAX(seq),0) FROM messages WHERE messages.room=rooms.id) FROM rooms WHERE NOT EXISTS(SELECT 1 FROM remote_options); INSERT INTO remote_options(enabled) SELECT 1 WHERE NOT EXISTS(SELECT 1 FROM remote_options); DROP TRIGGER IF EXISTS enroll_new_remote_room; COMMIT;");
+  // "Always share" option: when on, every room created afterwards (UI, Site, copy) is shared too.
+  if (!all('PRAGMA table_info(remote_options)').some(column => column.name === 'share_all')) db.exec('ALTER TABLE remote_options ADD COLUMN share_all INTEGER NOT NULL DEFAULT 0');
+  db.exec("CREATE TRIGGER IF NOT EXISTS share_new_room_when_always AFTER INSERT ON rooms WHEN (SELECT share_all FROM remote_options LIMIT 1)=1 BEGIN INSERT OR IGNORE INTO remote_rooms(room,since) VALUES(NEW.id,0); END;");
 
   db.exec('CREATE TABLE IF NOT EXISTS room_ranking(room TEXT PRIMARY KEY,enabled INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS reply_plans(seq INTEGER PRIMARY KEY,room TEXT NOT NULL,state TEXT NOT NULL,coordinate_mode TEXT,round INTEGER NOT NULL DEFAULT 1,max_rounds INTEGER NOT NULL DEFAULT 3)');
   const replyPlanColumns = new Set(all('PRAGMA table_info(reply_plans)').map(column => column.name));
