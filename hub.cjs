@@ -1729,14 +1729,16 @@ const server=http.createServer(async(req,res)=>{
     for await(const chunk of req){size+=chunk.length;if(size>limit)return res.writeHead(413).end();chunks.push(chunk);}
     const args=JSON.parse(Buffer.concat(chunks).toString('utf8'));
     if(req.url==='/shutdown_for_update'){
-      if(draining||desktopBusy.size||rankingRooms.size)return res.writeHead(409,{'Content-Type':'application/json'}).end(JSON.stringify({error:'Agent Room is busy. Wait for the active reply before updating.'}));
+      if(draining||desktopBusy.size||cliBusy.size||rankingRooms.size)return res.writeHead(409,{'Content-Type':'application/json'}).end(JSON.stringify({error:'Agent Room is busy. Wait for the active reply before updating.'}));
       draining=true;
       stopRemoteSync();
       closeAllWarm();
       drainOutbox();
       res.writeHead(200).end('Ready');
       updaterProcess?.unref();
-      server.close(()=>db.close());
+      server.closeAllConnections?.();
+      server.close(()=>{try{db.close();}catch{}process.exit(0);});
+      setTimeout(()=>process.exit(0),1500).unref?.();
       return;
     }
     let result;
