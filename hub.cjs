@@ -1736,9 +1736,8 @@ const server=http.createServer(async(req,res)=>{
       drainOutbox();
       res.writeHead(200).end('Ready');
       updaterProcess?.unref();
-      server.closeAllConnections?.();
-      server.close(()=>{try{db.close();}catch{}process.exit(0);});
-      setTimeout(()=>process.exit(0),1500).unref?.();
+      setTimeout(()=>{server.closeAllConnections?.();server.close(()=>{try{db.close();}catch{}process.exit(0);});},100);
+      setTimeout(()=>{try{db.close();}catch{}process.exit(0);},1500);
       return;
     }
     let result;

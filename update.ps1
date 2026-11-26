@@ -80,7 +80,10 @@ try {
             Start-Sleep -Seconds 2
         }
     }
-    if (-not $hub.WaitForExit(15000)) { throw 'Agent Room 종료 시간이 초과되어 파일을 교체하지 않았습니다.' }
+    if (-not $hub.WaitForExit(15000)) {
+        try { Stop-Process -InputObject $hub -Force -ErrorAction SilentlyContinue } catch { }
+        if (-not $hub.WaitForExit(5000)) { throw 'Agent Room 종료 시간이 초과되어 파일을 교체하지 않았습니다.' }
+    }
     Write-Output '새 버전 파일을 설치하는 중...'
     foreach ($file in $files) {
         $applied.Add($file)

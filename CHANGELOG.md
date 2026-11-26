@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.12
+- **네이티브 창 High-DPI 선명화 (`launcher.cs`, `Agent Room.exe`):** Windows 배율(125%·150% 등)에서 WebView2 앱 창 글씨가 흐릿하게 번지던 문제를 `Per-Monitor V2 DPI Awareness` 적용으로 해결해 브라우저와 동일한 해상도로 선명하게 표시합니다.
+- **업데이트 종료 안정화 & UI 초기화 버그 수정 (`hub.cjs`, `update.ps1`, `index.html`):** `/shutdown_for_update` 후 즉시 연결 해제·강제 종료 폴백, `update.ps1` 15초 초과 시 강제 종료 폴백, 방 설정 프리셋 삽입 위치(`firstRankingLabel.before`) 오류를 수정했습니다.
+
 ## v1.0.8
 - **네이티브 앱 창 & 폴더 선택기 (`launcher.cs`, `build-exe.ps1`, `webview2/`, `start.ps1`, `update.ps1`, `setup.ps1`, `hub.cjs`):**
   - WebView2 기반 주소창 없는 전용 **Agent Room 앱 창**을 추가하고, 앱 설정에서 **앱 창 ↔ 브라우저** 실행 방식을 전환할 수 있습니다.

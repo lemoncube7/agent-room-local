@@ -1389,7 +1389,8 @@ try{if(localStorage.getItem(presetStore))presetSelect.append(new Option('내 프
 const loadPreset=el('button','불러오기');loadPreset.type='button';
 const savePreset=el('button','내 프리셋 저장');savePreset.type='button';
 presetControls.append(presetSelect,loadPreset,savePreset);
-rankingForm.insertBefore(presetControls,rankingForm.querySelector('label'));
+const firstRankingLabel=rankingForm.querySelector('label');
+if(firstRankingLabel)firstRankingLabel.before(presetControls);else rankingForm.append(presetControls);
 loadPreset.onclick=()=>{
  let preset=roomPresets[presetSelect.value];
  try{if(presetSelect.value==='custom')preset=JSON.parse(localStorage.getItem(presetStore));}catch{}

@@ -73,6 +73,15 @@ static class AppWindow {
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hwnd);
     [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hwnd, int cmd);
     [DllImport("user32.dll")] static extern bool IsIconic(IntPtr hwnd);
+    [DllImport("user32.dll")] static extern bool SetProcessDpiAwarenessContext(IntPtr value);
+    [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
+
+    static void EnableHighDpi() {
+        try {
+            if (SetProcessDpiAwarenessContext(new IntPtr(-4))) return; // Per-Monitor V2
+        } catch { }
+        try { SetProcessDPIAware(); } catch { }
+    }
 
     static string Dir { get { return Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location); } }
 
@@ -94,6 +103,7 @@ static class AppWindow {
                 string file = Path.Combine(sdk, new AssemblyName(e.Name).Name + ".dll");
                 return File.Exists(file) ? Assembly.LoadFrom(file) : null;
             };
+            EnableHighDpi();
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             Application.Run(Host.Create(url, sdk));
