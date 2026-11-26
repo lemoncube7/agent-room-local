@@ -158,14 +158,22 @@ function agentCls(name,provider){
  return '';
 }
 function inlineMd(target,text){
- const pattern=/`([^`\n]+)`|\*\*([^*\n]+)\*\*|\*([^*\n]+)\*|\[([^\]\n]+)\]\(((?:https?:\/\/|file:\/\/\/?)[^\s)]+)\)/g;
+ const pattern=/`([^`\n]+)`|\*\*([^*\n]+)\*\*|\*([^*\n]+)\*|\[([^\]\n]+)\]\((<\/[A-Za-z]:\/[^>\r\n]+>|(?:https?:\/\/|file:\/\/\/?|\/[A-Za-z]:\/)[^\s)]+)\)|(?<![\w/#])(#(?:[\da-fA-F]{8}|[\da-fA-F]{6}|[\da-fA-F]{4}|[\da-fA-F]{3}))(?![\w/-])/g;
+ const addSwatch=color=>{
+  const swatch=el("span","");
+  swatch.setAttribute("aria-hidden","true");
+  swatch.style.cssText="display:inline-block;width:.8em;height:.8em;margin-inline-start:.35em;box-sizing:border-box;border:1px solid currentColor;border-radius:2px;vertical-align:baseline";
+  swatch.style.backgroundColor=color;
+  target.append(swatch);
+ };
  let start=0;
  for(const match of text.matchAll(pattern)){
   target.append(document.createTextNode(text.slice(start,match.index)));
   if(match[5]){
-   try{const url=new URL(match[5]);const a=el('a',match[4]);a.href=url.href;a.title=url.href;if(url.protocol==='file:'){const lp=decodeURIComponent(url.pathname).replace(/^\/([A-Za-z]:)/,'$1').replace(/\//g,'\\');a.onclick=e=>{e.preventDefault();navigator.clipboard?.writeText(lp).catch(()=>{});statusLine.textContent='경로 복사됨: '+lp;};}else{a.target='_blank';a.rel='noopener noreferrer';}target.append(a);}
+   try{const url=new URL(match[5].startsWith('<')?'file://'+ match[5].slice(1,-1):match[5].startsWith('/')?'file://'+ match[5]:match[5]);const a=el('a',match[4]);a.href=url.href;a.title=url.href;if(url.protocol==='file:'){const lp=decodeURIComponent(url.pathname).replace(/^\/([A-Za-z]:)/,'$1').replace(/\//g,'\\');a.onclick=e=>{e.preventDefault();navigator.clipboard?.writeText(lp).catch(()=>{});statusLine.textContent='경로 복사됨: '+lp;};}else{a.target='_blank';a.rel='noopener noreferrer';}target.append(a);}
    catch{target.append(document.createTextNode(match[0]));}
-  }else if(match[1])target.append(el('code',match[1]));
+  }else if(match[1]){target.append(el('code',match[1]));if(/^#(?:[\da-fA-F]{8}|[\da-fA-F]{6}|[\da-fA-F]{4}|[\da-fA-F]{3})$/.test(match[1]))addSwatch(match[1]);}
+  else if(match[6]){target.append(document.createTextNode(match[6]));addSwatch(match[6]);}
   else{const span=el(match[2]?'strong':'em','');inlineMd(span,match[2]||match[3]);target.append(span);}
   start=match.index+match[0].length;
  }
@@ -357,7 +365,7 @@ async function refresh(){
    a.append(el('strong',b.name));
    if(b.progress?.preview)a.append(renderMd(b.progress.preview));
    const elapsed=b.progress?.updatedAt?Math.max(0,Math.floor((Date.now()-b.progress.updatedAt)/1000)):0;
-   a.append(el('small',(b.progress?.step||'작업 진행 중…')+(elapsed>=2?' ('+elapsed+'초)':'')));
+   a.append(el('small',(b.progress?.task||b.progress?.step||'작업 진행 중…')+(elapsed>=2?' ('+elapsed+'초)':'')));
    nodes.push(a);
   }
   if(!nodes.length){const empty=el('div','아직 대화가 없어요. 아래에서 메시지를 보내 보세요.');empty.className='empty';nodes.push(empty);}

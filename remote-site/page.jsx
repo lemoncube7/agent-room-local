@@ -22,15 +22,19 @@ function fmtReset(raw){
   return (d.toDateString()===now.toDateString()?t:d.toLocaleDateString('ko-KR',{month:'numeric',day:'numeric'})+' '+t)+' 초기화';
 }
 function renderInline(text){
-  const pattern=/`([^`\n]+)`|\*\*([^*\n]+)\*\*|\*([^*\n]+)\*|\[([^\]\n]+)\]\(((?:https?:\/\/|file:\/\/\/?)[^\s)]+)\)/g;
+  const pattern=/`([^`\n]+)`|\*\*([^*\n]+)\*\*|\*([^*\n]+)\*|\[([^\]\n]+)\]\((<\/[A-Za-z]:\/[^>\r\n]+>|(?:https?:\/\/|file:\/\/\/?|\/[A-Za-z]:\/)[^\s)]+)\)|(?<![\w/#])(#(?:[\da-fA-F]{8}|[\da-fA-F]{6}|[\da-fA-F]{4}|[\da-fA-F]{3}))(?![\w/-])/g;
+  const swatch=color=><span aria-hidden="true" style={{display:"inline-block",width:".8em",height:".8em",marginInlineStart:".35em",boxSizing:"border-box",border:"1px solid currentColor",borderRadius:2,backgroundColor:color}}/>;
   const out=[];let start=0,k=0;
   for(const m of String(text||'').matchAll(pattern)){
     if(m.index>start)out.push(text.slice(start,m.index));
     if(m[5]){
-      const isFile=m[5].startsWith('file:');
-      out.push(<a key={k++} href={m[5]} title={m[5]} target={isFile?undefined:'_blank'} rel={isFile?undefined:'noopener noreferrer'} onClick={isFile?e=>{e.preventDefault();try{const u=new URL(m[5]);navigator.clipboard?.writeText(decodeURIComponent(u.pathname).replace(/^\/([A-Za-z]:)/,'$1').replace(/\//g,'\\')).catch(()=>{});}catch{}}:undefined} style={{color:P.accent}}>{m[4]}</a>);
+      const raw=m[5].startsWith('<')?m[5].slice(1,-1):m[5];
+      const href=raw.startsWith('/')?'file://'+raw:raw;
+      const isFile=href.startsWith('file:');
+      out.push(<a key={k++} href={href} title={href} target={isFile?undefined:'_blank'} rel={isFile?undefined:'noopener noreferrer'} onClick={isFile?e=>{e.preventDefault();try{const u=new URL(href);navigator.clipboard?.writeText(decodeURIComponent(u.pathname).replace(/^\/([A-Za-z]:)/,'$1').replace(/\//g,'\\')).catch(()=>{});}catch{}}:undefined} style={{color:P.accent}}>{m[4]}</a>);
     }
-    else if(m[1])out.push(<code key={k++} style={{background:P.raised,borderRadius:4,padding:'1px 5px',fontSize:'0.92em'}}>{m[1]}</code>);
+    else if(m[1])out.push(<span key={k++}><code style={{background:P.raised,borderRadius:4,padding:'1px 5px',fontSize:'0.92em'}}>{m[1]}</code>{/^#(?:[\da-fA-F]{8}|[\da-fA-F]{6}|[\da-fA-F]{4}|[\da-fA-F]{3})$/.test(m[1])&&swatch(m[1])}</span>);
+    else if(m[6])out.push(<span key={k++}>{m[6]}{swatch(m[6])}</span>);
     else if(m[2])out.push(<strong key={k++}>{renderInline(m[2])}</strong>);
     else out.push(<em key={k++}>{renderInline(m[3])}</em>);
     start=m.index+m[0].length;
@@ -101,7 +105,8 @@ export default function RemoteRoom(){
   const [newRoom,setNewRoom]=useState('');
   const [status,setStatus]=useState('');
   const [connected,setConnected]=useState(true);
-  const [sending,setSending]=useState(false);
+  const [outbox,setOutbox]=useState([]);
+  const inFlight=useRef(new Set());
   const [showAct,setShowAct]=useState(true);
   const listRef=useRef(null);
 
@@ -114,6 +119,8 @@ export default function RemoteRoom(){
         if(!result.ok)throw Error('소유자 계정으로 로그인했는지 확인해 주세요.');
         const data=await result.json();
         if(active){
+          const echoed=new Set(data.events.map(event=>event.commandId).filter(Boolean));
+          setOutbox(items=>items.filter(item=>!echoed.has(item.id)));
           setConnected(true);setEvents(data.events);setRooms(data.rooms);setSnap(data.snapshot||null);
           if(!room&&data.rooms.length)setRoom(data.rooms[0].id);
         }
@@ -137,12 +144,39 @@ export default function RemoteRoom(){
       setStatus(msg);return true;
     }catch(error){setStatus(error.message);return false;}
   }
-  async function send(event){
-    event.preventDefault();if(sending||!room||!draft.trim())return;
-    const text=draft;setSending(true);
-    try{if(await postBrowser({room,text},'PC로 보낼 메시지를 대기열에 넣었어요.'))setDraft('');}
-    finally{setSending(false);}
+  async function transmit(item){
+    if(inFlight.current.has(item.id))return;
+    inFlight.current.add(item.id);
+    const update=delivery=>setOutbox(items=>items.map(entry=>entry.id===item.id?{...entry,delivery}:entry));
+    update('sending');
+    try{
+      const {id,room,text}=item;
+      const response=await fetch('/api/room/browser',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({id,room,text}),signal:AbortSignal.timeout(12000)
+      });
+      update(response.ok?'queued':'failed');
+    }catch{
+      update('failed');
+    }finally{
+      inFlight.current.delete(item.id);
+    }
   }
+
+  function send(event){
+    event.preventDefault();
+    if(!room||!draft.trim())return;
+    const item={id:crypto.randomUUID(),room,text:draft,delivery:'sending'};
+    setOutbox(items=>[...items,item]);
+    setDraft('');
+    requestAnimationFrame(()=>{
+      if(listRef.current)listRef.current.scrollTop=listRef.current.scrollHeight;
+    });
+    void transmit(item);
+  }
+
+  const confirmed=new Set(events.map(event=>event.commandId).filter(Boolean));
+  const visibleEvents=[...events,...outbox.filter(item=>item.room===room&&!confirmed.has(item.id)).map(item=>({...item,name:'나',commandId:item.id}))];
 
   const roomObj=rooms.find(r=>r.id===room);
   const members=(snap?.members||[]).filter(m=>m.room===room&&m.state!=='disconnected');
@@ -190,7 +224,7 @@ export default function RemoteRoom(){
           const rawW=m.provider&&snap?.limits?.[m.provider]?.windows;
           const entries=!rawW?[]:m.provider==='agy'?((!m.model||/gemini/i.test(m.model))?['gemini-5h','gemini-weekly']:['3p-5h','3p-weekly']).filter(k=>rawW[k]&&typeof rawW[k]==='object').map(k=>[k,rawW[k]]):Object.entries(rawW).filter(([,w])=>w&&typeof w==='object');
           const elapsed=m.busy&&m.progress?.updatedAt?Math.max(0,Math.floor((Date.now()-m.progress.updatedAt)/1000)):0;
-          const step=pa?'허용 요청 대기: '+pa.tool:m.conflict?'⚠ 동시 수정 주의: '+m.conflict:m.paused?'일시정지됨 (응답 중지)':m.busy?(m.progress?.step||'작업 진행 중…')+(elapsed>=2?` (${elapsed}초)`:''):m.cliError?m.cliError.message:labels[m.state]||'대기 중';
+          const step=pa?'허용 요청 대기: '+pa.tool:m.conflict?'⚠ 동시 수정 주의: '+m.conflict:m.paused?'일시정지됨 (응답 중지)':m.busy?(m.progress?.task||m.progress?.step||'작업 진행 중…')+(elapsed>=2?` (${elapsed}초)`:''):m.cliError?m.cliError.message:labels[m.state]||'대기 중';
           return <div key={m.id} style={{background:P.panel,border:`1px solid ${P.line}`,borderInlineStart:`3px solid ${accentFor(m.name,m.provider)}`,borderRadius:10,padding:'8px 10px',display:'grid',gap:3,minWidth:0}}>
             <div style={{display:'flex',justifyContent:'space-between',gap:6,fontSize:12}}>
               <span style={{fontWeight:600,display:'inline-flex',alignItems:'center',gap:6}}>
@@ -218,19 +252,23 @@ export default function RemoteRoom(){
       </div>:null}
     </header>
     <main ref={listRef} aria-label="공용 대화" style={{flex:'1 1 0',minHeight:0,overflow:'auto',padding:'18px max(16px, calc((100% - 860px) / 2))',display:'flex',flexDirection:'column',gap:12}}>
-      {!events.length&&!busy.length?<div style={{margin:'auto',color:P.muted,fontSize:13}}>아직 대화가 없어요. 아래에서 메시지를 보내 보세요.</div>:null}
-      {events.map(event=>{
+      {!visibleEvents.length&&!busy.length?<div style={{margin:'auto',color:P.muted,fontSize:13}}>아직 대화가 없어요. 아래에서 메시지를 보내 보세요.</div>:null}
+      {visibleEvents.map(event=>{
         const own=event.name==='나';
         const m=snap?.members?.find(x=>x.room===room&&x.name===event.name);
-        return <article key={event.seq} style={{flexShrink:0,maxWidth:'min(84%, 720px)',minWidth:0,alignSelf:own?'flex-end':'flex-start',background:own?P.ownBg:P.panel,border:`1px solid ${own?P.ownLine:P.line}`,borderInlineStart:`${own?1:3}px solid ${own?P.ownLine:accentFor(event.name,m?.provider)}`,borderRadius:12,padding:'10px 14px'}}>
+        return <article key={event.commandId||event.seq} style={{flexShrink:0,maxWidth:'min(84%, 720px)',minWidth:0,alignSelf:own?'flex-end':'flex-start',background:own?P.ownBg:P.panel,border:`1px solid ${own?P.ownLine:P.line}`,borderInlineStart:`${own?1:3}px solid ${own?P.ownLine:accentFor(event.name,m?.provider)}`,borderRadius:12,padding:'10px 14px'}}>
           <strong style={{display:'block',fontSize:13,marginBottom:4,color:own?P.ownName:P.agentName}}>{event.name}</strong>
           <MessageBody text={event.text}/>
+          {event.delivery&&<small role="status" style={{color:P.muted}}>
+            {event.delivery==='sending'?'전송 중':event.delivery==='queued'?'PC 전달 대기':'전송 실패'}
+            {event.delivery==='failed'&&<> · <button type="button" onClick={()=>void transmit(event)}>다시 보내기</button></>}
+          </small>}
         </article>;
       })}
       {busy.map(b=><article key={'typing-'+b.id} style={{flexShrink:0,maxWidth:'min(84%, 720px)',minWidth:0,alignSelf:'flex-start',background:P.panel,border:`1px solid ${P.line}`,borderInlineStart:`3px solid ${accentFor(b.name,b.provider)}`,borderRadius:12,padding:'10px 14px'}}>
         <strong style={{display:'block',fontSize:13,marginBottom:4,color:P.agentName}}>{b.name}</strong>
         {b.progress?.preview?<MessageBody text={b.progress.preview}/>:null}
-        <small style={{color:'#ffcf90',fontSize:11}}>{b.progress?.step||'작업 진행 중…'}</small>
+        <small style={{color:'#ffcf90',fontSize:11}}>{b.progress?.task||b.progress?.step||'작업 진행 중…'}</small>
       </article>)}
     </main>
     {approvals.length?<section style={{flex:'none',display:'grid',gap:8,maxHeight:'34vh',overflow:'auto',padding:'0 max(16px, calc((100% - 860px) / 2))'}}>
@@ -246,7 +284,7 @@ export default function RemoteRoom(){
     <footer style={{flex:'none',borderTop:`1px solid ${P.line}`,background:P.bg,padding:'12px max(16px, calc((100% - 860px) / 2))'}}>
       <form onSubmit={send} style={{display:'flex',alignItems:'flex-end',gap:8}}>
         <textarea aria-label="메시지" placeholder="메시지 보내기 (Shift+Enter 줄바꿈)" rows={Math.min(8,Math.max(1,draft.split('\n').length))} maxLength={8000} value={draft} onChange={event=>setDraft(event.target.value)} onKeyDown={event=>{if(event.key==='Enter'&&!event.shiftKey&&!event.nativeEvent.isComposing&&event.keyCode!==229&&!matchMedia('(pointer:coarse)').matches)void send(event);}} autoComplete="off" style={{flex:1,minWidth:0,maxHeight:180,resize:'none',overflowY:'auto',font:'inherit',lineHeight:1.45,background:P.panel,color:P.text,border:`1px solid ${P.line}`,borderRadius:10,padding:'10px 14px'}}/>
-        <button disabled={sending||!draft.trim()} style={{flex:'none',font:'inherit',background:P.accent,border:`1px solid ${P.accent}`,color:P.bg,fontWeight:600,padding:'10px 18px',borderRadius:10,cursor:sending||!draft.trim()?'default':'pointer',opacity:sending||!draft.trim()?0.5:1}}>보내기</button>
+        <button disabled={!draft.trim()} style={{flex:'none',font:'inherit',background:P.accent,border:`1px solid ${P.accent}`,color:P.bg,fontWeight:600,padding:'10px 18px',borderRadius:10,cursor:!draft.trim()?'default':'pointer',opacity:!draft.trim()?0.5:1}}>보내기</button>
       </form>
       {status?<p role="status" style={{margin:'6px 0 0',fontSize:12,color:P.muted}}>{status}</p>:null}
     </footer>

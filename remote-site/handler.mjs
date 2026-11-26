@@ -34,7 +34,7 @@ export async function handleRoom(request,env){
     if(!Array.isArray(payload.rooms)||!payload.rooms.every(room=>isId(room?.id)&&isText(room.name,70))||
        !Array.isArray(payload.events)||payload.events.length>35||!Array.isArray(payload.acknowledged)||payload.acknowledged.length>20)return json({error:'Invalid batch'},400);
     const ids=new Set(payload.rooms.map(room=>room.id));
-    if(!payload.acknowledged.every(isId)||!payload.events.every(e=>ids.has(e?.room)&&Number.isSafeInteger(e.seq)&&e.seq>0&&isText(e.name,120)&&isText(e.text,30000)&&isText(e.created,50)))return json({error:'Invalid event'},400);
+    if(!payload.acknowledged.every(isId)||!payload.events.every(e=>ids.has(e?.room)&&Number.isSafeInteger(e.seq)&&e.seq>0&&isText(e.name,120)&&isText(e.text,30000)&&isText(e.created,50)&&(e.commandId===undefined||isId(e.commandId))))return json({error:'Invalid event'},400);
     const actions=[env.DB.prepare('DELETE FROM remote_rooms'),env.DB.prepare("INSERT OR IGNORE INTO remote_rooms(id,name) SELECT json_extract(value,'$.id'),json_extract(value,'$.name') FROM json_each(?) ORDER BY key").bind(JSON.stringify(payload.rooms))];
     if(ids.has(payload.legacyRoom)){
       actions.push(env.DB.prepare('UPDATE remote_events SET room=? WHERE room IS NULL').bind(payload.legacyRoom));
@@ -58,7 +58,7 @@ export async function handleRoom(request,env){
         .bind(JSON.stringify({snapshotMissing:true,detectedAt:Date.now()})));
     }
     actions.push(
-      ...payload.events.map(e=>env.DB.prepare('INSERT OR IGNORE INTO remote_events(seq,name,text,created,room) VALUES(?,?,?,?,?)').bind(e.seq,e.name,e.text,e.created,e.room)),
+      ...payload.events.map(e=>env.DB.prepare('INSERT OR IGNORE INTO remote_events(seq,name,text,created,room,command_id) VALUES(?,?,?,?,?,?)').bind(e.seq,e.name,e.text,e.created,e.room,e.commandId??null)),
       ...payload.acknowledged.map(id=>env.DB.prepare('UPDATE remote_commands SET delivered=1 WHERE id=?').bind(id)),
       env.DB.prepare("DELETE FROM remote_commands WHERE delivered=0 AND room IS NOT NULL AND room NOT IN (SELECT id FROM remote_rooms) AND text NOT LIKE '{\"__control\":true,\"control\":\"create\"%'")
     );
@@ -73,7 +73,7 @@ export async function handleRoom(request,env){
     const rooms=(await env.DB.prepare('SELECT id,name FROM remote_rooms ORDER BY rowid').all()).results;
     const room=new URL(request.url).searchParams.get('room');
     if(room&&!rooms.some(item=>item.id===room))return json({error:'Room is not shared'},404);
-    const recent=room?await env.DB.prepare('SELECT seq,name,text,created FROM remote_events WHERE room=? ORDER BY seq DESC LIMIT 100').bind(room).all():{results:[]};
+    const recent=room?await env.DB.prepare('SELECT seq,name,text,created,command_id AS commandId FROM remote_events WHERE room=? ORDER BY seq DESC LIMIT 100').bind(room).all():{results:[]};
     let snapshot=null;
     try{
       await ensureStateTable(env.DB);

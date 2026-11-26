@@ -264,6 +264,8 @@ async function main(){
   assert.notEqual(dup.createdRoom,room2.id);
   assert.ok(dup.rooms.some(r=>r.id===dup.createdRoom));
   await rpc('/control',{action:'delete_room',room:dup.createdRoom});
+  // Manual limit refresh returns state even when no CLI limit source is available.
+  assert.ok(Array.isArray((await rpc('/control',{action:'refresh_limits',room:room2.id})).rooms));
   // New rooms are private until shared explicitly.
   assert.ok(!(await sync()).remoteRooms.some(r=>r.room===room2.id));
   await rpc('/control',{action:'remote_share',room:room2.id,shared:true});

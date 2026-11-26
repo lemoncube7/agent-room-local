@@ -2,6 +2,8 @@
 
 Windows PC에서 **Codex CLI**, **Claude Code**, **Antigravity (`agy`)** 에이전트들이 하나의 공용 채팅방에 모여 협업하는 로컬 멀티 에이전트 허브입니다.
 
+**원격 연결 작업을 맡은 GPT/Codex는 [원격 연결 실행 절차](REMOTE-SETUP.md#원격-연결-작업을-맡은-gptcodex)를 먼저 읽고 따라갑니다.** 설치와 기존 연결 상태를 확인한 뒤 비공개 Site 준비, PC 연결, 테스트 메시지 왕복까지 접근 가능한 환경에서 진행합니다.
+
 ## Windows에서 첫 대화 시작하기
 
 1. [GitHub Releases](https://github.com/lemoncube7/agent-room-local/releases)에서 `Agent-Room-v…-Windows.zip`을 받아 쓰기 가능한 폴더에 압축을 풉니다.
@@ -41,15 +43,14 @@ node bridge.cjs say --code <대화코드> "보낼 메시지" --as "외부 세션
 
 ---
 
-## LLM에게 설치 맡기기
+## 설치·설정을 맡은 GPT/Codex
 
-저장소 링크와 함께 아래처럼 요청할 수 있습니다.
+사용자가 설치나 초기 설정을 요청하면 아래 절차를 실행한다. 요청 범위에 맞춰 기존 설치와 데이터를 재사용하고, 성공한 동작까지 확인해 보고한다.
 
-> 이 README대로 Agent Room을 현재 작업 프로젝트에 설치해 줘. 내 기존 Codex·Claude 대화는 유지해. CLI 실행과 프로젝트 MCP 등록, 테스트 결과를 각각 알려 줘.
-
-### 설치나 첫 사용이 막히면
-
-> 실패한 단계와 오류를 확인하고, 기존 설정을 보존하는 범위에서 해결을 시도해 줘. 그래도 막히면 Agent Room 버전, Windows·Node.js·CLI 버전, 재현 순서, 예상 동작과 실제 오류, 이미 시도한 조치를 짧게 정리해 줘. 토큰, 초대 코드, 사용자 폴더명, 프로젝트명, 원본 로그와 대화 내용은 빼 줘. 공개해도 되는 요약을 먼저 보여 주고 내가 승인하면 [Agent Room 이슈](https://github.com/lemoncube7/agent-room-local/issues)에 본문에 `@lemoncube7`을 넣어서 등록하고 링크를 알려 줘. GitHub에 등록할 수 없거나 비공개로 전달해야 하면, 이 링크를 보내 준 사람에게 전달할 메시지를 복사할 수 있게 만들어 줘.
+1. 접근 가능한 Windows PC에서 기존 설치의 `VERSION`과 `local/`, 현재 작업 프로젝트, Node.js 24 이상, 사용할 CLI를 확인한다. 신규 설치라면 [GitHub Releases](https://github.com/lemoncube7/agent-room-local/releases)의 Windows ZIP과 함께 제공되는 SHA-256을 확인한 뒤 쓰기 가능한 폴더에 푼다. 기존 설치 업데이트는 앱의 업데이트 경로를 사용한다.
+2. 아래 두 번째 명령의 프로젝트 경로를 실제 경로로 바꿔 설치 폴더에서 실행한다. 첫 번째 명령은 설정을 적용하기 전에 검사만 요청받은 경우에 사용한다. 기존 대화와 `local/`을 보존하고, 전역 MCP 등록이나 프로젝트 신뢰 추가는 사용자가 요청한 경우에만 수행한다.
+3. 첫 방 준비까지 요청받았으면 기존 방과 에이전트를 확인해 재사용한다. 필요한 경우 아래 허브 API로 새 방과 에이전트를 만들고, 파일 수정 없는 짧은 테스트 메시지와 에이전트의 실제 답변을 확인한다. 기존 대화를 연결해 달라는 요청은 **+ 추가 → 기존 대화 이어서 연결**에서 대상 세션을 확인한 뒤 진행한다.
+4. 원격 연결 요청은 [원격 연결 실행 절차](REMOTE-SETUP.md#원격-연결-작업을-맡은-gptcodex)를 따른다. Windows 접근이나 CLI 로그인이 필요한 경우에는 완료한 단계와 사용자에게 필요한 동작을 알린다.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1 -Project 'E:\my-project' -Test
@@ -58,9 +59,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1 -Project 'E:\my-
 
 - `-SelectProject`를 넣으면 `local/project.txt`에 기본 프로젝트가 저장되어 앱을 열 때 프로젝트 선택 창을 건너뜁니다. 전역 MCP까지 함께 등록하려면 `-Global`을 추가합니다.
 - **설정 파일 위치:** Codex는 프로젝트의 `.codex/config.toml`, Claude Code는 `.mcp.json`, 앱 상태·선택된 프로젝트는 `local/` 폴더에 저장됩니다. Antigravity(`agy`)는 허브가 CLI를 직접 실행하므로 별도 프로젝트 설정 파일이 필요 없습니다.
-- **허브 API로 초기 방·에이전트까지 구성할 때:** 허브 실행 후 `http://127.0.0.1:4317/state`로 상태를 조회하고, `Origin: http://127.0.0.1:4317` 헤더를 붙여 `/control`(`create`, `new_agent`, `user_message`)로 방 생성·에이전트 추가·첫 인사 테스트까지 자동화할 수 있습니다.
+- **허브 API로 첫 방을 구성할 때:** 설치 폴더의 `local/hub.json`에서 `url`, `token`, `browserUrl`을 읽어 로컬 요청에만 사용한다. `GET /state`는 `Authorization: Bearer <token>`으로 조회한다. `POST /control`은 `browserUrl`을 먼저 열어 받은 `agent_room` 세션 쿠키와 `Origin: <url>`, `Content-Type: application/json`을 사용한다. 자동화 클라이언트는 같은 쿠키 세션을 유지한다. 키·토큰·쿠키를 출력하지 않는다.
+  - 방 생성은 `{"action":"create","name":"테스트 방"}`을 보내고 응답의 `createdRoom`을 사용한다.
+  - 에이전트 생성은 `{"action":"new_agent","room":"<createdRoom>","provider":"codex"}`를 보낸다. 확인한 CLI에 따라 `codex`, `claude`, `agy` 중 하나를 사용한다.
+  - 에이전트가 준비되면 `{"action":"user_message","room":"<createdRoom>","text":"파일은 수정하지 말고 한 줄로 인사해 주세요."}`를 보내고 인증된 `/state`에서 해당 방의 새 답변을 확인한다.
 
 같은 프로젝트에서 다시 실행해도 MCP 등록은 중복되지 않습니다. 이전 설치 경로를 가리키는 Agent Room 항목은 설정 파일을 백업한 뒤 새 경로로 갱신합니다. 그 밖의 기존 항목과 충돌하면 확인을 요청합니다.
+
+`-Test`의 CLI 검사는 실행 파일이 응답하는지와 격리 연결 테스트를 확인합니다. 실제 로그인 및 모델 응답은 첫 메시지로 확인합니다. 해결되지 않은 오류는 버전과 실패 단계, 시도한 조치를 민감한 정보 없이 보고합니다. 공개 [이슈](https://github.com/lemoncube7/agent-room-local/issues) 등록은 사용자가 승인한 경우에 진행합니다.
 
 ---
 

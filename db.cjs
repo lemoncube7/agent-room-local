@@ -67,6 +67,7 @@ function initDb(rootDir) {
     ['last_cli_error', 'TEXT'],
     ['permission_profile', "TEXT NOT NULL DEFAULT 'dev'"],
     ['turns', 'INTEGER NOT NULL DEFAULT 0'],
+    ['last_usage', 'TEXT'],
     ['input_tokens', 'INTEGER NOT NULL DEFAULT 0'],
     ['output_tokens', 'INTEGER NOT NULL DEFAULT 0'],
     ['cost_usd', 'REAL NOT NULL DEFAULT 0']
@@ -90,6 +91,7 @@ function initDb(rootDir) {
   if (!replyPlanColumns.has('coordinate_mode')) db.exec('ALTER TABLE reply_plans ADD COLUMN coordinate_mode TEXT');
   if (!replyPlanColumns.has('round')) db.exec('ALTER TABLE reply_plans ADD COLUMN round INTEGER NOT NULL DEFAULT 1');
   if (!replyPlanColumns.has('max_rounds')) db.exec('ALTER TABLE reply_plans ADD COLUMN max_rounds INTEGER NOT NULL DEFAULT 3');
+  if (!replyPlanColumns.has('judge_ms')) db.exec('ALTER TABLE reply_plans ADD COLUMN judge_ms INTEGER');
   db.exec(`CREATE TABLE IF NOT EXISTS coordination_turns (
     seq INTEGER NOT NULL, member TEXT NOT NULL, position INTEGER NOT NULL,
     state TEXT NOT NULL, note TEXT, PRIMARY KEY(seq,member)

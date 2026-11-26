@@ -130,7 +130,7 @@ function createProgressWriter(progressFile){
   if(!progressFile)return()=>{};
   let lastStep='', preview='', lastChunk='', lastAt=0, task='';
   const taskLine=/^\[\[WORK:[ \t]*([^\r\n]{1,120}?)\]\][ \t]*(?:\r?\n|$)/gm;
-  const extractTask=text=>text.replace(taskLine,(_line,title)=>{task=title.trim();return '';});
+  const extractTask=text=>text.replace(taskLine,(_line,title)=>{if(title.trim())task=title.trim()+' 작업 중…';return '';});
   const cleanPreview=text=>String(text||'').replace(/^(?:\[\[(?:CALL|TO):[^\]\r\n]+\]\]\s*)+/,'').trim();
   const write=(step,chunk,delta=false)=>{
     let nextChunk='';
@@ -224,13 +224,13 @@ function importAgyUsageFile(usageFile){
     return saveProviderLimits('agy',windows,null,Number.isFinite(observed)?observed:Date.now());
   }catch{return false;}
 }
-function refreshAgyLimits(spawnIfStale=true){
+function refreshAgyLimits(spawnIfStale=true,force=false){
   const localUsage=path.join(__dirname,'local','agy-usage.json');
   const saved=cliSettings();
   const usageFile=process.env.AGENT_ROOM_AGY_USAGE_FILE||saved?.agyUsageFile||(fs.existsSync(localUsage)?localUsage:'');
   if(!usageFile)return Promise.resolve(false);
   const before=fs.existsSync(usageFile)?fs.statSync(usageFile).mtimeMs:0;
-  if(before&&Date.now()-before<25*60*1000)return Promise.resolve(importAgyUsageFile(usageFile));
+  if(!force&&before&&Date.now()-before<25*60*1000)return Promise.resolve(importAgyUsageFile(usageFile));
   if(!spawnIfStale)return Promise.resolve(before?importAgyUsageFile(usageFile):false);
   const [exe]=cliCommand('agy');
   if(!exe||!fs.existsSync(exe))return Promise.resolve(before?importAgyUsageFile(usageFile):false);
@@ -317,8 +317,28 @@ function buildStreamArgs(provider,session,model,effort,options={}){
   return args;
 }
 function createStreamHost(provider,file,prefix,args,project,session,persistent=false,onExit=null){
+  const hostStarted=performance.now();
   const child=spawn(file,[...prefix,...args],{cwd:project,windowsHide:true,env:cliEnv()});
   let id=session, buffer='', stderr='', alive=true, turnsCompleted=0, active=null;
+  let spawnedAt=null, attempts=0;
+  child.once('spawn',()=>{spawnedAt=performance.now();});
+  function trace(turn,phase){
+    if(!turn.traceId||turn.tracePhases.has(phase))return;
+    turn.tracePhases.add(phase);
+    try{
+      const log=path.join(__dirname,'local','claude-turn-timing.jsonl');
+      if((fs.statSync(log,{throwIfNoEntry:false})?.size||0)>=1024*1024)fs.renameSync(log,log+'.1');
+      fs.appendFileSync(log,JSON.stringify({
+        at:new Date().toISOString(),turn:turn.traceId,phase,
+        elapsedMs:Math.round(performance.now()-turn.startedAt),
+        ...(phase==='request_sent'?{
+          reusedProcess:turnsCompleted>0,resumeSession:turn.resumeSession,
+          processAgeMs:Math.round(turn.startedAt-hostStarted),
+          spawnMs:spawnedAt===null?null:Math.round(spawnedAt-hostStarted)
+        }:{})
+      })+'\n');
+    }catch{}
+  }
   const sendPayload=text=>{
     const payload=provider==='agy'
       ?{event:'user',message:{content:[{type:'text',text}]}}
@@ -326,6 +346,7 @@ function createStreamHost(provider,file,prefix,args,project,session,persistent=f
     child.stdin.write(JSON.stringify(payload)+'\n');
   };
   const finishTurn=turn=>{
+    trace(turn,id&&turn.parts.length?'finished':'failed');
     clearInterval(turn.poller);clearTimeout(turn.killer);
     for(const item of [turn.closingFile,turn.liveFile])if(item)fs.rmSync(item,{force:true});
     active=null;turnsCompleted++;
@@ -333,6 +354,7 @@ function createStreamHost(provider,file,prefix,args,project,session,persistent=f
     else turn.reject(diagnoseCliFailure(provider,{code:0},stderr+turn.failure));
   };
   const failTurn=(turn,err)=>{
+    trace(turn,turn.timedOut?'timeout':'failed');
     clearInterval(turn.poller);clearTimeout(turn.killer);
     for(const item of [turn.inboxFile,turn.closingFile,turn.liveFile])if(item)fs.rmSync(item,{force:true});
     active=null;
@@ -352,19 +374,30 @@ function createStreamHost(provider,file,prefix,args,project,session,persistent=f
       if(!turn)continue;
       turn.lastEvent=Date.now();
       const kind=event.type||event.event;
+      if(turn.traceId){
+        trace(turn,'first_event');
+        if(kind==='init'||kind==='system'&&event.subtype==='init')trace(turn,'session_init');
+        const streamed=kind==='stream_event'?event.event:null;
+        const blocks=kind==='assistant'?event.message?.content:null;
+        const block=streamed?.content_block;
+        if(block?.type==='tool_use'||blocks?.some?.(item=>item?.type==='tool_use'))trace(turn,'first_tool');
+        if(block?.type==='thinking'||blocks?.some?.(item=>item?.type==='thinking'))trace(turn,'first_thinking');
+        if(streamed?.delta?.type==='text_delta'||blocks?.some?.(item=>item?.type==='text'&&item.text))trace(turn,'first_reply');
+        if(kind==='result')trace(turn,'result');
+      }
       const info=describeStreamProgress(event);
       if(info)turn.writeProgress(info.step,info.text,info.delta);
       if(provider==='claude'&&event.type==='assistant'&&!event.parent_tool_use_id&&Array.isArray(event.message?.content)){
         for(const block of event.message.content){
           if(block?.type==='text'&&block.text){turn.flushInterim();turn.pendingInterim=block.text;}
-          else if(block?.type==='tool_use')turn.flushInterim();
+          else if(block?.type==='tool_use'||block?.type==='thinking')turn.flushInterim();
         }
       }
       if(provider==='agy'&&(event.type==='step_update'||event.event==='step_update')){
         const su=(event.event==='step_update'&&event.step_update&&typeof event.step_update==='object')?event.step_update:event;
         const st=String(su.step_type||'').toLowerCase();
-        if(su.tool_info?.name||su.tool_name||st.includes('tool')||st.includes('command'))turn.flushInterim();
-        else if(info?.text&&!st.includes('think')&&!st.includes('reason')){
+        if(su.tool_info?.name||su.tool_name||st.includes('tool')||st.includes('command')||st.includes('think')||st.includes('reason'))turn.flushInterim();
+        else if(info?.text){
           if(info.delta)turn.pendingInterim+=info.text;
           else{if(turn.pendingInterim&&info.text!==turn.pendingInterim)turn.flushInterim();turn.pendingInterim=info.text;}
         }
@@ -413,6 +446,8 @@ function createStreamHost(provider,file,prefix,args,project,session,persistent=f
         const writeProgress=createProgressWriter(options.progressFile);
         writeProgress(turnsCompleted>0?'대기 세션에 전달 중…':'CLI 시작 중…');
         const turn={
+          traceId:provider==='claude'&&options.progressFile?child.pid+':'+(++attempts):null,
+          tracePhases:new Set(),startedAt:performance.now(),resumeSession:Boolean(id),
           sent:0,done:0,offset:0,parts:[],usage:{turns:0,inputTokens:0,outputTokens:0,costUsd:0},
           failure:'',pendingInterim:'',lastEvent:Date.now(),timedOut:false,closing:false,
           inboxFile,closingFile,liveFile,writeProgress,resolve,reject,
@@ -452,6 +487,7 @@ function createStreamHost(provider,file,prefix,args,project,session,persistent=f
         turn.killer=setTimeout(()=>{turn.timedOut=true;child.kill();},1800000);
         if(liveFile)fs.writeFileSync(liveFile,'1');
         turn.sent++;
+        trace(turn,'request_sent');
         sendPayload(prompt);
       });
     }
@@ -524,7 +560,10 @@ function createAcpHost(file,prefix,project,session,model,effort,options={},onExi
         active.lastActivity=Date.now();
         const u=msg.params?.update||{};
         const kind=u.sessionUpdate||u.type||'';
-        if(kind==='agent_thought_chunk')active.writeProgress('생각 중…');
+        if(kind==='agent_thought_chunk'){
+          if(active.pendingInterim)active.flushInterim();
+          active.writeProgress('생각 중…');
+        }
         else if(kind==='agent_message_chunk'){
           const txt=u.content?.text||'';
           if(txt){
@@ -671,6 +710,13 @@ async function runWarmJudge(room,project,prompt,provider='codex',model=null,effo
   if(entry&&entry.host.alive&&!entry.host.busy){
     try{
       const result=await entry.host.runTurn(prompt,{rank:true});
+      if(provider!=='codex'){
+        // Claude/agy stream hosts keep one conversation, so every judgement would pile up in
+        // the same context. Retire the used host and start a clean spare for the next request.
+        invalidateWarmJudge(room);
+        setImmediate(()=>prewarmJudge(room,project,provider,model,effort));
+        return result;
+      }
       if(entry.host.alive){
         clearTimeout(entry.idleTimer);
         entry.idleTimer=setTimeout(()=>invalidateWarmJudge(room),warmIdleMs);
@@ -759,11 +805,34 @@ async function runCodex(project, prompt, session, provider='codex',model=null,ef
     return runStreamLive('agy',file,prefix,liveArgs,project,prompt,session,options.inboxFile,options.progressFile,options.interimFile);
   }
   const writeProgress=createProgressWriter(options.progressFile);
+  const createCodexInterim=(interimFile)=>{
+    let pending='',last='';
+    const flush=()=>{
+      if(!interimFile||!pending)return;
+      const clean=cleanInterim(pending);
+      const raw=pending.trim();
+      pending='';
+      if(!clean)return;
+      last=raw;
+      try{fs.appendFileSync(interimFile,JSON.stringify(clean)+'\n');}catch{}
+    };
+    const onItem=(phase,type,text)=>{
+      if(!interimFile)return;
+      if(phase==='completed'&&type==='agent_message'&&text){
+        if(pending)flush();
+        pending=text;
+      }else if((phase==='started'||phase==='completed')&&type&&type!=='agent_message'){
+        flush();
+      }
+    };
+    const isDuplicate=reply=>Boolean(last&&typeof reply==='string'&&reply.trim()===last);
+    return {onItem,isDuplicate};
+  };
   if(provider==='codex'&&!options.rank&&options.inboxFile){
     const args=[...prefix];
     if(codexArgs[0]==='-c')args.push(...codexArgs.slice(0,2));
     if(permission==='chat')args.push('-c','sandbox_mode="read-only"');
-    let lastInterim='';
+    const interim=createCodexInterim(options.interimFile);
     try{
       const result=await require('./codex-app-server.cjs').runAppServer({
         file,args,project,env:cliEnv(),session,prompt,model,effort,inbox:options.inboxFile,
@@ -771,16 +840,11 @@ async function runCodex(project, prompt, session, provider='codex',model=null,ef
           const type=item.type.replace(/[A-Z]/g,letter=>'_'+letter.toLowerCase());
           const progress=describeStreamProgress({type:method.replace('/','.'),item:{...item,type}});
           if(progress)writeProgress(progress.step,progress.text);
-          if(method==='item/completed'&&type==='agent_message'&&item.phase==='commentary'&&options.interimFile){
-            const clean=cleanInterim(item.text);
-            if(clean){
-              fs.appendFileSync(options.interimFile,JSON.stringify(clean)+'\n');
-              lastInterim=item.text.trim();
-            }
-          }
+          const phase=method==='item/completed'?'completed':method==='item/started'?'started':'';
+          interim.onItem(phase,type,item.text);
         }
       });
-      if(lastInterim&&result.reply.trim()===lastInterim)result.reply='[[AGENT_ROOM_NO_REPLY]]';
+      if(interim.isDuplicate(result.reply))result.reply='[[AGENT_ROOM_NO_REPLY]]';
       return result;
     }catch(error){
       if(!error.beforeTurn)throw diagnoseCliFailure(provider,error,String(error.message));
@@ -788,16 +852,7 @@ async function runCodex(project, prompt, session, provider='codex',model=null,ef
   }
   writeProgress('CLI 실행 중…');
   return new Promise((resolve,reject)=>{
-    let pendingCodexInterim='', lastCodexInterim='';
-    const flushCodexInterim=()=>{
-      if(!options.interimFile||!pendingCodexInterim)return;
-      const clean=cleanInterim(pendingCodexInterim);
-      const raw=pendingCodexInterim.trim();
-      pendingCodexInterim='';
-      if(!clean)return;
-      lastCodexInterim=raw;
-      try{fs.appendFileSync(options.interimFile,JSON.stringify(clean)+'\n');}catch{}
-    };
+    const interim=provider==='codex'?createCodexInterim(options.interimFile):null;
     const child=execFile(file,[...prefix,...(agy?agyArgs:claude?claudeArgs:codexArgs)],{
       cwd:project,windowsHide:true,env:cliEnv(),timeout:options.rank?25000:agy?300000:1800000,maxBuffer:8*1024*1024
     },(error,stdout,stderr)=>{
@@ -816,7 +871,7 @@ async function runCodex(project, prompt, session, provider='codex',model=null,ef
           if(!response.is_error)result={id:response.session_id,reply:response.result,usage};
         }else{
           result=parseCodex(stdout,session);
-          if(lastCodexInterim&&typeof result?.reply==='string'&&result.reply.trim()===lastCodexInterim){
+          if(interim?.isDuplicate(result?.reply)){
             result.reply='[[AGENT_ROOM_NO_REPLY]]';
           }
         }
@@ -846,13 +901,9 @@ async function runCodex(project, prompt, session, provider='codex',model=null,ef
             const ev=JSON.parse(line);
             const info=describeStreamProgress(ev);
             if(info)writeProgress(info.step,info.text);
-            if(options.interimFile){
-              if(ev.type==='item.completed'&&ev.item?.type==='agent_message'&&ev.item.text){
-                if(pendingCodexInterim)flushCodexInterim();
-                pendingCodexInterim=ev.item.text;
-              }else if((ev.type==='item.started'||ev.type==='item.completed')&&ev.item?.type&&ev.item.type!=='agent_message'){
-                flushCodexInterim();
-              }
+            if(interim){
+              const phase=ev.type==='item.completed'?'completed':ev.type==='item.started'?'started':'';
+              interim.onItem(phase,ev.item?.type,ev.item?.text);
             }
           }catch{}
         }
