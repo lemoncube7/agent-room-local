@@ -108,12 +108,27 @@ static class Host {
     static string Dir { get { return Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location); } }
     static string StateFile { get { return Path.Combine(Dir, "local", "window.txt"); } }
 
+    [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int val, int size);
+
+    static void ApplyWindowTheme(Form form, string theme) {
+        try {
+            bool light = string.Equals(theme, "light", StringComparison.OrdinalIgnoreCase);
+            bool midnight = string.Equals(theme, "midnight", StringComparison.OrdinalIgnoreCase);
+            int dark = light ? 0 : 1;
+            DwmSetWindowAttribute(form.Handle, 20, ref dark, 4); // DWMWA_USE_IMMERSIVE_DARK_MODE
+            int captionColor = light ? 0x00FBF6F4 : midnight ? 0x000E0907 : 0x0017110F; // BGR
+            DwmSetWindowAttribute(form.Handle, 35, ref captionColor, 4); // DWMWA_CAPTION_COLOR (Win11)
+            form.BackColor = light ? Color.FromArgb(244, 246, 251) : midnight ? Color.FromArgb(7, 9, 14) : Color.FromArgb(15, 17, 23);
+        } catch { }
+    }
+
     public static Form Create(string url, string sdk) {
         Microsoft.Web.WebView2.Core.CoreWebView2Environment.SetLoaderDllFolderPath(sdk);
-        var form = new Form { Text = "Agent Room", Width = 1280, Height = 860, StartPosition = FormStartPosition.CenterScreen, BackColor = Color.FromArgb(17, 21, 38) };
+        var form = new Form { Text = "Agent Room", Width = 1280, Height = 860, StartPosition = FormStartPosition.CenterScreen, BackColor = Color.FromArgb(15, 17, 23) };
         try { form.Icon = Icon.ExtractAssociatedIcon(Assembly.GetExecutingAssembly().Location); } catch { }
         RestoreBounds(form);
-        var view = new Microsoft.Web.WebView2.WinForms.WebView2 { Dock = DockStyle.Fill, DefaultBackgroundColor = Color.FromArgb(17, 21, 38) };
+        form.HandleCreated += (s, e) => ApplyWindowTheme(form, "dark");
+        var view = new Microsoft.Web.WebView2.WinForms.WebView2 { Dock = DockStyle.Fill, DefaultBackgroundColor = Color.FromArgb(15, 17, 23) };
         // Separate profile so cookies (the local access key) persist across launches.
         string profile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AgentRoom", "WebView2");
         view.CreationProperties = new Microsoft.Web.WebView2.WinForms.CoreWebView2CreationProperties { UserDataFolder = profile };
@@ -139,6 +154,14 @@ static class Host {
                     a.State = Microsoft.Web.WebView2.Core.CoreWebView2PermissionState.Allow;
             };
             core.DocumentTitleChanged += (o, a) => { form.Text = string.IsNullOrEmpty(core.DocumentTitle) ? "Agent Room" : core.DocumentTitle.StartsWith("Agent Room") ? core.DocumentTitle : "Agent Room"; };
+            core.WebMessageReceived += (o, a) => {
+                try {
+                    string msg = a.TryGetWebMessageAsString();
+                    if (msg != null && msg.StartsWith("theme:", StringComparison.Ordinal)) {
+                        ApplyWindowTheme(form, msg.Substring(6));
+                    }
+                } catch { }
+            };
         };
         form.Shown += (s, e) => { view.Source = new Uri(url); };
         form.FormClosing += (s, e) => SaveBounds(form);

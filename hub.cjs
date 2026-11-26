@@ -1873,6 +1873,30 @@ const server=http.createServer(async(req,res)=>{
           {windowsHide:true,timeout:10*60*1000,encoding:'utf8',env:{...process.env,AR_PICK_INITIAL:initial}},(error,stdout)=>resolve(error?'':String(stdout||'').trim())));
         result={...state(typeof args.room==='string'&&args.room?args.room:null),pickedFolder:picked&&fs.existsSync(picked)?picked:null};
       }
+      else if(args.action==='open_file'){
+        if(process.platform!=='win32')throw Error('파일 열기는 Windows에서만 지원합니다.');
+        let raw=String(args.path||'').trim();
+        raw=raw.replace(/^file:\/+/i,'').replace(/#.*$/,'').replace(/:\d+(?:-\d+)?$/,'');
+        try{raw=decodeURIComponent(raw);}catch{}
+        raw=raw.replace(/^\/([A-Za-z]:)/,'$1').replace(/\//g,'\\');
+        if(!raw||raw.length>500||!fs.existsSync(raw))throw Error('파일을 찾을 수 없어요: '+raw);
+        const stat=fs.statSync(raw);
+        if(stat.isDirectory()){
+          spawn('explorer.exe',[raw],{detached:true,stdio:'ignore',windowsHide:true}).unref();
+        }else{
+          const ext=path.extname(raw).toLowerCase();
+          const binaryExec=new Set(['.exe','.msi','.com','.scr','.pif','.lnk','.cpl','.dll']);
+          const scriptText=new Set(['.bat','.cmd','.ps1','.vbs','.js','.mjs','.cjs','.wsf','.hta','.reg']);
+          if(binaryExec.has(ext)){
+            spawn('explorer.exe',['/select,',raw],{detached:true,stdio:'ignore',windowsHide:true}).unref();
+          }else if(scriptText.has(ext)){
+            spawn('notepad.exe',[raw],{detached:true,stdio:'ignore',windowsHide:true}).unref();
+          }else{
+            const ps=path.join(process.env.SystemRoot||'C:/Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
+            spawn(ps,['-NoProfile','-Command','Start-Process -LiteralPath $env:AR_OPEN_FILE'],{detached:true,stdio:'ignore',windowsHide:true,env:{...process.env,AR_OPEN_FILE:raw}}).unref();
+          }
+        }
+      }
       else if(args.action==='refresh_limits'){
         // Manual refresh from the agent panel: Codex and Antigravity are queried now;
         // Claude only reports limits inside a reply stream, so it updates on its next turn.
