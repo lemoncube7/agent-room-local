@@ -1794,6 +1794,40 @@ async function applyUpdateRelease(requestedTag){
   catch(error){updating=false;updatePending=false;fs.appendFileSync(updateLog,'업데이트 실패: '+error.message+'\n');throw error;}
   return {started:true,latest:update.latest};
 }
+function applyRemoteSyncConfig(args){
+  const cur=readRemoteConfig();
+  const remoteMode=['off','direct','hosted','both'].includes(args.remoteMode)?args.remoteMode:(args.enabled?'hosted':'off');
+  const hosted=remoteMode==='hosted'||remoteMode==='both';
+  const direct=remoteMode==='direct'||remoteMode==='both';
+  const site=args.site!==undefined?String(args.site||'').trim().slice(0,300):cur.site;
+  if(site&&!/^https?:\/\/\S+$/i.test(site))throw Error('올바른 Site 주소(https://...)를 입력해 주세요.');
+  const deviceKey=args.deviceKey?String(args.deviceKey).trim().slice(0,300):cur.deviceKey;
+  const siteAccess=args.clearAccessToken?'':(args.siteAccess?String(args.siteAccess).trim().slice(0,500):cur.siteAccess);
+  const directKey=cur.directKey||(direct?randomBytes(24).toString('hex'):'');
+  const autoSiteUpdate=args.autoSiteUpdate!==undefined?Boolean(args.autoSiteUpdate):Boolean(cur.autoSiteUpdate);
+  const siteUpdaterProvider=Object.hasOwn(providerNames,args.siteUpdaterProvider)?args.siteUpdaterProvider:(cur.siteUpdaterProvider||'codex');
+  if(hosted&&(!site||!deviceKey))throw Error('원격 호스팅을 켜려면 Site 주소와 REMOTE_DEVICE_KEY를 입력해 주세요.');
+  saveRemoteConfig({site,deviceKey,siteAccess,enabled:hosted,remoteMode,directKey,autoSiteUpdate,siteUpdaterProvider});
+  if(hosted)startRemoteSync();else{stopRemoteSync();remoteLastError='';}
+}
+function restartHubProcess(res){
+  if(draining||desktopBusy.size||cliBusy.size||rankingRooms.size)throw Error('에이전트가 응답 중일 때는 서버를 재시작할 수 없습니다.');
+  draining=true;
+  stopRemoteSync();
+  closeAllWarm();
+  drainOutbox();
+  res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'}).end(JSON.stringify({restarting:true}));
+  const respawn=()=>{
+    try{db.close();}catch{}
+    spawn(process.execPath,[path.join(__dirname,'hub.cjs')],{cwd:__dirname,detached:true,windowsHide:true,stdio:'ignore'}).unref();
+    process.exit(0);
+  };
+  setTimeout(()=>{
+    server.closeAllConnections?.();
+    server.close(respawn);
+    setTimeout(respawn,1200).unref?.();
+  },80);
+}
 const server=http.createServer(async(req,res)=>{
   const port=server.address().port;
   const localHost='127.0.0.1:'+port;
@@ -1925,38 +1959,10 @@ const server=http.createServer(async(req,res)=>{
         run('UPDATE rooms SET folder=? WHERE id=?',args.folder?.trim()?str(args.folder,40):'',args.room);
       }
       else if(args.action==='remote_sync'){
-        const cur=readRemoteConfig();
-        const remoteMode=['off','direct','hosted','both'].includes(args.remoteMode)?args.remoteMode:(args.enabled?'hosted':'off');
-        const hosted=remoteMode==='hosted'||remoteMode==='both';
-        const direct=remoteMode==='direct'||remoteMode==='both';
-        const site=args.site!==undefined?String(args.site||'').trim().slice(0,300):cur.site;
-        if(site&&!/^https?:\/\/\S+$/i.test(site))throw Error('올바른 Site 주소(https://...)를 입력해 주세요.');
-        const deviceKey=args.deviceKey?String(args.deviceKey).trim().slice(0,300):cur.deviceKey;
-        const siteAccess=args.clearAccessToken?'':(args.siteAccess?String(args.siteAccess).trim().slice(0,500):cur.siteAccess);
-        const directKey=cur.directKey||(direct?randomBytes(24).toString('hex'):'');
-        const autoSiteUpdate=args.autoSiteUpdate!==undefined?Boolean(args.autoSiteUpdate):Boolean(cur.autoSiteUpdate);
-        const siteUpdaterProvider=Object.hasOwn(providerNames,args.siteUpdaterProvider)?args.siteUpdaterProvider:(cur.siteUpdaterProvider||'codex');
-        if(hosted&&(!site||!deviceKey))throw Error('원격 호스팅을 켜려면 Site 주소와 REMOTE_DEVICE_KEY를 입력해 주세요.');
-        saveRemoteConfig({site,deviceKey,siteAccess,enabled:hosted,remoteMode,directKey,autoSiteUpdate,siteUpdaterProvider});
-        if(hosted)startRemoteSync();else{stopRemoteSync();remoteLastError='';}
+        applyRemoteSyncConfig(args);
       }
       else if(args.action==='restart_hub'){
-        if(draining||desktopBusy.size||cliBusy.size||rankingRooms.size)throw Error('에이전트가 응답 중일 때는 서버를 재시작할 수 없습니다.');
-        draining=true;
-        stopRemoteSync();
-        closeAllWarm();
-        drainOutbox();
-        res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'}).end(JSON.stringify({restarting:true}));
-        const respawn=()=>{
-          try{db.close();}catch{}
-          spawn(process.execPath,[path.join(__dirname,'hub.cjs')],{cwd:__dirname,detached:true,windowsHide:true,stdio:'ignore'}).unref();
-          process.exit(0);
-        };
-        setTimeout(()=>{
-          server.closeAllConnections?.();
-          server.close(respawn);
-          setTimeout(respawn,1200).unref?.();
-        },80);
+        restartHubProcess(res);
         return;
       }
       else if(args.action==='rotate_direct_key'){
@@ -2275,8 +2281,12 @@ const server=http.createServer(async(req,res)=>{
         }
       } else throw Error('Unknown control.');
       result??=state(typeof args.room==='string'&&args.room?args.room:null);
-    } else if(req.url==='/tool'&&(args.action==='check_update'||args.action==='apply_update')){
-      result=args.action==='check_update'?await checkUpdateWithSite():await applyUpdateRelease(args.tag);
+    } else if(req.url==='/tool'&&(args.action==='check_update'||args.action==='apply_update'||args.action==='remote_sync'||args.action==='rotate_direct_key'||args.action==='restart_hub')){
+      if(args.action==='check_update')result=await checkUpdateWithSite();
+      else if(args.action==='apply_update')result=await applyUpdateRelease(args.tag);
+      else if(args.action==='remote_sync'){applyRemoteSyncConfig(args);result={remoteSync:remoteSyncState()};}
+      else if(args.action==='rotate_direct_key'){const cur=readRemoteConfig();saveRemoteConfig({...cur,directKey:randomBytes(24).toString('hex')});result={remoteSync:remoteSyncState()};}
+      else{restartHubProcess(res);return;}
     } else result=req.url==='/tool'?task(args):deliver(args);
     res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'}).end(JSON.stringify(result));
   } catch(error){res.writeHead(400,{'Content-Type':'application/json'}).end(JSON.stringify({error:error.message}));}
