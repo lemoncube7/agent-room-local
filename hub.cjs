@@ -326,8 +326,30 @@ function dispatchDesktop(){
 let draining=false, updating=false, updatePending=false, updaterProcess;
 const remoteConfigFile=path.join(local,'remote-config.json');
 let remoteProc=null, remoteLastError='';
+function normalizeRemoteMode(cfg){
+  if(['off','direct','hosted','both'].includes(cfg?.remoteMode))return cfg.remoteMode;
+  return cfg?.enabled?'hosted':'off';
+}
+function directModeEnabled(cfg){const m=normalizeRemoteMode(cfg);return m==='direct'||m==='both';}
+function hostedModeEnabled(cfg){const m=normalizeRemoteMode(cfg);return m==='hosted'||m==='both';}
 function readRemoteConfig(){
-  try{return JSON.parse(fs.readFileSync(remoteConfigFile,'utf8'));}catch{return {site:'',deviceKey:'',siteAccess:'',enabled:false};}
+  try{return JSON.parse(fs.readFileSync(remoteConfigFile,'utf8'));}catch{return {site:'',deviceKey:'',siteAccess:'',enabled:false,remoteMode:'off',directKey:''};}
+}
+const directActiveOnBoot=directModeEnabled(readRemoteConfig());
+function listDirectUrls(port,cfg){
+  if(!cfg?.directKey)return [];
+  const urls=[];
+  const ifaces=os.networkInterfaces();
+  for(const [name,addrs] of Object.entries(ifaces)){
+    for(const info of addrs||[]){
+      if(info.family!=='IPv4'||info.internal)continue;
+      const ip=info.address;
+      const isTs=/tailscale/i.test(name)||/^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(ip);
+      urls.push({label:isTs?'Tailscale':'LAN ('+name+')',url:'http://'+ip+':'+port+'/?key='+cfg.directKey,priority:isTs?0:1});
+    }
+  }
+  urls.sort((a,b)=>a.priority-b.priority);
+  return urls.map(({label,url})=>({label,url}));
 }
 function saveRemoteConfig(cfg){
   fs.writeFileSync(remoteConfigFile+'.tmp',JSON.stringify(cfg),{mode:0o600});
@@ -352,7 +374,7 @@ let remoteRestartTimer=null,remoteRestartDelay=0;
 function startRemoteSync(){
   stopRemoteSync();
   const cfg=readRemoteConfig();
-  if(!cfg.enabled||!cfg.site||!cfg.deviceKey)return;
+  if(!hostedModeEnabled(cfg)||!cfg.site||!cfg.deviceKey)return;
   try{const alive=JSON.parse(fs.readFileSync(path.join(local,'remote-alive.json'),'utf8'));if(Date.now()-alive.at<15000)process.kill(alive.pid);}catch{}
   if(Date.now()-legacyRelay.at<15000)for(const pid of legacyRelay.pids){try{process.kill(pid);}catch{}}
   const script=path.join(__dirname,'remote-sync.cjs');
@@ -425,7 +447,10 @@ function remoteSyncState(){
     const pid=legacyRelay.pids.find(p=>{try{process.kill(p,0);return true;}catch{return false;}});
     if(pid)external={pid,site:''};
   }
-  return {configured:Boolean(cfg.site&&cfg.deviceKey),site:cfg.site||external?.site||'',enabled:Boolean(cfg.enabled),running:managed||Boolean(external),external:Boolean(external),hasAccessToken:Boolean(cfg.siteAccess),autoSiteUpdate:Boolean(cfg.autoSiteUpdate),siteUpdaterProvider:cfg.siteUpdaterProvider||'codex',siteUpdateJob,lastError:remoteLastError};
+  const mode=normalizeRemoteMode(cfg);
+  const directOn=directModeEnabled(cfg);
+  const port=server.address()?.port||Number(process.env.ROOM_PORT||4317);
+  return {configured:Boolean(cfg.site&&cfg.deviceKey),remoteMode:mode,directEnabled:directOn,directActive:directActiveOnBoot,directNeedsRestart:directOn!==directActiveOnBoot,directUrls:directOn?listDirectUrls(port,cfg):[],site:cfg.site||external?.site||'',enabled:hostedModeEnabled(cfg),running:managed||Boolean(external),external:Boolean(external),hasAccessToken:Boolean(cfg.siteAccess),autoSiteUpdate:Boolean(cfg.autoSiteUpdate),siteUpdaterProvider:cfg.siteUpdaterProvider||'codex',siteUpdateJob,lastError:remoteLastError};
 }
 function storeMessage(room,author,body,root=null,recipient=null){
   setImmediate(dispatchDesktop);
@@ -1701,31 +1726,65 @@ function authorized(req){
   return a.length===b.length&&timingSafeEqual(a,b);
 }
 const sameSecret=(value,secret)=>{const a=Buffer.from(String(value||'')),b=Buffer.from(secret);return a.length===b.length&&timingSafeEqual(a,b);};
-function browserAuthorized(req){
-  const cookie=(req.headers.cookie||'').split(/;\s*/).find(part=>part.startsWith('agent_room='));
-  return Boolean(cookie)&&sameSecret(cookie.slice('agent_room='.length),browserKey);
+function cookieValue(req,name){
+  const part=(req.headers.cookie||'').split(/;\s*/).find(p=>p.startsWith(name+'='));
+  return part?part.slice(name.length+1):'';
 }
-const readAuthorized=req=>authorized(req)||browserAuthorized(req);
-const lockedPage='<!doctype html><meta charset="utf-8"><title>Agent Room</title><body style="font-family:sans-serif;background:#111;color:#ddd;padding:40px"><h2>Agent Room</h2><p>보안을 위해 이 주소를 직접 열 수 없습니다. <b>Agent Room.exe</b>(또는 <code>start.ps1</code>)로 다시 열어 주세요.</p>';
+function browserAuthorized(req,isLocal=true){
+  if(isLocal&&sameSecret(cookieValue(req,'agent_room'),browserKey))return true;
+  const cfg=readRemoteConfig();
+  if(directModeEnabled(cfg)&&cfg.directKey&&sameSecret(cookieValue(req,'agent_room_direct'),cfg.directKey))return true;
+  return false;
+}
+const readAuthorized=(req,isLocal=true)=>authorized(req)||browserAuthorized(req,isLocal);
+const pwaIconSvg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#0f1117"/><circle cx="20" cy="32" r="7" fill="#4fd1a5"/><circle cx="32" cy="20" r="7" fill="#f0a27a"/><circle cx="44" cy="32" r="7" fill="#5ea0ff"/><path d="M22 44h20" stroke="#7c9cff" stroke-width="5" stroke-linecap="round"/></svg>';
+const lockedPage='<!doctype html><meta charset="utf-8"><title>Agent Room</title><body style="font-family:sans-serif;background:#111;color:#ddd;padding:40px"><h2>Agent Room</h2><p>보안을 위해 이 주소를 직접 열 수 없습니다. <b>Agent Room.exe</b>(또는 발급된 접속 링크)로 다시 열어 주세요.</p>';
 const server=http.createServer(async(req,res)=>{
-  const origin='http://127.0.0.1:'+server.address().port;
-  if(req.headers.host!==new URL(origin).host) return res.writeHead(403).end();
+  const port=server.address().port;
+  const localHost='127.0.0.1:'+port;
+  const reqHost=String(req.headers.host||'');
+  const isLocal=reqHost===localHost;
+  const cfg=readRemoteConfig();
+  if(!isLocal){
+    if(!directModeEnabled(cfg)||!/^[a-z0-9._-]+(:\d+)?$/i.test(reqHost))return res.writeHead(403).end();
+  }
+  const proto=req.headers['x-forwarded-proto']==='https'?'https':'http';
+  const origin=proto+'://'+(isLocal?localHost:reqHost);
   const parsedUrl=new URL(req.url,origin);
+  if(req.method==='GET'&&parsedUrl.pathname==='/manifest.webmanifest'){
+    return res.writeHead(200,{'Content-Type':'application/manifest+json','Cache-Control':'no-store'}).end(JSON.stringify({
+      name:'Agent Room',short_name:'Agent Room',start_url:'/',display:'standalone',
+      background_color:'#0f1117',theme_color:'#0f1117',
+      icons:[{src:'/icon.svg',sizes:'any',type:'image/svg+xml'}]
+    }));
+  }
+  if(req.method==='GET'&&parsedUrl.pathname==='/icon.svg'){
+    return res.writeHead(200,{'Content-Type':'image/svg+xml','Cache-Control':'public, max-age=86400'}).end(pwaIconSvg);
+  }
+  if(req.method==='GET'&&parsedUrl.pathname==='/sw.js'){
+    return res.writeHead(200,{'Content-Type':'application/javascript','Cache-Control':'no-store'}).end("self.addEventListener('fetch',()=>{});");
+  }
   if(req.method==='GET'&&parsedUrl.pathname==='/'){
     if(parsedUrl.searchParams.has('key')){
-      if(!sameSecret(parsedUrl.searchParams.get('key'),browserKey))return res.writeHead(403,{'Content-Type':'text/html; charset=utf-8'}).end(lockedPage);
-      return res.writeHead(302,{'Set-Cookie':'agent_room='+browserKey+'; Path=/; HttpOnly; SameSite=Strict; Max-Age=31536000','Location':'/','Cache-Control':'no-store'}).end();
+      const key=parsedUrl.searchParams.get('key');
+      if(isLocal&&sameSecret(key,browserKey)){
+        return res.writeHead(302,{'Set-Cookie':'agent_room='+browserKey+'; Path=/; HttpOnly; SameSite=Strict; Max-Age=31536000','Location':'/','Cache-Control':'no-store'}).end();
+      }
+      if(directModeEnabled(cfg)&&cfg.directKey&&sameSecret(key,cfg.directKey)){
+        return res.writeHead(302,{'Set-Cookie':'agent_room_direct='+cfg.directKey+'; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000','Location':'/','Cache-Control':'no-store'}).end();
+      }
+      return res.writeHead(403,{'Content-Type':'text/html; charset=utf-8'}).end(lockedPage);
     }
-    if(!browserAuthorized(req))return res.writeHead(401,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}).end(lockedPage);
+    if(!browserAuthorized(req,isLocal))return res.writeHead(401,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}).end(lockedPage);
     return res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}).end(fs.readFileSync(path.join(__dirname,'index.html')));
   }
   if(req.method==='GET'&&parsedUrl.pathname==='/state'){
     // Unauthenticated callers (launcher and updater health checks) only learn the version.
-    const body=readAuthorized(req)?state(parsedUrl.searchParams.get('room')):{version,authRequired:true,rooms:[],members:[],deliveries:[]};
+    const body=readAuthorized(req,isLocal)?state(parsedUrl.searchParams.get('room')):{version,authRequired:true,rooms:[],members:[],deliveries:[]};
     return res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'}).end(JSON.stringify(body));
   }
   if(req.method==='GET'&&parsedUrl.pathname.startsWith('/uploads/')){
-    if(!readAuthorized(req))return res.writeHead(403).end();
+    if(!readAuthorized(req,isLocal))return res.writeHead(403).end();
     let baseName;
     try{baseName=path.basename(decodeURIComponent(parsedUrl.pathname.slice('/uploads/'.length)));}catch{return res.writeHead(400).end();}
     const file=path.join(uploads,baseName);
@@ -1741,7 +1800,7 @@ const server=http.createServer(async(req,res)=>{
   }
   const browser = req.url==='/control';
   if(req.method!=='POST'||(!browser&&!['/tool','/delivery','/shutdown_for_update'].includes(req.url))) return res.writeHead(404).end();
-  if(browser?(req.headers.origin!==origin||!browserAuthorized(req)):!authorized(req)) return res.writeHead(403).end();
+  if(browser?(req.headers.origin!==origin||!browserAuthorized(req,isLocal)):!authorized(req)) return res.writeHead(403).end();
   try{
     const chunks=[]; let size=0; const limit=browser?12*1024*1024:65536;
     for await(const chunk of req){size+=chunk.length;if(size>limit)return res.writeHead(413).end();chunks.push(chunk);}
@@ -1812,16 +1871,42 @@ const server=http.createServer(async(req,res)=>{
       }
       else if(args.action==='remote_sync'){
         const cur=readRemoteConfig();
+        const remoteMode=['off','direct','hosted','both'].includes(args.remoteMode)?args.remoteMode:(args.enabled?'hosted':'off');
+        const hosted=remoteMode==='hosted'||remoteMode==='both';
+        const direct=remoteMode==='direct'||remoteMode==='both';
         const site=args.site!==undefined?String(args.site||'').trim().slice(0,300):cur.site;
         if(site&&!/^https?:\/\/\S+$/i.test(site))throw Error('올바른 Site 주소(https://...)를 입력해 주세요.');
         const deviceKey=args.deviceKey?String(args.deviceKey).trim().slice(0,300):cur.deviceKey;
         const siteAccess=args.clearAccessToken?'':(args.siteAccess?String(args.siteAccess).trim().slice(0,500):cur.siteAccess);
-        const enabled=Boolean(args.enabled);
+        const directKey=cur.directKey||(direct?randomBytes(24).toString('hex'):'');
         const autoSiteUpdate=args.autoSiteUpdate!==undefined?Boolean(args.autoSiteUpdate):Boolean(cur.autoSiteUpdate);
         const siteUpdaterProvider=Object.hasOwn(providerNames,args.siteUpdaterProvider)?args.siteUpdaterProvider:(cur.siteUpdaterProvider||'codex');
-        if(enabled&&(!site||!deviceKey))throw Error('원격 중계를 켜려면 Site 주소와 REMOTE_DEVICE_KEY를 입력해 주세요.');
-        saveRemoteConfig({site,deviceKey,siteAccess,enabled,autoSiteUpdate,siteUpdaterProvider});
-        if(enabled)startRemoteSync();else{stopRemoteSync();remoteLastError='';}
+        if(hosted&&(!site||!deviceKey))throw Error('원격 호스팅을 켜려면 Site 주소와 REMOTE_DEVICE_KEY를 입력해 주세요.');
+        saveRemoteConfig({site,deviceKey,siteAccess,enabled:hosted,remoteMode,directKey,autoSiteUpdate,siteUpdaterProvider});
+        if(hosted)startRemoteSync();else{stopRemoteSync();remoteLastError='';}
+      }
+      else if(args.action==='restart_hub'){
+        if(draining||desktopBusy.size||cliBusy.size||rankingRooms.size)throw Error('에이전트가 응답 중일 때는 서버를 재시작할 수 없습니다.');
+        draining=true;
+        stopRemoteSync();
+        closeAllWarm();
+        drainOutbox();
+        res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'}).end(JSON.stringify({restarting:true}));
+        const respawn=()=>{
+          try{db.close();}catch{}
+          spawn(process.execPath,[path.join(__dirname,'hub.cjs')],{cwd:__dirname,detached:true,windowsHide:true,stdio:'ignore'}).unref();
+          process.exit(0);
+        };
+        setTimeout(()=>{
+          server.closeAllConnections?.();
+          server.close(respawn);
+          setTimeout(respawn,1200).unref?.();
+        },80);
+        return;
+      }
+      else if(args.action==='rotate_direct_key'){
+        const cur=readRemoteConfig();
+        saveRemoteConfig({...cur,directKey:randomBytes(24).toString('hex')});
       }
       else if(args.action==='trigger_site_update'){
         const tag=typeof args.tag==='string'&&/^v?\d+\.\d+\.\d+$/.test(args.tag.trim())?(args.tag.trim().startsWith('v')?args.tag.trim():'v'+args.tag.trim()):('v'+version);
@@ -1845,8 +1930,55 @@ const server=http.createServer(async(req,res)=>{
       }
       else if(args.action==='create'){
         const room=randomUUID();
-        run('INSERT INTO rooms(id,name) VALUES(?,?)',room,str(args.name,70));
+        const workMode=args.workMode==='chat'?'chat':'dev';
+        run('INSERT INTO rooms(id,name,work_mode) VALUES(?,?,?)',room,str(args.name,70),workMode);
+        if(args.mode==='ranking'||args.mode==='hierarchy'||args.mode==='broadcast'){
+          run('INSERT INTO room_ranking(room,enabled,mode,judge_provider,judge_effort) VALUES(?,?,?,?,?) ON CONFLICT(room) DO UPDATE SET enabled=excluded.enabled,mode=excluded.mode',
+            room,args.mode==='ranking'?1:0,args.mode,'codex','low');
+        }
         result={...state(room),createdRoom:room};
+      }
+      else if(args.action==='quick_start'){
+        if(draining)throw Error('업데이트 중이에요. 잠시 후 다시 시도하세요.');
+        let room=typeof args.room==='string'&&one('SELECT id FROM rooms WHERE id=?',args.room)?args.room:null;
+        if(!room){
+          room=randomUUID();
+          const rName=typeof args.name==='string'&&args.name.trim()?str(args.name,70):'시작 방';
+          const wm=args.workMode==='dev'?'dev':'chat';
+          run('INSERT INTO rooms(id,name,work_mode) VALUES(?,?,?)',room,rName,wm);
+        }
+        const existing=one("SELECT id FROM members WHERE room=? AND state IN ('approved','starting') LIMIT 1",room);
+        if(!existing){
+          let cliCfg={};
+          try{cliCfg=JSON.parse(fs.readFileSync(path.join(local,'cli.json'),'utf8'))||{};}catch{}
+          const order=['codex','claude','agy'];
+          const preferred=Object.hasOwn(providerNames,args.provider)?args.provider:null;
+          const provider=preferred||order.find(p=>cliCfg[p]&&fs.existsSync(cliCfg[p]))||'codex';
+          const project=resolveRoomProject(room)||__dirname;
+          const id=randomUUID();
+          run("INSERT INTO members(id,room,name,state,role) VALUES(?,?,?,'approved','')",id,room,providerNames[provider]);
+          run('INSERT INTO cli_sessions(member,project,provider,model,effort,permission_profile,prepared,policy_version) VALUES(?,?,?,?,?,?,1,2)',id,project,provider,null,null,'dev');
+        }
+        if(typeof args.text==='string'&&args.text.trim()){
+          recordUserMessage(room,args.text,undefined,args.attachments);
+          dispatchQueuedTurns();
+        }
+        result={...state(room),createdRoom:room};
+      }
+      else if(args.action==='diagnose'){
+        let cliCfg={};
+        try{cliCfg=JSON.parse(fs.readFileSync(path.join(local,'cli.json'),'utf8'))||{};}catch{}
+        const proj=readActiveProject();
+        const projOk=Boolean(proj&&fs.existsSync(proj));
+        const foundClis=['codex','claude','agy'].filter(p=>cliCfg[p]&&fs.existsSync(cliCfg[p])).map(p=>providerNames[p]);
+        const rs=remoteSyncState();
+        const items=[
+          {ok:true,label:'로컬 허브',detail:'정상 실행 중 (v'+version+')'},
+          {ok:projOk,label:'작업 폴더',detail:projOk?proj:'미설정 또는 폴더 없음 (상단 폴더 버튼에서 선택해 주세요)'},
+          {ok:foundClis.length>0,label:'설치된 AI CLI',detail:foundClis.length?foundClis.join(', '):'감지된 CLI 없음 (Codex · Claude Code · Antigravity 중 하나를 설치·로그인해 주세요)'},
+          {ok:!rs.enabled||rs.running,label:'원격 연결',detail:rs.mode==='off'?'사용 안 함':rs.running?'정상 연결 중':(rs.lastError||'연결 대기 중')}
+        ];
+        result={diagnosis:{ok:items.every(i=>i.ok),items}};
       }
       else if(args.action==='prepare_room'){
         const room=prepareRoom(args.source,args.name);
@@ -2138,7 +2270,7 @@ const server=http.createServer(async(req,res)=>{
     res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'}).end(JSON.stringify(result));
   } catch(error){res.writeHead(400,{'Content-Type':'application/json'}).end(JSON.stringify({error:error.message}));}
 });
-server.listen(Number(process.env.ROOM_PORT||4317),'127.0.0.1',()=>{
+server.listen(Number(process.env.ROOM_PORT||4317),directActiveOnBoot?'0.0.0.0':'127.0.0.1',()=>{
   const url='http://127.0.0.1:'+server.address().port;
   fs.writeFileSync(path.join(local,'hub.json'),JSON.stringify({url,token,browserUrl:url+'/?key='+browserKey}),{mode:0o600});
   drainOutbox();

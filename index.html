@@ -1,4 +1,4 @@
-<!doctype html><html lang="ko"><meta charset="utf-8"><title>Agent Room</title>
+<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0f1117"><link rel="manifest" href="/manifest.webmanifest"><link rel="icon" href="/icon.svg"><title>Agent Room</title>
 <style>
 :root{color-scheme:dark;font-family:Inter,"Segoe UI",sans-serif;background:#111526;color:#edf0fa}
 *{box-sizing:border-box}body{margin:0;display:grid;grid-template-columns:clamp(150px,17vw,230px) minmax(0,1fr);grid-template-rows:minmax(0,1fr);height:100vh;height:100dvh;overflow:hidden}
@@ -100,6 +100,16 @@ mark.chat-mark{background:#665218;color:#fff2b2;border-radius:3px;padding:0 1px}
 .seg{display:inline-flex;padding:3px;border-radius:10px;background:var(--bg);border:1px solid var(--line);gap:2px;flex:none}.seg button{border:0;background:transparent;color:var(--muted);padding:5px 11px;font-size:12px;border-radius:7px;min-width:0}.seg button:hover{color:var(--text);background:var(--hover)}.seg button[aria-pressed=true]{background:var(--accent);color:#0f1117;font-weight:600}:root[data-theme="light"] .seg button[aria-pressed=true]{color:#fff}
 #update-result:empty{display:none}#update-result{margin:8px 2px 0}.dlg-sec{margin:0 0 4px;padding:14px 0 6px;border-top:1px solid var(--line)}.dlg-sec:first-of-type{border-top:0;padding-top:4px}.dlg-sec label{display:grid;gap:5px;margin:0 0 12px;font-size:13px}#mode-desc{margin:-4px 0 12px}#ranking-form footer button[type=submit]{background:var(--accent);border-color:var(--accent);color:#0f1117;font-weight:600}:root[data-theme="light"] #ranking-form footer button[type=submit]{color:#fff}
 .room-extra-tools{display:flex;flex-wrap:wrap;gap:6px;padding-top:8px;border-top:1px solid var(--line)}.room-extra-tools button{font-size:12px;padding:6px 10px}.room-extra-tools button.danger{color:#ff9b92;border-color:#5c2b29}
+.onboard-card{max-width:540px;width:100%;margin:auto;padding:20px 22px;background:var(--panel);border:1px solid var(--line);border-radius:14px;display:grid;gap:12px}
+.onboard-card h3{margin:0;font-size:16px}.onboard-card>p{margin:0;font-size:13px;color:var(--muted)}
+.onboard-steps{display:grid;gap:8px}
+.onboard-step{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;background:var(--bg);border:1px solid var(--line);border-radius:10px;font-size:13px}
+.onboard-step.done{opacity:.72;border-color:#2b5949}.onboard-step strong{display:block;font-size:13px}.onboard-step small{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
+.onboard-step button{flex:none;font-size:12px;padding:6px 11px}
+#help-dialog{width:min(480px,92vw)}.help-list{display:grid;gap:10px;margin:12px 0}.help-item{padding:10px 12px;background:var(--bg);border:1px solid var(--line);border-radius:10px}.help-item strong{display:block;font-size:13px;margin-bottom:3px}.help-item p{margin:0;font-size:12.5px;color:var(--muted);line-height:1.5}
+.preset-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}.preset-row button{flex:1;min-width:130px;font-size:12px;padding:7px 10px;text-align:center}
+#slash-menu{flex:none;display:flex;flex-wrap:wrap;gap:5px;padding:6px max(22px,calc((100% - 1240px)/2));background:var(--panel);border-top:1px solid var(--line)}#slash-menu[hidden]{display:none}#slash-menu button{font-size:12px;padding:4px 9px}
+#diag-result{display:grid;gap:4px;margin-top:8px;font-size:12px}#diag-result:empty{display:none}.diag-item{padding:6px 9px;border-radius:8px;background:var(--bg);border:1px solid var(--line)}.diag-item.bad{border-color:#8a433d;color:#ffb9ad}
 #pair-guide{margin:8px 0 0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--raised);font-size:12px;line-height:1.5;overflow-wrap:anywhere}#pair-guide code{display:inline-block;margin:4px 0;padding:3px 6px;border-radius:6px;background:var(--bg);border:1px solid var(--line);color:var(--accent);word-break:break-all}#pair-guide button{font-size:12px;padding:4px 10px;margin-top:4px}
 :root{--sb-thumb:rgba(154,161,176,.28);--sb-thumb-hover:rgba(154,161,176,.52)}
 :root[data-theme="midnight"]{--sb-thumb:rgba(143,151,168,.24);--sb-thumb-hover:rgba(143,151,168,.48)}
@@ -110,9 +120,9 @@ mark.chat-mark{background:#665218;color:#fff2b2;border-radius:3px;padding:0 1px}
 ::-webkit-scrollbar-thumb{background:var(--sb-thumb);border-radius:999px;border:2px solid transparent;background-clip:padding-box}
 ::-webkit-scrollbar-thumb:hover{background:var(--sb-thumb-hover);border:2px solid transparent;background-clip:padding-box}
 ::-webkit-scrollbar-corner{background:transparent}</style>
-<aside><h1>Agent Room <small id="current-version" aria-label="현재 버전" title="현재 설치된 Agent Room 버전">버전 확인 중</small></h1><button id="project-btn" type="button" title="작업 프로젝트 폴더 변경">프로젝트: 확인 중…</button><form id="new" autocomplete="off"><input name="name" autocomplete="off" aria-label="채팅방 이름" placeholder="새 채팅방 이름" required maxlength="70"><button aria-label="채팅방 만들기" title="새 채팅방 만들기">+</button></form><div id="error" role="status"></div><nav id="rooms"></nav><div id="side-foot"><button id="app-settings-btn" type="button" title="앱 전체 설정 (테마 · 실행 창 · 원격 연결 · 알림 · 권한 로그 · 업데이트)">⚙ 설정</button></div></aside><dialog id="app-settings-dialog"><div class="dlg-head"><h2>앱 설정</h2><button id="app-settings-close" class="dlg-close" type="button" aria-label="닫기">✕</button></div><div class="set-section"><h3>화면 · 알림</h3><div class="set-card"><div class="set-row"><div class="set-txt"><b>화면 테마</b><small>앱 전체 배경과 대비를 선택합니다</small></div><div id="theme-seg" class="seg" role="group" aria-label="화면 테마"><button type="button" data-theme="dark">다크</button><button type="button" data-theme="midnight">블랙</button><button type="button" data-theme="light">라이트</button></div></div><div class="set-row"><div class="set-txt"><b>완료 알림</b><small>작업이 끝나거나 승인이 필요하면 알려 줍니다</small></div><button id="notify-toggle" type="button">꺼짐</button></div></div></div><div class="set-section"><h3>실행 · 연결</h3><div class="set-card"><div class="set-row"><div class="set-txt"><b>실행 창 방식</b><small>다음 실행부터 적용됩니다</small></div><div id="open-mode-seg" class="seg" role="group" aria-label="실행 창 방식"><button type="button" data-mode="window">앱 창</button><button type="button" data-mode="browser">브라우저</button></div></div><div class="set-row"><div class="set-txt"><b>원격 연결</b><small>ChatGPT Site로 방을 공유합니다</small></div><button id="remote-btn" type="button" title="원격 Site 연결 설정">꺼짐</button></div></div></div><div class="set-section"><h3>관리</h3><div class="set-card"><div class="set-row"><div class="set-txt"><b>권한 승인 로그</b><small>허용·거부 기록을 확인합니다</small></div><button id="open-approval-log" type="button">열기</button></div><div class="set-row"><div class="set-txt"><b>업데이트</b><small>새 버전이 있는지 확인합니다</small></div><button id="update" type="button">확인</button></div><div class="set-row"><div class="set-txt"><b>화면 새로고침</b><small>캐시를 비우고 최신 화면을 불러옵니다</small></div><button id="hard-reload" type="button" title="캐시를 비우고 최신 화면을 다시 불러옵니다">새로고침</button></div></div><p id="update-result" role="status"></p></div></dialog>
-<main><header><div class="head-row"><button id="rooms-toggle" class="icon-btn" type="button" title="방 목록 접기/펴기" aria-label="방 목록 접기/펴기">☰</button><h2 id="title">채팅방을 선택하세요</h2><button id="room-mode" type="button" hidden title="클릭해 응답 구조 변경 (자유 동시 응답 · 자동 순위 판정 · 계층형)"></button><button id="room-work-mode" type="button" hidden title="클릭해 개발 모드(파일 수정·명령 실행 허용) ↔ 대화 모드(읽기 전용) 전환"></button><span class="head-space"></span><button id="search-toggle" class="icon-btn" type="button" hidden title="방 전체 대화 검색 (Ctrl+F)" aria-label="대화 검색">🔍</button><button id="agents-toggle" class="icon-btn" type="button" hidden title="오른쪽 에이전트 패널 접기/펴기" aria-label="에이전트 패널 접기/펴기">◧</button><button id="room-menu-btn" class="icon-btn" type="button" hidden title="방 설정 (이름 · 폴더 · 구조 모드 · 공통 지침 · 원격 공유 · 삭제)" aria-label="방 설정" aria-haspopup="menu" aria-expanded="false">⋯</button></div><div id="room-actions" role="menu" hidden><button id="room-settings-btn" type="button" hidden role="menuitem">방 이름 · 설정</button><button id="reply-priority" hidden aria-pressed="false" title="방 구조 모드(자유/순위/계층형)와 메인 에이전트를 설정합니다.">구조 모드</button><button id="open-handoff" hidden>작업 인계</button><button id="pair" type="button" hidden>기존 대화 연결 코드 만들기</button><button id="external-say" type="button" hidden>외부 메시지 코드 만들기</button></div><p id="pair-guide" hidden></p></header><div id="chat-search" hidden><input id="chat-search-input" type="search" placeholder="대화 내용 검색 (Enter 다음, Shift+Enter 이전, Esc 닫기)" autocomplete="off"><span id="chat-search-count" class="search-count"></span><button id="chat-search-prev" type="button" title="이전 결과 (Shift+Enter)">▲</button><button id="chat-search-next" type="button" title="다음 결과 (Enter)">▼</button><button id="chat-search-close" type="button" title="닫기 (Esc)">✕</button></div><section class="history" id="messages" aria-label="공용 대화"></section><section id="approvals" aria-label="허용 요청" aria-live="polite"></section><div id="attach-list" aria-label="첨부 파일 목록"></div><button type="button" id="first-agent" hidden title="이 방에 첫 번째 AI 에이전트를 추가합니다">첫 에이전트 추가</button><form id="compose" autocomplete="off" hidden style="padding: 12px 25px"><input id="attach" type="file" multiple hidden><button id="attach-btn" type="button" title="파일·이미지 첨부 (드래그 앤 드롭·붙여넣기 가능)">+ 파일</button><textarea id="draft" rows="1" autocomplete="off" aria-label="메시지" placeholder="방 전체에 메시지 보내기 (Shift+Enter 줄바꿈, 파일 드래그/붙여넣기)" maxlength="8000"></textarea><button type="submit" title="메시지 보내기 (Enter 전송, Shift+Enter 줄바꿈)">보내기</button></form></main><section id="agent-panel" aria-label="에이전트"><div class="panel-head"><strong>에이전트</strong><span class="panel-tools"><button id="limits-refresh" type="button" class="icon-btn" title="한도 정보 새로고침 (Codex·Antigravity 즉시, Claude는 다음 응답 때 갱신)" aria-label="한도 정보 새로고침">↻</button><button id="agents-compact" type="button" class="icon-btn" aria-pressed="false" title="간결히 보기 (상태 점 · 이름 · 한도 막대만 표시)" aria-label="간결히 보기">▤</button><button id="add-agent" hidden title="이 방에 새 AI 에이전트(Codex · Claude · Antigravity) 추가">+ 추가</button></span></div><section id="activity" aria-label="에이전트 작업 현황"></section></section><dialog id="ranking-dialog"><form id="ranking-form"><h2>방 설정</h2><section class="dlg-sec"><h3>기본 정보</h3><label>방 이름<input name="name" required maxlength="70" autocomplete="off" placeholder="채팅방 이름"></label><label>이 방의 프로젝트 폴더 (비워 두면 전역 폴더 사용)<input name="project" maxlength="500" placeholder="비워 두면 기본 프로젝트 사용"></label></section><section class="dlg-sec"><h3>대화 방식</h3><label>방 성격<select name="workMode"><option value="dev">개발 모드 (코딩 · 파일 수정 · 자동 재호출 켜짐)</option><option value="chat">대화 모드 (아이디어 · 일반 대화 · 실행/재호출 꺼짐)</option></select></label><p id="mode-desc">사용자 메시지가 에이전트들에게 전달되는 방식을 선택합니다.</p><label>구조 모드<select name="mode"><option value="broadcast">자유 · 동시 응답 (모든 에이전트에게 전달)</option><option value="ranking">자동 · 순위 판정 (판단 모델이 담당자 선택)</option><option value="hierarchy">계층형 · 메인 → 하위 → 서브에이전트</option></select></label><label id="main-member-label" hidden>메인 에이전트<select name="mainMember"></select></label><div id="judge-fields" hidden><details id="judge-advanced"><summary>판단 모델 · 지침 설정</summary><div class="dialog-options"><label>판단 CLI<select name="provider"><option value="codex">Codex</option><option value="claude">Claude Code</option><option value="agy">Antigravity</option></select></label><label>모델<select name="model"><option value="">CLI 기본 모델</option></select></label><label>추론 강도<select name="effort"><option value="low">낮음</option><option value="medium">보통</option><option value="high">높음</option></select></label><label>판단 CLI 추가 지침<textarea name="judgePrompt" rows="3" maxlength="2000" placeholder="예: 코드 수정은 수소 우선, UI/문서는 오퍼스 우선, 단순 인사에는 아무도 답하지 마"></textarea></label></div></details></div></section><section class="dlg-sec"><h3>방 공통 지침</h3><label>방 공통 지침 (관리형 에이전트 턴에 전달)<textarea name="memo" rows="3" maxlength="4000" placeholder="예: 배포는 release.ps1 사용, 공통 규칙·결정 사항 기록"></textarea></label></section><small id="ranking-status" role="status"></small><p id="ranking-error" role="status"></p><footer><button id="ranking-cancel" type="button">취소</button><button type="submit">저장</button></footer></form></dialog><dialog id="agent-dialog"><form id="agent-form" autocomplete="off"><h2 id="agent-title">에이전트 추가</h2><input type="hidden" name="provider" value="codex"><div id="provider-buttons" role="group" aria-label="CLI 종류"><button type="button" data-provider="codex">Codex</button><button type="button" data-provider="claude">Claude Code</button><button type="button" data-provider="agy">Antigravity</button></div><label>모델<select name="model"><option value="">CLI 기본 모델</option></select></label><label id="session-label">대화 시작 방식<select name="thread"><option value="">새 대화 시작</option></select></label><details id="agent-advanced"><summary>이름 · 역할 · 권한 설정</summary><div class="dialog-options"><label>추론 강도<select name="effort"><option value="">CLI 기본값</option><option value="low">낮음</option><option value="medium">보통</option><option value="high">높음</option></select></label><label>권한 (Claude · Antigravity)<select name="permission"><option value="edit">편집: 파일 수정만 자동 허용</option><option value="dev" selected>개발: 편집, 조회, 테스트·빌드, git 커밋</option><option value="full">전체: 모든 명령 자동 허용 (주의)</option></select></label><label id="clear-rules-label" class="check" hidden><input type="checkbox" name="clearRules"> <span id="clear-rules-text">항상 허용 목록 지우기</span></label><div id="saved-rules-list" hidden></div><label>이름<input name="name" autocomplete="off" placeholder="비워 두면 모델명 사용" maxlength="120"></label><label>역할 · 담당 영역<input name="role" autocomplete="off" placeholder="예: 프론트엔드/UI, 허브 백엔드, 리뷰·테스트" maxlength="120"></label></div></details><small id="model-status" role="status"></small><small id="agent-error" role="status"></small><footer><button type="button" id="agent-cancel">취소</button><button id="agent-submit" type="submit">에이전트 추가</button></footer></form></dialog>
-<dialog id="agent-usage-dialog"><form method="dialog"><h2 id="agent-usage-title">사용량</h2><dl><dt>최근 턴</dt><dd id="agent-usage-last"></dd><dt>Agent Room 수집 누적</dt><dd id="agent-usage-total"></dd><dt>현재 컨텍스트 점유율</dt><dd id="agent-usage-context"></dd></dl><p>입력에는 CLI에 따라 캐시가 포함될 수 있습니다. 계정 잔여 한도는 에이전트 목록에서 확인할 수 있습니다.</p><footer><button>닫기</button></footer></form></dialog><dialog id="project-dialog"><form id="project-form" autocomplete="off"><h2>작업 프로젝트 변경</h2><p>새로 추가하는 CLI 에이전트가 사용할 프로젝트 폴더입니다.</p><label>프로젝트 경로<input name="project" required maxlength="500" placeholder="예: E:\my-project"></label><label id="project-room-only-label" class="check"><input type="checkbox" name="roomOnly"> 현재 방에만 이 프로젝트 폴더 적용</label><label class="check"><input type="checkbox" name="applyMcp" checked> 선택한 폴더에 MCP 설정 적용</label><div id="project-recent"></div><p id="project-error" role="status"></p><footer><button id="project-cancel" type="button">취소</button><button type="submit">적용</button></footer></form></dialog><dialog id="remote-dialog"><form id="remote-form" autocomplete="off" style="display:grid;gap:10px"><h2>원격 연결 설정</h2><p>비공개 ChatGPT Site(또는 호환 원격 서버)와 이 PC를 자동 연결합니다. 키는 이 PC의 <code>local/remote-config.json</code>에만 저장됩니다.</p><label style="display:grid;gap:4px">Site 주소<input name="site" maxlength="300" placeholder="https://your-site.chatgpt.site"></label><label style="display:grid;gap:4px">REMOTE_DEVICE_KEY<input name="deviceKey" type="password" maxlength="300" placeholder="32바이트 이상 비밀 키"></label><label style="display:grid;gap:4px">서비스 액세스 토큰 (선택)<input name="siteAccess" type="password" maxlength="500" placeholder="필요한 경우에만 입력"></label><label class="check"><input type="checkbox" name="enabled"> 원격 중계 켜기 (허브 시작 시 자동 실행)</label><label class="check"><input type="checkbox" id="remote-share-all"> 모든 방 항상 공유 (새 방 포함)</label><small id="remote-share-count"></small><label class="check"><input type="checkbox" name="autoSiteUpdate"> 새 릴리스 감지 시 업데이트 전용 세션 자동 기동</label><label style="display:grid;gap:4px">업데이트 전용 CLI<select name="siteUpdaterProvider"><option value="codex">Codex</option><option value="claude">Claude Code</option><option value="agy">Antigravity</option></select></label><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><button id="trigger-site-update" type="button">지금 원격 Site 업데이트 실행</button><small id="site-update-job-status"></small></div><p id="remote-error" role="status" style="color:#ffb9ad;margin:0;font-size:12px"></p><footer style="display:flex;gap:8px;justify-content:flex-end"><button id="remote-cancel" type="button">취소</button><button type="submit">저장</button></footer></form></dialog>
+<aside><h1>Agent Room <small id="current-version" aria-label="현재 버전" title="현재 설치된 Agent Room 버전">버전 확인 중</small></h1><button id="project-btn" type="button" title="작업 프로젝트 폴더 변경">프로젝트: 확인 중…</button><form id="new" autocomplete="off"><input name="name" autocomplete="off" aria-label="채팅방 이름" placeholder="새 채팅방 이름" required maxlength="70"><button aria-label="채팅방 만들기" title="새 채팅방 만들기">+</button></form><div id="error" role="status"></div><nav id="rooms"></nav><div id="side-foot"><button id="app-settings-btn" type="button" title="앱 전체 설정 (테마 · 실행 창 · 원격 연결 · 알림 · 권한 로그 · 업데이트)">⚙ 설정</button></div></aside><dialog id="help-dialog"><div class="dlg-head"><h2>1분 사용법 가이드</h2><button id="help-close" class="dlg-close" type="button" aria-label="닫기">✕</button></div><div class="help-list"><div class="help-item"><strong>1. 첫 대화 시작하기</strong><p>왼쪽에서 방을 만들고, 오른쪽 <b>+ 추가</b>로 설치된 AI(Codex · Claude · Antigravity)를 연결한 뒤 아래 입력창에 말을 걸면 됩니다.</p></div><div class="help-item"><strong>2. 여러 AI 함께 쓰기</strong><p>메시지에 AI 이름을 부르면 그 AI가 먼저 답합니다. 방 설정(<b>⋯</b>)에서 <b>모두 동시 답변</b> · <b>자동 순위 판정</b> · <b>대표 1명에게 맡기기</b>를 고를 수 있습니다.</p></div><div class="help-item"><strong>3. 개발 모드 vs 대화 모드</strong><p>상단 배지를 눌러 전환합니다. <b>개발 모드</b>는 파일 수정·명령 실행을 허용하고, <b>대화 모드</b>는 읽기 전용으로 아이디어·질문에 안전하게 씁니다.</p></div><div class="help-item"><strong>4. 알아두면 편한 기능</strong><p><b>Ctrl+F</b>로 방 전체 검색, 파일·이미지 드래그 첨부, 위험한 명령은 채팅 위 <b>허용 요청 카드</b>에서 직접 허용/거부할 수 있습니다.</p></div></div></dialog><dialog id="app-settings-dialog"><div class="dlg-head"><h2>앱 설정</h2><button id="app-settings-close" class="dlg-close" type="button" aria-label="닫기">✕</button></div><div class="set-section"><h3>화면 · 알림</h3><div class="set-card"><div class="set-row"><div class="set-txt"><b>화면 테마</b><small>앱 전체 배경과 대비를 선택합니다</small></div><div id="theme-seg" class="seg" role="group" aria-label="화면 테마"><button type="button" data-theme="dark">다크</button><button type="button" data-theme="midnight">블랙</button><button type="button" data-theme="light">라이트</button></div></div><div class="set-row"><div class="set-txt"><b>완료 알림</b><small>작업이 끝나거나 승인이 필요하면 알려 줍니다</small></div><button id="notify-toggle" type="button">꺼짐</button></div></div></div><div class="set-section"><h3>실행 · 연결</h3><div class="set-card"><div class="set-row"><div class="set-txt"><b>실행 창 방식</b><small>다음 실행부터 적용됩니다</small></div><div id="open-mode-seg" class="seg" role="group" aria-label="실행 창 방식"><button type="button" data-mode="window">앱 창</button><button type="button" data-mode="browser">브라우저</button></div></div><div class="set-row"><div class="set-txt"><b>원격 연결</b><small>ChatGPT Site로 방을 공유합니다</small></div><button id="remote-btn" type="button" title="원격 Site 연결 설정">꺼짐</button></div></div></div><div class="set-section"><h3>관리</h3><div class="set-card"><div class="set-row"><div class="set-txt"><b>권한 승인 로그</b><small>허용·거부 기록을 확인합니다</small></div><button id="open-approval-log" type="button">열기</button></div><div class="set-row"><div class="set-txt"><b>업데이트</b><small>새 버전이 있는지 확인합니다</small></div><button id="update" type="button">확인</button></div><div class="set-row"><div class="set-txt"><b>화면 새로고침</b><small>캐시를 비우고 최신 화면을 불러옵니다</small></div><button id="hard-reload" type="button" title="캐시를 비우고 최신 화면을 다시 불러옵니다">새로고침</button></div><div class="set-row"><div class="set-txt"><b>서버 재시작</b><small>로컬 허브 서버를 껐다 켭니다</small></div><button id="restart-hub" type="button" title="로컬 허브 서버를 재시작합니다">재시작</button></div><div class="set-row"><div class="set-txt"><b>문제 해결</b><small>허브·폴더·CLI·원격 상태를 한 번에 점검합니다</small></div><button id="diagnose-btn" type="button">자가 진단</button></div></div><div id="diag-result" role="status"></div><p id="update-result" role="status"></p></div></dialog>
+<main><header><div class="head-row"><button id="rooms-toggle" class="icon-btn" type="button" title="방 목록 접기/펴기" aria-label="방 목록 접기/펴기">☰</button><h2 id="title">채팅방을 선택하세요</h2><button id="room-mode" type="button" hidden title="클릭해 응답 구조 변경 (자유 동시 응답 · 자동 순위 판정 · 계층형)"></button><button id="room-work-mode" type="button" hidden title="클릭해 개발 모드(파일 수정·명령 실행 허용) ↔ 대화 모드(읽기 전용) 전환"></button><span class="head-space"></span><button id="help-toggle" class="icon-btn" type="button" title="1분 사용법 가이드" aria-label="1분 사용법 가이드">?</button><button id="search-toggle" class="icon-btn" type="button" hidden title="방 전체 대화 검색 (Ctrl+F)" aria-label="대화 검색">🔍</button><button id="agents-toggle" class="icon-btn" type="button" hidden title="오른쪽 에이전트 패널 접기/펴기" aria-label="에이전트 패널 접기/펴기">◧</button><button id="room-menu-btn" class="icon-btn" type="button" hidden title="방 설정 (이름 · 폴더 · 구조 모드 · 공통 지침 · 원격 공유 · 삭제)" aria-label="방 설정" aria-haspopup="menu" aria-expanded="false">⋯</button></div><div id="room-actions" role="menu" hidden><button id="room-settings-btn" type="button" hidden role="menuitem">방 이름 · 설정</button><button id="reply-priority" hidden aria-pressed="false" title="방 구조 모드(자유/순위/계층형)와 메인 에이전트를 설정합니다.">구조 모드</button><button id="open-handoff" hidden>작업 인계</button><button id="pair" type="button" hidden>기존 대화 연결 코드 만들기</button><button id="external-say" type="button" hidden>외부 메시지 코드 만들기</button></div><p id="pair-guide" hidden></p></header><div id="chat-search" hidden><input id="chat-search-input" type="search" placeholder="대화 내용 검색 (Enter 다음, Shift+Enter 이전, Esc 닫기)" autocomplete="off"><span id="chat-search-count" class="search-count"></span><button id="chat-search-prev" type="button" title="이전 결과 (Shift+Enter)">▲</button><button id="chat-search-next" type="button" title="다음 결과 (Enter)">▼</button><button id="chat-search-close" type="button" title="닫기 (Esc)">✕</button></div><section class="history" id="messages" aria-label="공용 대화"></section><section id="approvals" aria-label="허용 요청" aria-live="polite"></section><div id="attach-list" aria-label="첨부 파일 목록"></div><button type="button" id="first-agent" hidden title="이 방에 첫 번째 AI 에이전트를 추가합니다">첫 에이전트 추가</button><div id="slash-menu" hidden aria-label="빠른 명령어"></div><form id="compose" autocomplete="off" style="padding: 12px 25px"><input id="attach" type="file" multiple hidden><button id="attach-btn" type="button" title="파일·이미지 첨부 (드래그 앤 드롭·붙여넣기 가능)">+ 파일</button><textarea id="draft" rows="1" autocomplete="off" aria-label="메시지" placeholder="방 전체에 메시지 보내기 (Shift+Enter 줄바꿈, 파일 드래그/붙여넣기)" maxlength="8000"></textarea><button type="submit" title="메시지 보내기 (Enter 전송, Shift+Enter 줄바꿈)">보내기</button></form></main><section id="agent-panel" aria-label="에이전트"><div class="panel-head"><strong>에이전트</strong><span class="panel-tools"><button id="limits-refresh" type="button" class="icon-btn" title="한도 정보 새로고침 (Codex·Antigravity 즉시, Claude는 다음 응답 때 갱신)" aria-label="한도 정보 새로고침">↻</button><button id="agents-compact" type="button" class="icon-btn" aria-pressed="false" title="간결히 보기 (상태 점 · 이름 · 한도 막대만 표시)" aria-label="간결히 보기">▤</button><button id="add-agent" hidden title="이 방에 새 AI 에이전트(Codex · Claude · Antigravity) 추가">+ 추가</button></span></div><section id="activity" aria-label="에이전트 작업 현황"></section></section><dialog id="ranking-dialog"><form id="ranking-form"><h2>방 설정</h2><section class="dlg-sec"><h3>기본 정보</h3><label>방 이름<input name="name" required maxlength="70" autocomplete="off" placeholder="채팅방 이름"></label><label>이 방의 프로젝트 폴더 (비워 두면 전역 폴더 사용)<input name="project" maxlength="500" placeholder="비워 두면 기본 프로젝트 사용"></label></section><section class="dlg-sec"><h3>대화 방식</h3><label>방 성격<select name="workMode"><option value="dev">개발 모드 (코딩 · 파일 수정 · 자동 재호출 켜짐)</option><option value="chat">대화 모드 (아이디어 · 일반 대화 · 실행/재호출 꺼짐)</option></select></label><p id="mode-desc">사용자 메시지가 에이전트들에게 전달되는 방식을 선택합니다.</p><label>구조 모드<select name="mode"><option value="broadcast">자유 · 동시 응답 (모든 에이전트에게 전달)</option><option value="ranking">자동 · 순위 판정 (판단 모델이 담당자 선택)</option><option value="hierarchy">계층형 · 메인 → 하위 → 서브에이전트</option></select></label><label id="main-member-label" hidden>메인 에이전트<select name="mainMember"></select></label><div id="judge-fields" hidden><details id="judge-advanced"><summary>판단 모델 · 지침 설정</summary><div class="dialog-options"><label>판단 CLI<select name="provider"><option value="codex">Codex</option><option value="claude">Claude Code</option><option value="agy">Antigravity</option></select></label><label>모델<select name="model"><option value="">CLI 기본 모델</option></select></label><label>추론 강도<select name="effort"><option value="low">낮음</option><option value="medium">보통</option><option value="high">높음</option></select></label><label>판단 CLI 추가 지침<textarea name="judgePrompt" rows="3" maxlength="2000" placeholder="예: 코드 수정은 수소 우선, UI/문서는 오퍼스 우선, 단순 인사에는 아무도 답하지 마"></textarea></label></div></details></div></section><section class="dlg-sec"><h3>방 공통 지침</h3><label>방 공통 지침 (관리형 에이전트 턴에 전달)<textarea name="memo" rows="3" maxlength="4000" placeholder="예: 배포는 release.ps1 사용, 공통 규칙·결정 사항 기록"></textarea></label></section><small id="ranking-status" role="status"></small><p id="ranking-error" role="status"></p><footer><button id="ranking-cancel" type="button">취소</button><button type="submit">저장</button></footer></form></dialog><dialog id="agent-dialog"><form id="agent-form" autocomplete="off"><h2 id="agent-title">에이전트 추가</h2><input type="hidden" name="provider" value="codex"><div id="provider-buttons" role="group" aria-label="CLI 종류"><button type="button" data-provider="codex">Codex</button><button type="button" data-provider="claude">Claude Code</button><button type="button" data-provider="agy">Antigravity</button></div><label>모델<select name="model"><option value="">CLI 기본 모델</option></select></label><label id="session-label">대화 시작 방식<select name="thread"><option value="">새 대화 시작</option></select></label><details id="agent-advanced"><summary>이름 · 역할 · 권한 설정</summary><div class="dialog-options"><label>추론 강도<select name="effort"><option value="">CLI 기본값</option><option value="low">낮음</option><option value="medium">보통</option><option value="high">높음</option></select></label><label>권한 (Claude · Antigravity)<select name="permission"><option value="edit">편집: 파일 수정만 자동 허용</option><option value="dev" selected>개발: 편집, 조회, 테스트·빌드, git 커밋</option><option value="full">전체: 모든 명령 자동 허용 (주의)</option></select></label><label id="clear-rules-label" class="check" hidden><input type="checkbox" name="clearRules"> <span id="clear-rules-text">항상 허용 목록 지우기</span></label><div id="saved-rules-list" hidden></div><label>이름<input name="name" autocomplete="off" placeholder="비워 두면 모델명 사용" maxlength="120"></label><label>역할 · 담당 영역<input name="role" autocomplete="off" placeholder="예: 프론트엔드/UI, 허브 백엔드, 리뷰·테스트" maxlength="120"></label></div></details><small id="model-status" role="status"></small><small id="agent-error" role="status"></small><footer><button type="button" id="agent-cancel">취소</button><button id="agent-submit" type="submit">에이전트 추가</button></footer></form></dialog>
+<dialog id="agent-usage-dialog"><form method="dialog"><h2 id="agent-usage-title">사용량</h2><dl><dt>최근 턴</dt><dd id="agent-usage-last"></dd><dt>Agent Room 수집 누적</dt><dd id="agent-usage-total"></dd><dt>현재 컨텍스트 점유율</dt><dd id="agent-usage-context"></dd></dl><p>입력에는 CLI에 따라 캐시가 포함될 수 있습니다. 계정 잔여 한도는 에이전트 목록에서 확인할 수 있습니다.</p><footer><button>닫기</button></footer></form></dialog><dialog id="project-dialog"><form id="project-form" autocomplete="off"><h2>작업 프로젝트 변경</h2><p>새로 추가하는 CLI 에이전트가 사용할 프로젝트 폴더입니다.</p><label>프로젝트 경로<input name="project" required maxlength="500" placeholder="예: E:\my-project"></label><label id="project-room-only-label" class="check"><input type="checkbox" name="roomOnly"> 현재 방에만 이 프로젝트 폴더 적용</label><label class="check"><input type="checkbox" name="applyMcp" checked> 선택한 폴더에 MCP 설정 적용</label><div id="project-recent"></div><p id="project-error" role="status"></p><footer><button id="project-cancel" type="button">취소</button><button type="submit">적용</button></footer></form></dialog><dialog id="remote-dialog" style="width:min(540px,92vw)"><form id="remote-form" autocomplete="off" style="display:grid;gap:10px"><div class="dlg-head"><h2>원격 연결 설정</h2><button id="remote-cancel" class="dlg-close" type="button" aria-label="닫기">✕</button></div><input type="hidden" name="remoteMode" value="off"><div id="remote-mode-seg" class="seg" role="group" aria-label="원격 방식" style="width:100%;justify-content:space-between"><button type="button" data-rmode="off" style="flex:1">원격 안함</button><button type="button" data-rmode="direct" style="flex:1">직접 서버</button><button type="button" data-rmode="hosted" style="flex:1">원격 호스팅</button><button type="button" data-rmode="both" style="flex:1">둘 다</button></div><div id="direct-server-box" hidden style="display:grid;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--raised)"><b style="font-size:13px">직접 서버 (PC 허브 · PWA 웹앱)</b><small style="color:var(--muted)">Tailscale 또는 같은 네트워크에서 폰·외부 기기로 바로 접속해 “홈 화면에 추가 / 앱 설치”로 웹앱처럼 쓸 수 있습니다.</small><div id="direct-urls" style="display:grid;gap:6px"></div><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><button id="rotate-direct-key" type="button">접속 키 재발급</button><small id="direct-restart-note" style="color:#ffd08a"></small></div></div><div id="hosted-server-box" hidden style="display:grid;gap:10px"><p style="margin:0">비공개 ChatGPT Site(또는 호환 Cloudflare Worker)와 이 PC를 자동 연결합니다. 키는 이 PC의 <code>local/remote-config.json</code>에만 저장됩니다.</p><label style="display:grid;gap:4px">Site 주소<input name="site" maxlength="300" placeholder="https://your-site.chatgpt.site"></label><label style="display:grid;gap:4px">REMOTE_DEVICE_KEY<input name="deviceKey" type="password" maxlength="300" placeholder="32바이트 이상 비밀 키"></label><label style="display:grid;gap:4px">서비스 액세스 토큰 (선택)<input name="siteAccess" type="password" maxlength="500" placeholder="필요한 경우에만 입력"></label><label class="check"><input type="checkbox" id="remote-share-all"> 모든 방 항상 공유 (새 방 포함)</label><small id="remote-share-count"></small><label class="check"><input type="checkbox" name="autoSiteUpdate"> 새 릴리스 감지 시 업데이트 전용 세션 자동 기동</label><label style="display:grid;gap:4px">업데이트 전용 CLI<select name="siteUpdaterProvider"><option value="codex">Codex</option><option value="claude">Claude Code</option><option value="agy">Antigravity</option></select></label><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><button id="trigger-site-update" type="button">지금 원격 Site 업데이트 실행</button><small id="site-update-job-status"></small></div></div><p id="remote-error" role="status" style="color:#ffb9ad;margin:0;font-size:12px"></p><footer style="display:flex;gap:8px;justify-content:flex-end"><button id="remote-save" type="submit" style="background:var(--accent);border-color:var(--accent);color:#0f1117;font-weight:600">저장</button></footer></form></dialog>
 <dialog id="handoff-dialog"><h2>작업 인계</h2><div id="task-list"></div><form id="task-form" autocomplete="off"><input type="hidden" name="id"><input type="hidden" name="revision"><label>작업 제목<input name="title" required maxlength="120"></label><label>작업 내용·검증 결과<textarea name="summary" rows="3" maxlength="8000"></textarea></label><label>다음 행동<textarea name="next" rows="2" required maxlength="2000"></textarea></label><label id="task-owner-label">첫 담당자<select name="target"></select></label><label>검증자 (선택)<select name="verifier"></select></label><label>완료 기준 (선택)<input name="doneWhen" maxlength="1000" placeholder="예: smoke-test.cjs 통과 및 UI 확인"></label><label>담당 파일 (선택, 쉼표 구분)<input name="files" maxlength="1000" placeholder="예: hub.cjs, index.html"></label><button type="submit" id="save-task">작업 만들기</button><button id="reset-task" type="button" hidden>새 작업 쓰기</button></form><p id="handoff-error" role="status"></p><button id="close-handoff">닫기</button></dialog><dialog id="approval-log-dialog" style="width:min(740px,94vw)"><h2>권한 승인 로그</h2><p>이 방의 권한 허용 요청 기록입니다. (<code>local/approvals.log</code>에도 저장됩니다)</p><div id="approval-log-list" style="display:grid;gap:8px;margin:12px 0"></div><button id="close-approval-log" type="button">닫기</button></dialog>
 <script>
 const byId=id=>document.getElementById(id);
@@ -411,9 +421,11 @@ function update(next){
  const remoteBtn=byId('remote-btn');
  if(remoteBtn&&next.remoteSync){
   const rs=next.remoteSync;
-  remoteBtn.textContent=rs.running?(rs.external?'실행 중 (외부)':'실행 중'):rs.enabled?(rs.lastError?'연결 오류':'시작 중…'):'꺼짐';
-  remoteBtn.classList.toggle('pill-on',Boolean(rs.running));
-  remoteBtn.title=rs.lastError||'원격 Site 연결 설정'+(rs.site?' ('+rs.site+')':'');
+  const rm=rs.remoteMode||(rs.enabled?'hosted':'off');
+  const hostedTxt=rs.running?(rs.external?'실행 중 (외부)':'실행 중'):rs.enabled?(rs.lastError?'연결 오류':'시작 중…'):'';
+  remoteBtn.textContent=rm==='off'?'꺼짐':rm==='direct'?(rs.directActive?'직접 서버':'직접 서버 (재시작 필요)'):rm==='both'?'둘 다'+(hostedTxt?' · '+hostedTxt:''):hostedTxt||'꺼짐';
+  remoteBtn.classList.toggle('pill-on',rm!=='off'&&(rm==='direct'?Boolean(rs.directActive):Boolean(rs.running)));
+  remoteBtn.title=rs.lastError||'원격 연결 설정 (안함 · 직접 서버 · 원격 호스팅 · 둘 다)'+(rs.site?' ('+rs.site+')':'');
  }
  const finished=[];
  for(const m of next.members||[]){
@@ -499,6 +511,8 @@ byId('pair').title='이미 열려 있는 외부 CLI 대화를 MCP로 이 방에 
 byId('external-say').title='외부 터미널이나 스크립트에서 이 방으로 메시지를 보낼 10분짜리 코드를 발급합니다';
 roomToolsBox.append(remoteShareButton,byId('pair'),byId('external-say'),deleteRoomButton);
 byId('ranking-error').after(roomToolsBox,byId('pair-guide'));
+byId('help-toggle').onclick=()=>byId('help-dialog').showModal();
+byId('help-close').onclick=()=>byId('help-dialog').close();
 byId('app-settings-btn').onclick=()=>byId('app-settings-dialog').showModal();
 byId('app-settings-close').onclick=()=>byId('app-settings-dialog').close();
 byId('hard-reload').onclick=async()=>{
@@ -510,6 +524,18 @@ byId('hard-reload').onclick=async()=>{
   if(navigator.serviceWorker?.getRegistrations){const regs=await navigator.serviceWorker.getRegistrations();await Promise.all(regs.map(r=>r.unregister()));}
  }catch{}
  const u=new URL(location.href);u.searchParams.set('_r',String(Date.now()));location.replace(u.toString());
+};
+byId('restart-hub').onclick=async()=>{
+ const btn=byId('restart-hub');btn.disabled=true;
+ try{
+  const draft=byId('draft')?.value;
+  if(draft)sessionStorage.setItem('agentRoomDraft',draft);
+  if(selected)sessionStorage.setItem('agentRoomSelected',selected);
+  const res=await fetch('/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'restart_hub'})});
+  const data=await res.json();if(!res.ok)throw Error(data.error);
+  byId('app-settings-dialog').close();
+  serverLost=true;err('서버를 재시작하는 중이에요. 곧 자동으로 다시 연결됩니다.');
+ }catch(e){err(e instanceof TypeError?reconnectText:e.message);}finally{btn.disabled=false;}
 };
 byId('open-approval-log').addEventListener('click',()=>byId('app-settings-dialog').close());
 byId('remote-btn').addEventListener('click',()=>byId('app-settings-dialog').close());
@@ -677,7 +703,8 @@ function render(){
  if(composeRoom!==selected){byId('draft').value='';fitDraft();}
  composeRoom=selected;
  const people=snapshot.members.filter(m=>m.room===selected&&m.state==='approved');
- byId('compose').hidden=!people.length;
+ byId('compose').hidden=false;
+ byId('draft').placeholder=people.length?'방 전체에 메시지 보내기 (/ 입력으로 빠른 명령, Shift+Enter 줄바꿈)':'바로 말을 걸어 보세요 — 설치된 AI를 자동으로 연결해 답해 드려요';
  byId('first-agent').hidden=!room||snapshot.members.some(member=>member.room===selected&&member.state!=='disconnected');
  const messages=snapshot.messages.filter(m=>m.room===selected);
  renderActivity(snapshot.members.filter(m=>m.room===selected&&m.state!=='disconnected'),messages,mainMember);
@@ -1119,7 +1146,50 @@ function renderHistory(view,messages,roomChanged){
   moreBtn.onclick=()=>{chatLimit+=60;renderHistory(view,messages,false);};
   nodes.unshift(moreBtn);
  }
- if(!nodes.length)nodes.push(el('small','아직 메시지가 없어요.'));
+ if(!nodes.length){
+  const roomObj=snapshot.rooms.find(r=>r.id===selected);
+  const activeMembers=snapshot.members.filter(m=>m.room===selected&&m.state!=='disconnected');
+  const card=document.createElement('div');card.className='onboard-card';
+  const hasProj=Boolean(roomObj?.project||snapshot.project);
+  const hasRoom=Boolean(roomObj);
+  const hasAgent=activeMembers.length>0;
+  card.append(el('h3','Agent Room 시작하기'),el('p','아래 3단계만 완료하면 바로 AI와 대화를 시작할 수 있어요.'));
+  const steps=document.createElement('div');steps.className='onboard-steps';
+  const mkStep=(done,titleTxt,descTxt,btnTxt,onClick)=>{
+   const row=document.createElement('div');row.className='onboard-step'+(done?' done':'');
+   const info=document.createElement('div');info.append(el('strong',(done?'✓ ':'')+titleTxt),el('small',descTxt));
+   row.append(info);
+   if(btnTxt&&onClick){const b=el('button',btnTxt);b.type='button';b.onclick=onClick;row.append(b);}
+   return row;
+  };
+  const projPath=roomObj?.project||snapshot.project||'';
+  steps.append(
+   mkStep(hasProj,'1. 작업 폴더 확인',hasProj?projPath:'에이전트가 읽고 수정할 프로젝트 폴더를 선택하세요.','폴더 변경',()=>byId('project-btn').click()),
+   mkStep(hasRoom,'2. 채팅방 만들기',hasRoom?'현재 방: '+roomObj.name:'새 채팅방을 만들어 대화를 시작하세요.',hasRoom?'':'첫 방 만들기',async()=>{
+    await control({action:'create',name:'첫 대화방'});
+   }),
+   mkStep(hasAgent,'3. AI 에이전트 추가 & 첫 인사',hasAgent?'아래 버튼으로 첫 인사를 보내거나 직접 입력해 보세요.':'설치된 Codex · Claude · Antigravity 중 하나를 연결하세요.',
+    hasAgent?'첫 인사 보내기':'AI 추가',
+    hasAgent?()=>{
+     const d=byId('draft');d.value='안녕하세요. 파일은 수정하지 말고 한 줄로 인사해 주세요.';fitDraft();d.focus();
+     byId('compose').requestSubmit();
+    }:()=>{if(selected)openAgentDialog();})
+  );
+  card.append(steps);
+  const pRow=document.createElement('div');pRow.className='preset-row';
+  const mkPreset=(label,name,workMode,mode)=>{
+   const b=el('button',label);b.type='button';
+   b.onclick=()=>void control({action:'create',name,workMode,mode});
+   return b;
+  };
+  pRow.append(
+   mkPreset('💬 가벼운 질문 방','가벼운 질문','chat','broadcast'),
+   mkPreset('💻 코딩·작업 방','코딩 작업','dev','ranking'),
+   mkPreset('🧠 AI 회의 방','AI 회의','chat','broadcast')
+  );
+  card.append(pRow);
+  nodes.push(card);
+ }
  view.replaceChildren(...nodes);
  if(typeof applySearchHighlights==='function')applySearchHighlights();
  const replacement=anchor&&nodes.find(node=>node.dataset.key===anchor.dataset.key);
@@ -1522,16 +1592,60 @@ byId('attach').onchange=e=>{void addFiles(e.target.files);e.target.value='';};
 byId('compose').ondragover=e=>e.preventDefault();
 byId('compose').ondrop=e=>{e.preventDefault();void addFiles(e.dataTransfer?.files);};
 byId('draft').onpaste=e=>{let files=[...(e.clipboardData?.files||[])];if(!files.length&&e.clipboardData?.items)files=[...e.clipboardData.items].filter(i=>i.kind==='file').map(i=>i.getAsFile()).filter(Boolean);if(files.length){e.preventDefault();void addFiles(files);}};
+const slashCommands=[
+ {cmd:'/ai추가',desc:'에이전트 추가',run:()=>{if(selected)openAgentDialog();else err('먼저 방을 만들거나 메시지를 보내 시작해 주세요.');}},
+ {cmd:'/대화모드',desc:'읽기 전용 대화 모드',run:()=>{if(selected)void control({action:'set_work_mode',room:selected,workMode:'chat'});}},
+ {cmd:'/개발모드',desc:'파일 수정·실행 개발 모드',run:()=>{if(selected)void control({action:'set_work_mode',room:selected,workMode:'dev'});}},
+ {cmd:'/폴더',desc:'작업 폴더 변경',run:()=>byId('project-btn').click()},
+ {cmd:'/검색',desc:'방 전체 검색',run:()=>{if(selected)openChatSearch();}},
+ {cmd:'/설정',desc:'앱 설정 열기',run:()=>byId('app-settings-dialog').showModal()},
+ {cmd:'/문제해결',desc:'자가 진단 실행',run:()=>{byId('app-settings-dialog').showModal();byId('diagnose-btn').click();}}
+];
+function renderSlashMenu(){
+ const menu=byId('slash-menu'), val=byId('draft').value.trim();
+ if(!val.startsWith('/')||val.includes('\n')||val.includes(' ')){menu.hidden=true;return;}
+ const hits=slashCommands.filter(item=>item.cmd.startsWith(val));
+ if(!hits.length){menu.hidden=true;return;}
+ menu.replaceChildren(...hits.map(item=>{
+  const b=el('button',item.cmd+' · '+item.desc);b.type='button';
+  b.onclick=()=>{byId('draft').value='';fitDraft();menu.hidden=true;item.run();};
+  return b;
+ }));
+ menu.hidden=false;
+}
+byId('draft').addEventListener('input',renderSlashMenu);
+byId('diagnose-btn').onclick=async()=>{
+ const btn=byId('diagnose-btn'), out=byId('diag-result');
+ btn.disabled=true;out.textContent='진단 중…';
+ try{
+  const res=await fetch('/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'diagnose'})});
+  const data=await res.json();
+  if(!res.ok||!data.diagnosis)throw Error(data.error||'진단에 실패했어요.');
+  out.replaceChildren(...data.diagnosis.items.map(it=>{
+   const d=el('div',(it.ok?'✓ ':'⚠ ')+it.label+': '+it.detail);
+   d.className='diag-item'+(it.ok?'':' bad');
+   return d;
+  }));
+ }catch(e){out.textContent='진단 오류: '+e.message;}
+ finally{btn.disabled=false;}
+};
 byId('compose').onsubmit=async event=>{
  event.preventDefault();
- const button=event.submitter, draft=byId('draft'), text=draft.value, room=selected;
- if(!text.trim()&&!pendingFiles.length)return;
+ const button=event.submitter||byId('compose').querySelector('button[type=submit]'), draft=byId('draft'), text=draft.value, room=selected;
+ const trimmed=text.trim();
+ if(trimmed.startsWith('/')&&!pendingFiles.length){
+  const exact=slashCommands.find(item=>item.cmd===trimmed);
+  if(exact){draft.value='';fitDraft();byId('slash-menu').hidden=true;exact.run();return;}
+ }
+ if(!trimmed&&!pendingFiles.length)return;
  button.disabled=true;
  try{
   const attachments=pendingFiles.map(({name,type,data})=>({name,type,data}));
-  if(await control({action:'user_message',room,text,attachments}) && selected===room){
+  const hasApproved=room&&snapshot?.members?.some(m=>m.room===room&&m.state==='approved');
+  const payload=hasApproved?{action:'user_message',room,text,attachments}:{action:'quick_start',room:room||undefined,text,attachments};
+  if(await control(payload)){
    if(draft.value===text){draft.value='';fitDraft();}
-   pendingFiles=[];renderAttachments();
+   pendingFiles=[];renderAttachments();byId('slash-menu').hidden=true;
   }
  }finally{button.disabled=false;}
 };
@@ -1618,15 +1732,52 @@ remoteShareAll.onchange=async()=>{
   if(!await control({action:'remote_share_all',shared}))byId('remote-error').textContent=byId('error').textContent;
  }finally{renderRemoteShareAll();}
 };
+function syncRemoteModeUI(mode){
+ remoteForm.elements.remoteMode.value=mode;
+ for(const b of byId('remote-mode-seg').querySelectorAll('button'))b.setAttribute('aria-pressed',String(b.dataset.rmode===mode));
+ const showDirect=mode==='direct'||mode==='both';
+ const showHosted=mode==='hosted'||mode==='both';
+ byId('direct-server-box').hidden=!showDirect;
+ byId('hosted-server-box').hidden=!showHosted;
+}
+function renderDirectUrls(rs){
+ const box=byId('direct-urls');
+ const urls=rs?.directUrls||[];
+ if(!urls.length){
+  box.replaceChildren(el('small',rs?.directEnabled?'사용 가능한 네트워크 주소가 없거나 저장 후 표시됩니다.':'저장하면 접속 링크가 생성됩니다.'));
+ }else{
+  box.replaceChildren(...urls.map(item=>{
+   const row=document.createElement('div');row.style.cssText='display:flex;align-items:center;gap:6px';
+   const lbl=el('small',item.label);lbl.style.cssText='flex:none;min-width:68px;color:var(--muted)';
+   const code=el('code',item.url);code.style.cssText='flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;padding:3px 6px;border-radius:6px;background:var(--bg);border:1px solid var(--line)';
+   const cp=el('button','복사');cp.type='button';cp.style.cssText='flex:none;padding:3px 9px;font-size:11px';
+   cp.onclick=()=>copyText(item.url,cp);
+   row.append(lbl,code,cp);
+   return row;
+  }));
+ }
+ byId('direct-restart-note').textContent=rs?.directNeedsRestart?'허브(Agent Room)를 재시작하면 직접 서버 바인딩이 반영됩니다.':'';
+}
+for(const b of byId('remote-mode-seg').querySelectorAll('button')){
+ b.onclick=()=>syncRemoteModeUI(b.dataset.rmode);
+}
+byId('rotate-direct-key').onclick=async()=>{
+ const btn=byId('rotate-direct-key');btn.disabled=true;
+ try{
+  if(await control({action:'rotate_direct_key',room:selected}))renderDirectUrls(snapshot?.remoteSync);
+  else byId('remote-error').textContent=byId('error').textContent;
+ }finally{btn.disabled=false;}
+};
 byId('remote-btn').onclick=()=>{
  const rs=snapshot?.remoteSync||{};
  remoteForm.reset();
  remoteForm.elements.site.value=rs.site||'';
  remoteForm.elements.deviceKey.placeholder=rs.configured?'이미 저장됨 (변경 시에만 입력)':'32바이트 이상 비밀 키';
  remoteForm.elements.siteAccess.placeholder=rs.hasAccessToken?'이미 저장됨 (변경 시에만 입력)':'필요한 경우에만 입력';
- remoteForm.elements.enabled.checked=Boolean(rs.enabled);
  remoteForm.elements.autoSiteUpdate.checked=Boolean(rs.autoSiteUpdate);
  remoteForm.elements.siteUpdaterProvider.value=rs.siteUpdaterProvider||'codex';
+ syncRemoteModeUI(rs.remoteMode||(rs.enabled?'hosted':'off'));
+ renderDirectUrls(rs);
  byId('site-update-job-status').textContent=rs.siteUpdateJob?.message||'';
  renderRemoteShareAll();
  byId('remote-error').textContent=rs.lastError||'';
@@ -1649,9 +1800,12 @@ remoteForm.onsubmit=async event=>{
  if(btn)btn.disabled=true;
  byId('remote-error').textContent='';
  try{
-  const ok=await control({action:'remote_sync',room:selected,site:f.site.value.trim(),deviceKey:f.deviceKey.value.trim(),siteAccess:f.siteAccess.value.trim(),enabled:f.enabled.checked,autoSiteUpdate:f.autoSiteUpdate.checked,siteUpdaterProvider:f.siteUpdaterProvider.value});
-  if(ok)byId('remote-dialog').close();
-  else byId('remote-error').textContent=byId('error').textContent;
+  const mode=f.remoteMode.value||'off';
+  const ok=await control({action:'remote_sync',room:selected,remoteMode:mode,enabled:mode==='hosted'||mode==='both',site:f.site.value.trim(),deviceKey:f.deviceKey.value.trim(),siteAccess:f.siteAccess.value.trim(),autoSiteUpdate:f.autoSiteUpdate.checked,siteUpdaterProvider:f.siteUpdaterProvider.value});
+  if(ok){
+   renderDirectUrls(snapshot?.remoteSync);
+   if(mode==='direct'||mode==='both'){}else byId('remote-dialog').close();
+  }else byId('remote-error').textContent=byId('error').textContent;
  }finally{if(btn)btn.disabled=false;}
 };
 projectForm.onsubmit=async event=>{
@@ -1779,15 +1933,18 @@ document.addEventListener('keydown',e=>{
   e.preventDefault();openChatSearch();
  }
 });
-const themeKey='agentRoomTheme',themes=[['dark','다크'],['midnight','블랙'],['light','라이트']];
+const themeKey='agentRoomTheme',themes=[['dark','다크','#0f1117'],['midnight','블랙','#07090e'],['light','라이트','#f4f6fb']];
 function applyTheme(next){
  const entry=themes.find(([id])=>id===next)||themes[0];
  if(entry[0]==='dark')delete document.documentElement.dataset.theme;
  else document.documentElement.dataset.theme=entry[0];
  for(const b of byId('theme-seg')?.querySelectorAll('button')||[])b.setAttribute('aria-pressed',String(b.dataset.theme===entry[0]));
+ const meta=document.querySelector('meta[name="theme-color"]');
+ if(meta)meta.content=entry[2];
  localStorage.setItem(themeKey,entry[0]);
  try{window.chrome?.webview?.postMessage('theme:'+entry[0]);}catch{}
 }
+if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
 applyTheme(localStorage.getItem(themeKey)||'dark');
 for(const b of byId('theme-seg')?.querySelectorAll('button')||[]){
  b.onclick=()=>applyTheme(b.dataset.theme);

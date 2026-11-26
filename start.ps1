@@ -48,6 +48,21 @@ function Test-RoomHub {
     return ($null -ne $hub -and $hub.version -eq $expectedVersion)
 }
 
+function Get-LauncherExePath {
+    $here = Join-Path $PSScriptRoot 'Agent Room.exe'
+    if (Test-Path -LiteralPath $here -PathType Leaf) { return $here }
+    return (Join-Path (Split-Path -Parent $PSScriptRoot) 'Agent Room.exe')
+}
+
+function Open-WebFallback {
+    $url = 'https://nodejs.org/'
+    try {
+        $rc = Get-Content -LiteralPath (Join-Path $localDir 'remote-config.json') -Raw | ConvertFrom-Json
+        if ($rc.site -and $rc.site -match '^https?://') { $url = $rc.site }
+    } catch { }
+    Start-Process $url
+}
+
 function Open-AgentRoomClient {
     $target = 'http://127.0.0.1:4317'
     try {
@@ -55,7 +70,7 @@ function Open-AgentRoomClient {
         if ($hubInfo.browserUrl -like 'http://127.0.0.1:4317/?key=*') { $target = $hubInfo.browserUrl }
     } catch { }
     if (Test-AppWindow) {
-        try { Start-Process -FilePath (Join-Path $PSScriptRoot 'Agent Room.exe') -ArgumentList '--window', $target; return } catch { }
+        try { Start-Process -FilePath (Get-LauncherExePath) -ArgumentList '--window', $target; return } catch { }
     }
     Start-Process $target
 }
@@ -66,7 +81,7 @@ function Test-AppWindow {
         $mode = (Get-Content -LiteralPath $launcherFile -Raw | ConvertFrom-Json).openMode
         if ($mode -eq 'browser') { return $false }
     } catch { }
-    if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'Agent Room.exe'))) { return $false }
+    if (-not (Test-Path -LiteralPath (Get-LauncherExePath) -PathType Leaf)) { return $false }
     if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'webview2\Microsoft.Web.WebView2.Core.dll'))) { return $false }
     foreach ($key in 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}', 'HKCU:\Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}') {
         try { $pv = (Get-ItemProperty -LiteralPath $key -ErrorAction Stop).pv; if ($pv -and $pv -ne '0.0.0.0') { return $true } } catch { }
@@ -80,9 +95,9 @@ function Start-AgentRoom([string]$projectDir, [bool]$skipSetupIfConfigured = $fa
         throw '선택한 프로젝트 폴더를 찾을 수 없습니다.'
     }
     $node = Get-Command node.exe -ErrorAction SilentlyContinue
-    if (-not $node) { throw 'Node.js 24 이상을 먼저 설치한 뒤 Agent Room을 다시 열어 주세요.' }
+    if (-not $node) { Open-WebFallback; return }
     $nodeMajor = [int]((& $node.Source -p "process.versions.node.split('.')[0]") | Select-Object -First 1)
-    if ($nodeMajor -lt 24) { throw "현재 Node.js v$nodeMajor 이(가) 설치되어 있습니다. Node.js 24 이상으로 업데이트해 주세요." }
+    if ($nodeMajor -lt 24) { Open-WebFallback; return }
     $needsSetup = -not $skipSetupIfConfigured -or -not (
         (Test-Path -LiteralPath (Join-Path $resolved '.codex\config.toml')) -or
         (Test-Path -LiteralPath (Join-Path $resolved '.mcp.json'))
@@ -321,8 +336,8 @@ $ui.OpenBtn.Add_Click({
     $window.Dispatcher.Invoke([Action]{}, [Windows.Threading.DispatcherPriority]::Render)
     try {
         if ($nodeMajorVer -lt 24) {
-            $ans = [Windows.MessageBox]::Show($window, "Node.js 24 이상이 필요합니다. (현재: $(if ($nodeMajorVer -gt 0) { "v$nodeMajorVer" } else { '미설치' }))`n`n지금 Node.js 공식 다운로드 페이지를 열까요?", 'Agent Room', 'YesNo', 'Question')
-            if ($ans -eq 'Yes') { Start-Process 'https://nodejs.org/' }
+            Open-WebFallback
+            $window.Close()
             return
         }
         Save-LauncherConfig ([bool]$ui.AutoOpenCheck.IsChecked)

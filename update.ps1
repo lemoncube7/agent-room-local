@@ -55,7 +55,10 @@ try {
     if ($actualHash -ne $expectedHash) { throw "업데이트 패키지 SHA-256 해시가 일치하지 않습니다." }
     Write-Output '업데이트 패키지를 검증하는 중...'
     Expand-Archive -LiteralPath $zip -DestinationPath $unpacked
-    $payload = Join-Path $unpacked 'Agent-Room'
+    $payloadRoot = Join-Path $unpacked 'Agent-Room'
+    $payload = if (Test-Path -LiteralPath (Join-Path $payloadRoot 'app') -PathType Container) { Join-Path $payloadRoot 'app' } else { $payloadRoot }
+    $exeSourceRoot = $payloadRoot
+    $exeTargetDir = if ((Split-Path -Leaf $PSScriptRoot) -eq 'app') { Split-Path -Parent $PSScriptRoot } else { $PSScriptRoot }
     if ((Get-Content -LiteralPath (Join-Path $payload 'VERSION') -Raw).Trim() -ne $Tag.Substring(1)) { throw '내려받은 릴리스 버전이 일치하지 않습니다.' }
     $payloadFiles = @(Get-ChildItem -LiteralPath $payload -File | Select-Object -ExpandProperty Name | Where-Object { $_ -notin @('Agent Room.exe','agent-room.ico') })
     $files = @($files + $payloadFiles | Select-Object -Unique)
@@ -92,9 +95,9 @@ try {
     # Launcher binaries may be locked by the open app window; Windows allows renaming a
     # running file, so move the old one aside and copy the new one in its place.
     foreach ($bin in @('Agent Room.exe','agent-room.ico','webview2/Microsoft.Web.WebView2.Core.dll','webview2/Microsoft.Web.WebView2.WinForms.dll','webview2/WebView2Loader.dll','webview2/LICENSE-WebView2.txt')) {
-        $source = Join-Path $payload $bin
+        $source = if ($bin -eq 'Agent Room.exe' -and (Test-Path -LiteralPath (Join-Path $exeSourceRoot $bin))) { Join-Path $exeSourceRoot $bin } else { Join-Path $payload $bin }
         if (-not (Test-Path -LiteralPath $source)) { continue }
-        $target = Join-Path $PSScriptRoot $bin
+        $target = if ($bin -eq 'Agent Room.exe') { Join-Path $exeTargetDir $bin } else { Join-Path $PSScriptRoot $bin }
         try {
             [void][IO.Directory]::CreateDirectory((Split-Path -Parent $target))
             try { Copy-Item -LiteralPath $source -Destination $target -Force }

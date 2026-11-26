@@ -14,6 +14,7 @@ using System.Windows.Forms;
 
 static class Program {
     static string Dir { get { return Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location); } }
+    static string AppDir { get { string sub = Path.Combine(Dir, "app"); return Directory.Exists(sub) ? sub : Dir; } }
 
     static string Quote(string s) {
         return "\"" + s.Replace("\"", "\\\"") + "\"";
@@ -37,7 +38,7 @@ static class Program {
     // Default mode: run start.ps1 hidden. start.ps1 starts the hub and opens the client
     // (this exe in --window mode when WebView2 is available, otherwise the browser).
     static int StartLauncher(string[] args) {
-        string script = Path.Combine(Dir, "start.ps1");
+        string script = Path.Combine(AppDir, "start.ps1");
         string ps = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), @"WindowsPowerShell\v1.0\powershell.exe");
         if (!File.Exists(ps)) ps = "powershell.exe";
         var sb = new StringBuilder();
@@ -48,7 +49,7 @@ static class Program {
             sb.Append(Quote(a));
         }
         var psi = new ProcessStartInfo(ps, sb.ToString()) {
-            WorkingDirectory = Dir,
+            WorkingDirectory = AppDir,
             UseShellExecute = false,
             CreateNoWindow = true,
             WindowStyle = ProcessWindowStyle.Hidden
@@ -84,6 +85,7 @@ static class AppWindow {
     }
 
     static string Dir { get { return Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location); } }
+    static string AppDir { get { string sub = Path.Combine(Dir, "app"); return Directory.Exists(sub) ? sub : Dir; } }
 
     public static int Run(string url) {
         if (!url.StartsWith(BaseUrl + "/", StringComparison.Ordinal)) return 2;
@@ -98,7 +100,7 @@ static class AppWindow {
                 }
                 return 0;
             }
-            string sdk = Path.Combine(Dir, "webview2");
+            string sdk = Path.Combine(AppDir, "webview2");
             AppDomain.CurrentDomain.AssemblyResolve += (s, e) => {
                 string file = Path.Combine(sdk, new AssemblyName(e.Name).Name + ".dll");
                 return File.Exists(file) ? Assembly.LoadFrom(file) : null;
@@ -116,6 +118,7 @@ static class Host {
     const string BaseUrl = "http://127.0.0.1:4317";
 
     static string Dir { get { return Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location); } }
+    static string AppDir { get { string sub = Path.Combine(Dir, "app"); return Directory.Exists(sub) ? sub : Dir; } }
     static string StateFile { get { return Path.Combine(Dir, "local", "window.txt"); } }
 
     [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int val, int size);

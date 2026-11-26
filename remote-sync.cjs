@@ -54,10 +54,11 @@ async function main(){
   const cursor=fs.existsSync(cursorPath)?JSON.parse(fs.readFileSync(cursorPath,'utf8')):{};
   const key=room=>site.origin+' '+room;
   function save(){const temp=cursorPath+'.tmp';fs.writeFileSync(temp,JSON.stringify(cursor));fs.renameSync(temp,cursorPath);}
-  let acknowledged=[],lastError='';
+  let acknowledged=[],lastError='',lastSyncKey='',lastHeartbeat=0;
   const controlResults=new Map();
   console.log('Remote relay enabled. Room selection is controlled in Agent Room.');
   while(true){
+    let waitMs=2000;
     try{
       const hub=readHub();
       const state=await request(hub.url+'/state',{headers:{Authorization:'Bearer '+hub.token}});
@@ -73,8 +74,22 @@ async function main(){
         controlResults:[...controlResults.values()].filter(item=>item.room===null||allowed.has(item.room))
       };
       const messages=state.messages.filter(m=>allowed.has(m.room)&&m.seq>floors.get(m.room));
-      const {batch,body}=buildRelayBatch(messages,{rooms,legacyRoom:initialRoom,acknowledged,snapshot});
+      const syncKey=JSON.stringify({rooms,snapshot});
+      const stateChanged=syncKey!==lastSyncKey;
+      const anyBusy=snapshot.members.some(m=>m.busy)||snapshot.approvals.length>0;
+      const heartbeatDue=Date.now()-lastHeartbeat>=15000;
+      if(!stateChanged&&!messages.length&&!acknowledged.length&&!heartbeatDue){
+        await wait(anyBusy?2000:5000);
+        continue;
+      }
+      const payloadMeta=stateChanged
+        ?{rooms,legacyRoom:initialRoom,acknowledged,snapshot}
+        :{rooms,legacyRoom:initialRoom,acknowledged,heartbeat:true};
+      const {batch,body}=buildRelayBatch(messages,payloadMeta);
       const response=await request(relay,post(headers,body));
+      lastSyncKey=syncKey;
+      lastHeartbeat=Date.now();
+      waitMs=(anyBusy||batch.length>0||acknowledged.length>0||response.commands.length>0)?2000:5000;
       acknowledged=[];
       for(const item of batch)cursor[key(item.room)]=item.seq;
       if(batch.length)save();
@@ -110,7 +125,7 @@ async function main(){
     }catch(error){
       if(error.message!==lastError){console.error('Remote sync paused: '+error.message);lastError=error.message;}
     }
-    await wait(2000);
+    await wait(waitMs);
   }
 }
 if(require.main===module)main().catch(error=>{console.error(error.message);process.exitCode=1;});
