@@ -433,6 +433,14 @@ function extractMirrorReply(provider,ev){
   }
   return null;
 }
+function parseEndTag(text){
+  const m=String(text||'').match(/\s*\[\[(DONE|CONTINUE|WAIT)(?::([^\]\r\n]+))?\]\]\s*$/i);
+  if(!m)return {endTag:null,body:String(text||'').trim()};
+  const endTag=m[1].toUpperCase();
+  const stripped=String(text||'').slice(0,m.index).trim();
+  const body=endTag==='WAIT'&&m[2]?.trim()?(stripped?stripped+'\n(대기: '+m[2].trim()+')':'(대기: '+m[2].trim()+')'):stripped;
+  return {endTag,body};
+}
 function mirrorSessionReplies(){
   if(draining||process.env.ROOM_PORT==='0')return;
   const rows=all("SELECT m.id AS member,m.room,COALESCE(db.thread,cs.thread) AS thread,COALESCE(cs.provider,'codex') AS provider FROM members m LEFT JOIN desktop_bindings db ON db.member=m.id LEFT JOIN cli_sessions cs ON cs.member=m.id WHERE m.state='approved' AND COALESCE(db.thread,cs.thread) IS NOT NULL");
@@ -477,6 +485,7 @@ function mirrorSessionReplies(){
       const toMatch=body.match(/^\[\[TO:([^\]\r\n]+)\]\]\s*\r?\n([\s\S]*)$/);
       const recipient=toMatch&&roomPeers.some(p=>p.id===toMatch[1])?toMatch[1]:null;
       if(recipient)body=toMatch[2].trim();
+      ({body}=parseEndTag(body));
       if(!body||body==='[[AGENT_ROOM_NO_REPLY]]')continue;
       const recentCutoff=new Date(Date.now()-30000).toISOString();
       if(one('SELECT 1 FROM messages WHERE room=? AND author=? AND body=? AND created>=?',room,memberId,body,recentCutoff))continue;
@@ -947,13 +956,9 @@ async function cliTurn(participant, prompt, inputSeq){
     }
     const match=replyText.match(/^\[\[TO:([^\]\r\n]+)\]\]\s*\r?\n([\s\S]*)$/);
     const recipient=match&&peers.some(peer=>peer.id===match[1])?match[1]:null;
-    let body=recipient?match[2].trim():replyText.trim();
-    const endTagMatch=body.match(/\s*\[\[(DONE|CONTINUE|WAIT)(?::([^\]\r\n]+))?\]\]\s*$/i);
-    const endTag=endTagMatch?endTagMatch[1].toUpperCase():null;
-    if(endTagMatch){
-      const stripped=body.slice(0,endTagMatch.index).trim();
-      body=endTag==='WAIT'&&endTagMatch[2]?.trim()?(stripped?stripped+'\n(대기: '+endTagMatch[2].trim()+')':'(대기: '+endTagMatch[2].trim()+')'):stripped;
-    }
+    const parsed=parseEndTag(recipient?match[2].trim():replyText.trim());
+    const endTag=parsed.endTag;
+    const body=parsed.body;
     const silent=!body||body==='[[AGENT_ROOM_NO_REPLY]]';
     run('UPDATE cli_sessions SET thread=?, last_cli_error=?, turns=turns+?, input_tokens=input_tokens+?, output_tokens=output_tokens+?, cost_usd=cost_usd+? WHERE member=?',
       result.id,result.issue?JSON.stringify(result.issue):null,result.usage?.turns||1,result.usage?.inputTokens||0,result.usage?.outputTokens||0,result.usage?.costUsd||0,participant);
@@ -1136,7 +1141,7 @@ function member(id,room){
 }
 function prepareRoom(sourceId,name){
   if(draining)throw Error('업데이트 중이에요. 잠시 후 다시 시도하세요.');
-  const source=one('SELECT memo,work_mode FROM rooms WHERE id=?',sourceId);
+  const source=one('SELECT memo,work_mode,project FROM rooms WHERE id=?',sourceId);
   if(!source)throw Error('설정을 가져올 방을 찾을 수 없어요.');
   const agents=all("SELECT m.id,m.name,m.role,m.paused,c.project,c.provider,c.model,c.effort,c.permission_profile FROM members m JOIN cli_sessions c ON c.member=m.id WHERE m.room=? AND m.state IN ('approved','starting','start_failed') ORDER BY m.rowid",sourceId);
   if(!agents.length)throw Error('이 방에는 복사할 CLI 에이전트 설정이 없어요.');
@@ -1145,7 +1150,7 @@ function prepareRoom(sourceId,name){
   const ranking=one('SELECT enabled,mode,main_member,judge_provider,judge_model,judge_effort,judge_prompt FROM room_ranking WHERE room=?',sourceId);
   db.exec('BEGIN');
   try{
-    run('INSERT INTO rooms(id,name,memo,work_mode) VALUES(?,?,?,?)',room,roomName,source.memo,source.work_mode||'dev');
+    run('INSERT INTO rooms(id,name,memo,work_mode,project) VALUES(?,?,?,?,?)',room,roomName,source.memo,source.work_mode||'dev',source.project||'');
     for(const agent of agents){
       const id=ids.get(agent.id);
       run("INSERT INTO members(id,room,name,role,paused,state) VALUES(?,?,?,?,?,'approved')",id,room,agent.name,agent.role,agent.paused);
@@ -1482,6 +1487,22 @@ function readActiveProject(){
   const projectFile=path.join(local,'project.txt');
   return process.env.AGENT_ROOM_PROJECT||(fs.existsSync(projectFile)?fs.readFileSync(projectFile,'utf8').trim():'');
 }
+function resolveRoomProject(roomId){
+  const roomProj=roomId?one('SELECT project FROM rooms WHERE id=?',roomId)?.project?.trim():'';
+  if(roomProj&&fs.existsSync(roomProj)&&fs.statSync(roomProj).isDirectory())return roomProj;
+  return readActiveProject();
+}
+function validateProjectDir(dir){
+  const raw=String(dir||'').trim();
+  if(!raw)throw Error('프로젝트 폴더 경로를 입력해 주세요.');
+  const resolved=path.resolve(raw);
+  if(!fs.existsSync(resolved)||!fs.statSync(resolved).isDirectory())throw Error('존재하는 폴더 경로를 입력해 주세요.');
+  return resolved;
+}
+function recordRecentProject(resolved){
+  const next=[resolved,...readRecentProjects().filter(p=>p.toLowerCase()!==resolved.toLowerCase())].slice(0,8);
+  fs.writeFileSync(path.join(local,'recent-projects.json'),JSON.stringify(next));
+}
 function readRecentProjects(){
   const recentFile=path.join(local,'recent-projects.json');
   const current=readActiveProject();
@@ -1497,11 +1518,9 @@ function readRecentProjects(){
   return out;
 }
 function saveProjectSelection(projectDir){
-  const resolved=path.resolve(str(projectDir,500));
-  if(!fs.existsSync(resolved)||!fs.statSync(resolved).isDirectory())throw Error('선택한 프로젝트 폴더를 찾을 수 없어요.');
+  const resolved=validateProjectDir(str(projectDir,500));
   fs.writeFileSync(path.join(local,'project.txt'),resolved);
-  const next=[resolved,...readRecentProjects().filter(p=>p.toLowerCase()!==resolved.toLowerCase())].slice(0,8);
-  fs.writeFileSync(path.join(local,'recent-projects.json'),JSON.stringify(next));
+  recordRecentProject(resolved);
   return resolved;
 }
 function state(roomId=null){
@@ -1692,8 +1711,14 @@ const server=http.createServer(async(req,res)=>{
           if(!['dev','chat'].includes(args.workMode))throw Error('Invalid work mode.');
           run('UPDATE rooms SET work_mode=? WHERE id=?',args.workMode,args.room);
         }
+        if(args.project!==undefined){
+          const p=String(args.project||'').trim();
+          const resolved=p?validateProjectDir(p):'';
+          if(resolved)recordRecentProject(resolved);
+          run('UPDATE rooms SET project=? WHERE id=?',resolved,args.room);
+        }
         if(mode==='ranking'){
-          const proj=one("SELECT project FROM cli_sessions JOIN members ON members.id=cli_sessions.member WHERE members.room=? AND members.state='approved' LIMIT 1",args.room)?.project||readActiveProject();
+          const proj=one("SELECT project FROM cli_sessions JOIN members ON members.id=cli_sessions.member WHERE members.room=? AND members.state='approved' LIMIT 1",args.room)?.project||resolveRoomProject(args.room);
           if(proj)prewarmJudge(args.room,proj,provider,model,effort);
         }else invalidateWarmJudge(args.room);
       }
@@ -1751,10 +1776,17 @@ const server=http.createServer(async(req,res)=>{
       }
       else if(args.action==='delete_room'){deleteRoom(args.room);result=state();}
       else if(args.action==='set_project'){
-        const resolved=saveProjectSelection(args.project);
-        if(args.applyMcp===true&&process.platform==='win32'){
+        const roomOnly=args.roomOnly===true&&Boolean(args.room)&&Boolean(one('SELECT id FROM rooms WHERE id=?',args.room));
+        let resolved='';
+        if(roomOnly&&!String(args.project||'').trim()){
+          run("UPDATE rooms SET project='' WHERE id=?",args.room);
+        }else{
+          resolved=roomOnly?validateProjectDir(args.project):saveProjectSelection(args.project);
+          if(roomOnly){recordRecentProject(resolved);run('UPDATE rooms SET project=? WHERE id=?',resolved,args.room);}
+        }
+        if(resolved&&args.applyMcp===true&&process.platform==='win32'){
           const powershell=path.join(process.env.SystemRoot||'C:/Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
-          const setupArgs=['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(__dirname,'setup.ps1'),'-Project',resolved,'-Apply','-SelectProject',...(args.applyGlobalMcp!==false?['-Global']:[])];
+          const setupArgs=['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(__dirname,'setup.ps1'),'-Project',resolved,'-Apply',...(roomOnly?[]:['-SelectProject']),...(args.applyGlobalMcp===true?['-Global']:[])];
           await new Promise((resolve,reject)=>{
             execFile(powershell,setupArgs,{windowsHide:true,timeout:30000},(error,_stdout,stderr)=>{
               if(error)return reject(Error((stderr||error.message||'MCP 설정 적용에 실패했어요.').trim().split(/\r?\n/)[0]));
@@ -1765,8 +1797,7 @@ const server=http.createServer(async(req,res)=>{
       }
       else if(args.action==='list_models'){
         if(!Object.hasOwn(providerNames,args.provider))throw Error('Unknown agent provider.');
-        const projectFile=path.join(local,'project.txt');
-        const project=process.env.AGENT_ROOM_PROJECT||(fs.existsSync(projectFile)?fs.readFileSync(projectFile,'utf8').trim():__dirname);
+        const project=resolveRoomProject(args.room)||__dirname;
         result={models:await discoverModels(project,args.provider)};
       }
       else if(args.action==='list_sessions'){
@@ -1812,8 +1843,7 @@ const server=http.createServer(async(req,res)=>{
       else if(['new_agent','new_codex','new_claude'].includes(args.action)){
         if(draining)throw Error('업데이트 중이에요. 잠시 후 다시 시도하세요.');
         if(!one('SELECT id FROM rooms WHERE id=?',args.room))throw Error('Room not found.');
-        const activeProject=path.join(local,'project.txt');
-        const project=process.env.AGENT_ROOM_PROJECT||(fs.existsSync(activeProject)?fs.readFileSync(activeProject,'utf8').trim():null);
+        const project=resolveRoomProject(args.room)||null;
         const id=randomUUID(), provider=args.action==='new_agent'?args.provider:args.action==='new_claude'?'claude':'codex';
         if(!Object.hasOwn(providerNames,provider))throw Error('Unknown agent provider.');
         const hasProjectDir=project&&fs.existsSync(project)&&fs.statSync(project).isDirectory();
@@ -1969,7 +1999,7 @@ server.listen(Number(process.env.ROOM_PORT||4317),'127.0.0.1',()=>{
   recoverDetachedTurns();
   dispatchQueuedTurns();
   for(const r of all("SELECT room,judge_provider,judge_model,judge_effort FROM room_ranking WHERE mode='ranking' OR (mode IS NULL AND enabled=1)")){
-    const proj=one("SELECT project FROM cli_sessions JOIN members ON members.id=cli_sessions.member WHERE members.room=? AND members.state='approved' LIMIT 1",r.room)?.project||readActiveProject();
+    const proj=one("SELECT project FROM cli_sessions JOIN members ON members.id=cli_sessions.member WHERE members.room=? AND members.state='approved' LIMIT 1",r.room)?.project||resolveRoomProject(r.room);
     if(proj)prewarmJudge(r.room,proj,r.judge_provider||'codex',r.judge_model||null,r.judge_effort||'low');
   }
   setInterval(()=>{if(!draining){drainOutbox();dispatchRankings();dispatchQueuedTurns();dispatchDesktop();mirrorSessionReplies();}},1000).unref();

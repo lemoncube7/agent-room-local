@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.5
+- **방별 프로젝트 폴더 설정 (`db.cjs`, `hub.cjs`, `index.html`, `smoke-test.cjs`):** `rooms.project` 컬럼을 추가해 방마다 독립된 작업 폴더를 지정할 수 있습니다(미지정 시 전역 기본값 사용, 사이드바 `폴더` 버튼 및 방 설정에서 변경 가능).
+- **말풍선 아래 상태·진행 흐름 한 줄 통합 (`index.html`):** 중복 표시되던 전달 상태 텍스트 줄과 진행 흐름 줄을 한 줄(`시각 · 상태/단계 ··· 철회`)로 합쳤습니다.
+- **`[[DONE]]` 중복 미러링 방지 (`hub.cjs`):** `mirrorSessionReplies`와 `cliTurn`이 공통 `parseEndTag`를 사용해 `[[DONE]]`/`[[CONTINUE]]`/`[[WAIT]]` 태그가 붙은 세션 로그가 중복 저장되지 않도록 수정했습니다.
+
 ## v1.0.2
 - **보안 · 신뢰성 전면 강화:**
   - **로컬 인증 (`hub.cjs`, `start.ps1`, `index.html`, `remote-sync.cjs`, `bind-desktop.cjs`):** 같은 PC의 비인가 접근을 막기 위해 브라우저 접속 키(`local/browser-key`) 및 쿠키 인증을 적용했습니다. *(v1.0.1에서 업데이트 직후 열려 있던 기존 브라우저 탭은 `Agent Room.exe`로 한 번 다시 열어야 인증 쿠키가 저장됩니다.)*

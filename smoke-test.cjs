@@ -326,6 +326,13 @@ async function main(){
   assert.equal((await sync()).rooms.find(r=>r.id===room.id).work_mode,'chat');
   await rpc('/control',{action:'set_work_mode',room:room.id,workMode:'dev'});
   assert.equal((await sync()).rooms.find(r=>r.id===room.id).work_mode,'dev');
+  const roomProj=path.join(root,'room-specific-proj');
+  fs.mkdirSync(roomProj,{recursive:true});
+  const globalBefore=(await sync()).project;
+  await rpc('/control',{action:'set_project',room:room.id,project:roomProj,roomOnly:true});
+  const afterProj=await sync();
+  assert.equal(afterProj.rooms.find(r=>r.id===room.id).project,roomProj);
+  assert.equal(afterProj.project,globalBefore);
   const coordination=await rpc('/control',{action:'user_message',room:room.id,text:'Coordination test'});
   const requestSeq=coordination.messages.find(message=>message.body==='Coordination test').seq;
   const completed=await until(async()=>{
