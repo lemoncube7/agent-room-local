@@ -105,7 +105,7 @@ async function main(){
         await request(hub.url+'/tool',post({Authorization:'Bearer '+hub.token},{action:'remote_user_message',room:command.room,request:command.id,text:command.text}));
         acknowledged.push(command.id);
       }
-      try{const alive=path.join(localDir,'remote-alive.json');fs.writeFileSync(alive+'.tmp',JSON.stringify({pid:process.pid,site:site.origin,at:Date.now()}));fs.renameSync(alive+'.tmp',alive);}catch{}
+      try{const alive=path.join(localDir,'remote-alive.json');fs.writeFileSync(alive+'.tmp',JSON.stringify({pid:process.pid,site:site.origin,at:Date.now(),siteVersion:response.siteVersion}));fs.renameSync(alive+'.tmp',alive);}catch{}
       if(lastError){console.log('Remote sync restored.');lastError='';}
     }catch(error){
       if(error.message!==lastError){console.error('Remote sync paused: '+error.message);lastError=error.message;}

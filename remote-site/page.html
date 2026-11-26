@@ -86,19 +86,21 @@ body:not(.agents-hidden){grid-template-columns:clamp(170px,18vw,230px) minmax(0,
 @media(max-width:850px){body:not(.agents-hidden){grid-template-columns:clamp(150px,20vw,190px) minmax(0,1fr)}#agent-panel{position:fixed;inset:0 0 0 auto;z-index:10;width:min(320px,88vw);box-shadow:0 0 24px #0008}#close-agents{display:inline-block}}
 @media(max-width:720px){body:not(.agents-hidden){grid-template-columns:minmax(0,1fr)}}
 @media(min-width:851px){#close-agents{display:none}}
-#mobile-nav,#close-rooms,#panel-scrim{display:none}
+#mobile-nav,#close-rooms,#panel-scrim,.mob-only{display:none}
 @media(max-width:720px){
  body,body:not(.agents-hidden){display:block}
  main{height:100%}header{padding-top:max(10px,env(safe-area-inset-top))}
  #history{padding-block:12px}#compose-wrap{padding-block:8px}
  #draft,#new-room input{font-size:16px}
- #compose button,#approvals button,.act-retry,#mobile-nav button,#close-agents,#close-rooms{min-height:44px}
- #mobile-nav{flex:none;display:grid;grid-template-columns:repeat(3,1fr);gap:6px;background:var(--panel);border-top:1px solid var(--line);padding:5px max(8px,env(safe-area-inset-right)) max(5px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left))}
- #mobile-nav{position:relative;z-index:11}
- #mobile-nav button{padding:4px 6px;background:transparent;border-color:transparent;font-size:13px}
- #mobile-nav button[aria-pressed=true]{background:var(--raised);color:var(--accent)}
+ #compose button,#approvals button,.act-retry,.mob-only,#close-agents,#close-rooms{min-height:44px}
+ #compose-wrap{padding-bottom:max(8px,env(safe-area-inset-bottom))}
+ .mob-only{display:inline-flex;align-items:center;justify-content:center}
+ .mob-icon{min-width:44px;padding:4px 10px;font-size:18px}
+ .head-row{flex-wrap:nowrap;gap:8px}#title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ .head-actions{flex:none}#mode-sel,#main-sel{max-width:34vw}
+ #mobile-rooms[aria-pressed=true],#mobile-agents[aria-pressed=true]{color:var(--accent);border-color:var(--accent)}
  #toggle-act{display:none}
- body>aside,#agent-panel{position:fixed;z-index:10;top:0;bottom:calc(55px + env(safe-area-inset-bottom));width:min(340px,88vw);max-height:none;padding-top:max(12px,env(safe-area-inset-top));padding-bottom:12px;overflow:auto}
+ body>aside,#agent-panel{position:fixed;z-index:10;top:0;bottom:0;padding-bottom:max(12px,env(safe-area-inset-bottom));width:min(340px,88vw);max-height:none;padding-top:max(12px,env(safe-area-inset-top));padding-bottom:12px;overflow:auto}
  body>aside{left:0}body:not(.rooms-open)>aside{display:none}
  #close-rooms{display:block;align-self:flex-end}
  #rooms{display:grid;overflow:visible}#rooms button{min-height:44px}
@@ -116,9 +118,11 @@ body:not(.agents-hidden){grid-template-columns:clamp(170px,18vw,230px) minmax(0,
 <main>
  <header>
   <div class="head-row">
+   <button id="mobile-rooms" class="mob-only mob-icon" type="button" aria-pressed="false" aria-label="방 목록">☰</button>
    <h2 id="title">채팅방을 선택하세요</h2>
    <div class="head-actions">
     <button id="toggle-act" type="button" aria-controls="agent-panel" aria-expanded="true">에이전트</button>
+    <button id="mobile-agents" class="mob-only" type="button" aria-pressed="false" aria-controls="agent-panel">에이전트</button>
     <select id="mode-sel" aria-label="구조 모드" hidden><option value="broadcast">자유 · 동시</option><option value="ranking">자동 · 순위</option><option value="hierarchy">계층형 · 메인→하위</option></select>
     <select id="main-sel" aria-label="메인 에이전트" hidden></select>
    </div>
@@ -131,9 +135,7 @@ body:not(.agents-hidden){grid-template-columns:clamp(170px,18vw,230px) minmax(0,
   <p id="status" role="status"></p>
  </div>
  <nav id="mobile-nav" aria-label="화면 전환">
-  <button id="mobile-rooms" type="button" aria-pressed="false">방</button>
   <button id="mobile-chat" type="button" aria-pressed="true">채팅</button>
-  <button id="mobile-agents" type="button" aria-pressed="false">에이전트</button>
  </nav>
 </main>
 <button id="panel-scrim" type="button" aria-label="패널 닫기" hidden></button>
@@ -389,7 +391,7 @@ function openMobilePane(pane){
  for(const name of ['rooms','chat','agents'])document.querySelector('#mobile-'+name).setAttribute('aria-pressed',String(name===pane));
  if(pane!=='chat')document.querySelector('#close-'+pane).focus();
 }
-for(const pane of ['rooms','chat','agents'])document.querySelector('#mobile-'+pane).onclick=()=>openMobilePane(pane);
+for(const pane of ['rooms','chat','agents'])document.querySelector('#mobile-'+pane).onclick=()=>openMobilePane(document.querySelector('#mobile-'+pane).getAttribute('aria-pressed')==='true'?'chat':pane);
 document.querySelector('#close-rooms').onclick=()=>{openMobilePane('chat');document.querySelector('#mobile-rooms').focus();};
 document.querySelector('#close-agents').onclick=()=>{if(mobileView()){openMobilePane('chat');document.querySelector('#mobile-agents').focus();}else{showAgentPanel(false);toggleAct.focus();}};
 document.querySelector('#panel-scrim').onclick=()=>openMobilePane('chat');

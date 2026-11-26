@@ -70,7 +70,8 @@ function initDb(rootDir) {
     ['last_usage', 'TEXT'],
     ['input_tokens', 'INTEGER NOT NULL DEFAULT 0'],
     ['output_tokens', 'INTEGER NOT NULL DEFAULT 0'],
-    ['cost_usd', 'REAL NOT NULL DEFAULT 0']
+    ['cost_usd', 'REAL NOT NULL DEFAULT 0'],
+    ['policy_version', 'INTEGER NOT NULL DEFAULT 0']
   ]) {
     if (!hasCol('cli_sessions', column)) db.exec(`ALTER TABLE cli_sessions ADD COLUMN ${column} ${def}`);
   }

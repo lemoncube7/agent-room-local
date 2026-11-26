@@ -74,4 +74,19 @@ async function checkUpdate(version) {
   };
 }
 
-module.exports = { updaterLaunchCommand, checkUpdate, readUpdateLog };
+async function checkSiteUpdate(tag, current, relayVersion) {
+  if (!/^v\d+\.\d+\.\d+$/.test(tag || '')) return null;
+  const source = 'https://raw.githubusercontent.com/lemoncube7/agent-room-local/' + tag + '/remote-site/release.json';
+  const response = await fetch(source, {signal: AbortSignal.timeout(5000)});
+  if (response.status === 404) return null;
+  if (!response.ok) throw Error('원격 Site 배포 정보를 가져오지 못했어요.');
+  const {siteVersion,minimumRelayVersion} = await response.json();
+  const valid = value => typeof value === 'string' && /^\d+\.\d+\.\d+$/.test(value);
+  if (!valid(siteVersion) || !valid(minimumRelayVersion)) throw Error('원격 Site 버전 정보가 올바르지 않아요.');
+  const compare = (a,b) => a.split('.').map((value,index)=>Number(value)-Number(b.split('.')[index])).find(Boolean)||0;
+  return {current, latest:siteVersion, available:valid(current)&&compare(siteVersion,current)>0,
+    compatible:compare(relayVersion,minimumRelayVersion)>=0, minimumRelayVersion,
+    instructions:'https://github.com/lemoncube7/agent-room-local/blob/'+tag+'/REMOTE-SETUP.md#기존-site-업데이트'};
+}
+
+module.exports = { updaterLaunchCommand, checkUpdate, readUpdateLog, checkSiteUpdate };

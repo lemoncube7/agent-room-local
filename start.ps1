@@ -54,7 +54,24 @@ function Open-AgentRoomClient {
         $hubInfo = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'local/hub.json') -Raw | ConvertFrom-Json
         if ($hubInfo.browserUrl -like 'http://127.0.0.1:4317/?key=*') { $target = $hubInfo.browserUrl }
     } catch { }
+    if (Test-AppWindow) {
+        try { Start-Process -FilePath (Join-Path $PSScriptRoot 'Agent Room.exe') -ArgumentList '--window', $target; return } catch { }
+    }
     Start-Process $target
+}
+
+function Test-AppWindow {
+    # App window needs the bundled WebView2 SDK files and the WebView2 runtime (built into Windows 11).
+    try {
+        $mode = (Get-Content -LiteralPath $launcherFile -Raw | ConvertFrom-Json).openMode
+        if ($mode -eq 'browser') { return $false }
+    } catch { }
+    if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'Agent Room.exe'))) { return $false }
+    if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'webview2\Microsoft.Web.WebView2.Core.dll'))) { return $false }
+    foreach ($key in 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}', 'HKCU:\Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}') {
+        try { $pv = (Get-ItemProperty -LiteralPath $key -ErrorAction Stop).pv; if ($pv -and $pv -ne '0.0.0.0') { return $true } } catch { }
+    }
+    return $false
 }
 
 function Start-AgentRoom([string]$projectDir, [bool]$skipSetupIfConfigured = $false) {

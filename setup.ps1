@@ -8,7 +8,8 @@ param(
   [switch]$Connect,
   [switch]$Test,
   [string]$CodexCli,
-  [ValidateSet('mxc')][string]$CodexSandbox
+  [ValidateSet('mxc')][string]$CodexSandbox,
+  [ValidateSet('','window','browser')][string]$OpenMode = ''
 )
 $ErrorActionPreference = 'Stop'
 $projectPath = (Resolve-Path -LiteralPath $Project).Path
@@ -194,6 +195,33 @@ if ($Test) {
 }
 $claudeRegistered = $null -ne $existingClaude -or $Apply
 $codexRegistered = $existingCodex -or $Apply
+$localDir = Join-Path $PSScriptRoot 'local'
+$launcherConfigPath = Join-Path $localDir 'launcher.json'
+if ($Apply -and $OpenMode) {
+  [void][IO.Directory]::CreateDirectory($localDir)
+  $launcherObj = @{}
+  if (Test-Path -LiteralPath $launcherConfigPath) {
+    try {
+      $parsed = Get-Content -LiteralPath $launcherConfigPath -Raw | ConvertFrom-Json
+      foreach ($p in $parsed.PSObject.Properties) { $launcherObj[$p.Name] = $p.Value }
+    } catch { }
+  }
+  $launcherObj['openMode'] = $OpenMode
+  [IO.File]::WriteAllText($launcherConfigPath, ($launcherObj | ConvertTo-Json))
+}
+$currentOpenMode = 'window'
+if (Test-Path -LiteralPath $launcherConfigPath) {
+  try {
+    $m = (Get-Content -LiteralPath $launcherConfigPath -Raw | ConvertFrom-Json).openMode
+    if ($m -eq 'browser') { $currentOpenMode = 'browser' }
+  } catch { }
+}
+$hasExe = Test-Path -LiteralPath (Join-Path $PSScriptRoot 'Agent Room.exe') -PathType Leaf
+$hasSdk = Test-Path -LiteralPath (Join-Path $PSScriptRoot 'webview2\Microsoft.Web.WebView2.Core.dll') -PathType Leaf
+$hasRuntime = $false
+foreach ($wvKey in 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}', 'HKCU:\Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}') {
+  try { $pv = (Get-ItemProperty -LiteralPath $wvKey -ErrorAction Stop).pv; if ($pv -and $pv -ne '0.0.0.0') { $hasRuntime = $true; break } } catch { }
+}
 [pscustomobject]@{
   mode = if($Apply){'applied'}else{'preview'}
   project = $projectPath
@@ -205,6 +233,14 @@ $codexRegistered = $existingCodex -or $Apply
   cli_paths = $cliSettings
   tests = $results
   connected_hub = if($Connect){Get-VerifiedHub}else{$null}
+  native_window = @{
+    ready = ($hasExe -and $hasSdk -and $hasRuntime)
+    exe = $hasExe
+    webview2_sdk = $hasSdk
+    webview2_runtime = $hasRuntime
+    open_mode = $currentOpenMode
+    runtime_install_hint = if(-not $hasRuntime){'winget install --id Microsoft.EdgeWebView2Runtime --silent'}else{$null}
+  }
   hub_command = "node `"$(Join-Path $PSScriptRoot 'hub.cjs')`""
   existing_claude_session = 'From the project folder: claude --resume <session-id> --dangerously-load-development-channels server:agent-room'
   existing_codex_session = 'Reopen the original project conversation after MCP reload and check /mcp.'

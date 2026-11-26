@@ -32,8 +32,8 @@ header{padding:12px 22px;border-color:var(--line);background:var(--bg)}header h2
 .act-inline-actions button.resume-btn{color:#9ce6d2;border-color:#35695f;background:#1a302d}
 .act-limits-wrap{border-top:1px solid var(--line);margin-top:5px;padding-top:5px}
 #agent-item-menu{position:fixed;z-index:60;min-width:136px;display:grid;gap:2px;padding:4px;background:var(--panel);border:1px solid var(--line);border-radius:9px;box-shadow:0 8px 24px #0009}#agent-item-menu[hidden]{display:none}#agent-item-menu button{text-align:left;font-size:12px;padding:6px 10px;border-color:transparent;background:transparent}#agent-item-menu button:hover{background:var(--hover)}#agent-item-menu button.danger{color:#ff9b92}
-.act-card.codex{border-inline-start-color:#6ea8ff}.act-card.claude{border-inline-start-color:#f0a27a}.act-card.agy{position:relative;overflow:hidden;border-inline-start-color:transparent}.act-card.agy::before{content:"";position:absolute;inset:0 auto 0 0;width:3px;background:linear-gradient(180deg,#ff5e4d 0%,#fbbc05 28%,#34a853 58%,#4285f4 100%)}
-.act-head{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:12px}.panel-tools{display:inline-flex;align-items:center;gap:4px}#limits-refresh.spinning{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}#agents-compact[aria-pressed=true]{color:var(--accent);border-color:var(--accent)}#agent-panel.compact .act-step,#agent-panel.compact .act-parent,#agent-panel.compact .act-inline-actions,#agent-panel.compact .act-limit-row{display:none}#agent-panel.compact .act-card{padding:5px 8px}#agent-panel.compact .act-limits{grid-template-columns:1fr 1fr;gap:6px;margin-top:3px}#agent-panel.compact #activity{gap:5px}
+.act-card.codex{border-inline-start-color:var(--brand-codex)}.act-card.claude{border-inline-start-color:var(--brand-claude)}.act-card.agy{border-inline-start-color:var(--brand-agy)}
+.act-head{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:12px}.panel-tools{display:inline-flex;align-items:center;gap:4px}#limits-refresh.spinning{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}#agents-compact[aria-pressed=true]{color:var(--accent);border-color:var(--accent)}#agent-panel.compact .act-step,#agent-panel.compact .act-parent,#agent-panel.compact .act-inline-actions,#agent-panel.compact .act-limit-row{display:none}#agent-panel.compact .act-card{padding:5px 8px}#agent-panel.compact .act-limits-wrap{border-top:0;margin-top:2px;padding-top:0}#agent-panel.compact .act-limits{grid-template-columns:1fr;gap:3px;margin-top:2px}#agent-panel.compact #activity{gap:5px}
 .act-name{display:inline-flex;align-items:center;gap:6px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .act-dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--muted)}
 .act-dot.busy{background:#4fd1a5;animation:act-pulse 1.4s ease-in-out infinite}.act-dot.approval{background:#f5c451}.act-dot.error{background:#ff7b72}.act-dot.paused{background:transparent;border:2px solid var(--muted);box-sizing:border-box}
@@ -53,8 +53,8 @@ header{padding:12px 22px;border-color:var(--line);background:var(--bg)}header h2
 .act-bar>i.low{background:#f5c451}.act-bar>i.critical{background:#ff7b72}
 .history{padding:20px max(22px,calc((100% - 1240px)/2));gap:14px}
 article{max-width:min(82%,720px);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 14px}article>strong{font-size:13px}article>small{display:block;margin-top:4px;font-size:11px;color:var(--muted)}
-article.own{background:#1f2a4a;border-color:#2f3f6e}article.own strong{color:#b6c8ff}
-article.codex,article.claude,article.agy{background:var(--panel);border-color:var(--line);border-inline-start-width:3px}article.codex{border-inline-start-color:#6ea8ff}article.claude{border-inline-start-color:#f0a27a}article.agy{position:relative;overflow:hidden;border-inline-start-color:transparent}article.agy::before{content:"";position:absolute;inset:0 auto 0 0;width:3px;background:linear-gradient(180deg,#ff5e4d 0%,#fbbc05 28%,#34a853 58%,#4285f4 100%)}article.agy>strong{background:linear-gradient(90deg,#ff8a7a 0%,#ffd066 32%,#6ee08d 66%,#7ab0ff 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
+article.own{background:var(--own-bg);border-color:var(--own-line)}article.own strong{color:var(--own-name)}
+article.codex,article.claude,article.agy{background:var(--panel);border-color:var(--line);border-inline-start-width:3px}article.codex{border-inline-start-color:var(--brand-codex)}article.codex>strong{color:var(--brand-codex)}article.claude{border-inline-start-color:var(--brand-claude)}article.claude>strong{color:var(--brand-claude)}article.agy{border-inline-start-color:var(--brand-agy)}article.agy>strong{color:var(--brand-agy)}
 .markdown,article p{color:var(--text)}.markdown .code-wrap{position:relative}.markdown pre{background:var(--bg);border:1px solid var(--line);padding:30px 10px 10px;margin:0}.markdown .copy-btn{position:absolute;top:6px;right:6px;z-index:2;padding:2px 8px;font-size:11px;border-radius:6px;background:var(--raised)}.markdown :not(pre)>code{background:var(--raised);border-radius:4px;padding:1px 5px;font-size:.92em}.markdown a{color:var(--accent)}.flow-badge{display:inline-block;margin-left:6px;font-size:10px;font-weight:600;padding:1px 6px;border-radius:999px;background:var(--raised);border:1px solid var(--line);color:var(--muted);vertical-align:middle}.coord-badge{display:inline-block;margin-left:6px;font-size:10px;font-weight:600;padding:1px 7px;border-radius:999px;background:#223052;border:1px solid #3c5488;color:#b8d0ff;vertical-align:middle}article.progress-msg{opacity:.88}
 #approvals{padding:0 max(22px,calc((100% - 1240px)/2))}
 #compose{gap:8px;border-color:var(--line);background:var(--bg);padding:12px max(22px,calc((100% - 1240px)/2))!important}#draft{background:var(--panel);border-color:var(--line);border-radius:10px;padding:10px 14px}#compose button{flex:none;padding:10px 18px;border-radius:10px}
@@ -72,7 +72,7 @@ header{position:relative;padding:9px 16px}.head-row{display:flex;align-items:cen
 #activity{flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;max-height:none;margin:0;padding:10px;overflow:auto}#activity:empty{display:none}.act-card{flex:none;background:var(--bg)}.act-step,.act-preview{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}.act-actions{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;padding-top:6px;border-top:1px solid var(--line)}.act-actions button{padding:2px 8px;font-size:11px;color:var(--muted);background:transparent;border-radius:6px}.act-actions button:hover{color:var(--text);background:var(--hover)}.act-main{flex:none;font-size:10px;font-weight:600;color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:0 4px}.act-parent{font-size:11px;color:var(--muted)}.act-card.subagent{margin-left:16px;border-left-style:dashed}
 .history{padding-left:max(20px,calc((100% - 1240px)/2));padding-right:max(20px,calc((100% - 1240px)/2))}article{max-width:min(88%,1040px)}#task-list article{max-width:100%}
 .msg-row{display:flex;flex-direction:column;align-items:flex-start;align-self:flex-start;flex-shrink:0;min-width:0;max-width:96%}.msg-row.own{align-self:flex-end;align-items:flex-end}.msg-row>article{max-width:100%;align-self:inherit}.msg-outside{display:flex;flex-direction:column;align-items:inherit;gap:2px;padding:3px 10px 0;max-width:100%;font-size:11px;color:var(--muted)}.msg-row.own>.msg-outside,.msg-row.own .msg-foot,.msg-row.own .request-flow{width:100%;box-sizing:border-box}.msg-outside .request-flow{margin:2px 0}.msg-row.flow-focus>article{outline:2px solid var(--accent)}
-.msg-foot{display:flex;align-items:center;gap:8px;margin-top:4px}.msg-foot>small{margin-top:0;flex:1;min-width:0;text-align:right}.msg-row:not(.own) .msg-foot>small{text-align:left}
+.msg-foot{display:flex;align-items:center;gap:6px;margin-top:4px}.msg-foot>small{margin-top:0;flex:0 1 auto;min-width:0;text-align:right}.msg-row.own .msg-foot{justify-content:flex-end}.msg-row:not(.own) .msg-foot>small{text-align:left}
 .retract-btn{flex:none;padding:1px 8px;font-size:11px;color:var(--muted);background:transparent;border-color:transparent;opacity:0}.retract-btn.left{margin-right:auto}article:hover .retract-btn,.msg-row:hover .retract-btn,.retract-btn:focus-visible{opacity:1}article.retracted{opacity:.6}article.retracted p{font-style:italic;color:var(--muted)}@media(hover:none){.retract-btn{opacity:1}}
 @media(max-width:1000px){body{grid-template-columns:minmax(0,1fr)}main{grid-column:1}body>aside,#agent-panel{position:fixed;z-index:30;top:0;bottom:0;width:min(300px,86vw);box-shadow:0 0 32px #000a}body>aside{left:0}#agent-panel{right:0}article{max-width:94%}#room-mode{display:none}}
 #work-dock{flex:none;margin:0;padding:6px max(22px,calc((100% - 1240px)/2));border-top:1px solid var(--line);background:var(--panel)}#work-dock:not([hidden]){display:flex;align-items:center;flex-wrap:wrap;gap:6px;color:var(--muted);font-size:12px}#work-dock button,.request-flow button{padding:3px 8px;font-size:12px}.work-chip{display:inline-flex;align-items:center;gap:6px;max-width:340px;padding:4px 10px!important;border-radius:999px;background:var(--raised);border:1px solid var(--line);color:var(--text);font-size:12px}.work-chip:hover{border-color:var(--accent)}.work-chip strong{white-space:nowrap;flex:none}.work-chip-step{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
@@ -83,10 +83,29 @@ header{position:relative;padding:9px 16px}.head-row{display:flex;align-items:cen
 #room-work-mode{flex:none;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--muted)}#room-work-mode.dev{border-color:#35695f;color:#9ce6d2;background:#162825}#room-work-mode.chat{border-color:#4b5582;color:#c7d2fe;background:#1e2338}
 #chat-search{flex:none;display:flex;align-items:center;gap:6px;padding:7px max(22px,calc((100% - 1240px)/2));background:var(--panel);border-bottom:1px solid var(--line)}#chat-search[hidden]{display:none}#chat-search input{flex:1;min-width:120px;max-width:360px;padding:5px 10px;font-size:13px}#chat-search .search-count{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;min-width:56px;text-align:center}#chat-search button{padding:4px 9px;font-size:12px}
 mark.chat-mark{background:#665218;color:#fff2b2;border-radius:3px;padding:0 1px}mark.chat-mark.active{background:#d99b26;color:#0f1117;outline:2px solid #ffd269}
-</style>
-<aside><h1>Agent Room <small id="current-version" aria-label="현재 버전">버전 확인 중</small></h1><button id="project-btn" type="button" title="작업 프로젝트 폴더 변경">프로젝트: 확인 중…</button><form id="new" autocomplete="off"><input name="name" autocomplete="off" aria-label="채팅방 이름" placeholder="새 채팅방 이름" required maxlength="70"><button aria-label="채팅방 만들기">+</button></form><div id="error" role="status"></div><nav id="rooms"></nav><div id="side-foot"><button id="remote-btn" type="button" title="원격 Site 연결 설정">원격 연결: 꺼짐</button><button id="notify-toggle" type="button">완료 알림 꺼짐</button><button id="update">업데이트 확인</button><p id="update-result" role="status"></p></div></aside>
-<main><header><div class="head-row"><button id="rooms-toggle" class="icon-btn" type="button" title="방 목록 접기/펴기" aria-label="방 목록 접기/펴기">☰</button><h2 id="title">채팅방을 선택하세요</h2><button id="room-mode" type="button" hidden title="응답 방식 변경"></button><button id="room-work-mode" type="button" hidden title="대화 모드 / 개발 모드 전환"></button><span class="head-space"></span><button id="search-toggle" class="icon-btn" type="button" hidden title="대화 검색 (Ctrl+F)" aria-label="대화 검색">🔍</button><button id="agents-toggle" class="icon-btn" type="button" hidden title="에이전트 패널 접기/펴기" aria-label="에이전트 패널 접기/펴기">◧</button><button id="room-menu-btn" class="icon-btn" type="button" hidden title="방 설정" aria-label="방 설정" aria-haspopup="menu" aria-expanded="false">⋯</button></div><div id="room-actions" role="menu" hidden><button id="room-settings-btn" type="button" hidden role="menuitem">방 이름 · 설정</button><button id="reply-priority" hidden aria-pressed="false" title="방 구조 모드(자유/순위/계층형)와 메인 에이전트를 설정합니다.">구조 모드</button><button id="open-handoff" hidden>작업 인계</button><button id="open-approval-log">권한 승인 로그</button><button id="pair" hidden>기존 대화 연결 코드 만들기</button><button id="external-say" hidden>외부 메시지 코드 만들기</button></div><p id="pair-guide" hidden></p></header><div id="chat-search" hidden><input id="chat-search-input" type="search" placeholder="대화 내용 검색 (Enter 다음, Shift+Enter 이전, Esc 닫기)" autocomplete="off"><span id="chat-search-count" class="search-count"></span><button id="chat-search-prev" type="button" title="이전 결과 (Shift+Enter)">▲</button><button id="chat-search-next" type="button" title="다음 결과 (Enter)">▼</button><button id="chat-search-close" type="button" title="닫기 (Esc)">✕</button></div><section class="history" id="messages" aria-label="공용 대화"></section><section id="approvals" aria-label="허용 요청" aria-live="polite"></section><div id="attach-list" aria-label="첨부 파일 목록"></div><button type="button" id="first-agent" hidden>첫 에이전트 추가</button><form id="compose" autocomplete="off" hidden style="padding: 12px 25px"><input id="attach" type="file" multiple hidden><button id="attach-btn" type="button" title="파일 첨부 (드래그·붙여넣기 가능)">+ 파일</button><textarea id="draft" rows="1" autocomplete="off" aria-label="메시지" placeholder="방 전체에 메시지 보내기 (Shift+Enter 줄바꿈, 파일 드래그/붙여넣기)" maxlength="8000"></textarea><button type="submit">보내기</button></form></main><section id="agent-panel" aria-label="에이전트"><div class="panel-head"><strong>에이전트</strong><span class="panel-tools"><button id="limits-refresh" type="button" class="icon-btn" title="한도 정보 새로고침 (Codex·Antigravity 즉시, Claude는 다음 응답 때 갱신)" aria-label="한도 정보 새로고침">↻</button><button id="agents-compact" type="button" class="icon-btn" aria-pressed="false" title="간결히 보기" aria-label="간결히 보기">▤</button><button id="add-agent" hidden>+ 추가</button></span></div><section id="activity" aria-label="에이전트 작업 현황"></section></section><dialog id="ranking-dialog"><form id="ranking-form"><h2>방 설정</h2><label>방 이름<input name="name" required maxlength="70" autocomplete="off" placeholder="채팅방 이름"></label><label>이 방의 프로젝트 폴더 (비워 두면 전역 폴더 사용)<input name="project" maxlength="500" placeholder="비워 두면 기본 프로젝트 사용"></label><label>방 성격<select name="workMode"><option value="dev">개발 모드 (코딩 · 파일 수정 · 자동 재호출 켜짐)</option><option value="chat">대화 모드 (아이디어 · 일반 대화 · 실행/재호출 꺼짐)</option></select></label><p id="mode-desc">사용자 메시지가 에이전트들에게 전달되는 방식을 선택합니다.</p><label>구조 모드<select name="mode"><option value="broadcast">자유 · 동시 응답 (모든 에이전트에게 전달)</option><option value="ranking">자동 · 순위 판정 (판단 모델이 담당자 선택)</option><option value="hierarchy">계층형 · 메인 → 하위 → 서브에이전트</option></select></label><label id="main-member-label" hidden>메인 에이전트<select name="mainMember"></select></label><div id="judge-fields" hidden><details id="judge-advanced"><summary>판단 모델 · 지침 설정</summary><div class="dialog-options"><label>판단 CLI<select name="provider"><option value="codex">Codex</option><option value="claude">Claude Code</option><option value="agy">Antigravity</option></select></label><label>모델<select name="model"><option value="">CLI 기본 모델</option></select></label><label>추론 강도<select name="effort"><option value="low">낮음</option><option value="medium">보통</option><option value="high">높음</option></select></label><label>판단 CLI 추가 지침<textarea name="judgePrompt" rows="3" maxlength="2000" placeholder="예: 코드 수정은 수소 우선, UI/문서는 오퍼스 우선, 단순 인사에는 아무도 답하지 마"></textarea></label></div></details></div><label>방 공통 지침 (관리형 에이전트 턴에 전달)<textarea name="memo" rows="3" maxlength="4000" placeholder="예: 배포는 release.ps1 사용, 공통 규칙·결정 사항 기록"></textarea></label><small id="ranking-status" role="status"></small><p id="ranking-error" role="status"></p><footer><button id="ranking-cancel" type="button">취소</button><button type="submit">저장</button></footer></form></dialog><dialog id="agent-dialog"><form id="agent-form" autocomplete="off"><h2 id="agent-title">에이전트 추가</h2><input type="hidden" name="provider" value="codex"><div id="provider-buttons" role="group" aria-label="CLI 종류"><button type="button" data-provider="codex">Codex</button><button type="button" data-provider="claude">Claude Code</button><button type="button" data-provider="agy">Antigravity</button></div><label>모델<select name="model"><option value="">CLI 기본 모델</option></select></label><label id="session-label">대화 시작 방식<select name="thread"><option value="">새 대화 시작</option></select></label><details id="agent-advanced"><summary>이름 · 역할 · 권한 설정</summary><div class="dialog-options"><label>추론 강도<select name="effort"><option value="">CLI 기본값</option><option value="low">낮음</option><option value="medium">보통</option><option value="high">높음</option></select></label><label>권한 (Claude · Antigravity)<select name="permission"><option value="edit">편집: 파일 수정만 자동 허용</option><option value="dev" selected>개발: 편집, 조회, 테스트·빌드, git 커밋</option><option value="full">전체: 모든 명령 자동 허용 (주의)</option></select></label><label id="clear-rules-label" class="check" hidden><input type="checkbox" name="clearRules"> <span id="clear-rules-text">항상 허용 목록 지우기</span></label><div id="saved-rules-list" hidden></div><label>이름<input name="name" autocomplete="off" placeholder="비워 두면 모델명 사용" maxlength="120"></label><label>역할 · 담당 영역<input name="role" autocomplete="off" placeholder="예: 프론트엔드/UI, 허브 백엔드, 리뷰·테스트" maxlength="120"></label></div></details><small id="model-status" role="status"></small><small id="agent-error" role="status"></small><footer><button type="button" id="agent-cancel">취소</button><button id="agent-submit" type="submit">에이전트 추가</button></footer></form></dialog>
-<dialog id="agent-usage-dialog"><form method="dialog"><h2 id="agent-usage-title">사용량</h2><dl><dt>최근 턴</dt><dd id="agent-usage-last"></dd><dt>Agent Room 수집 누적</dt><dd id="agent-usage-total"></dd><dt>현재 컨텍스트 점유율</dt><dd id="agent-usage-context"></dd></dl><p>입력에는 CLI에 따라 캐시가 포함될 수 있습니다. 계정 잔여 한도는 에이전트 목록에서 확인할 수 있습니다.</p><footer><button>닫기</button></footer></form></dialog><dialog id="project-dialog"><form id="project-form" autocomplete="off"><h2>작업 프로젝트 변경</h2><p>새로 추가하는 CLI 에이전트가 사용할 프로젝트 폴더입니다.</p><label>프로젝트 경로<input name="project" required maxlength="500" placeholder="예: E:\my-project"></label><label id="project-room-only-label" class="check"><input type="checkbox" name="roomOnly"> 현재 방에만 이 프로젝트 폴더 적용</label><label class="check"><input type="checkbox" name="applyMcp" checked> 선택한 폴더에 MCP 설정 적용</label><div id="project-recent"></div><p id="project-error" role="status"></p><footer><button id="project-cancel" type="button">취소</button><button type="submit">적용</button></footer></form></dialog><dialog id="remote-dialog"><form id="remote-form" autocomplete="off" style="display:grid;gap:10px"><h2>원격 연결 설정</h2><p>비공개 ChatGPT Site(또는 호환 원격 서버)와 이 PC를 자동 연결합니다. 키는 이 PC의 <code>local/remote-config.json</code>에만 저장됩니다.</p><label style="display:grid;gap:4px">Site 주소<input name="site" maxlength="300" placeholder="https://your-site.chatgpt.site"></label><label style="display:grid;gap:4px">REMOTE_DEVICE_KEY<input name="deviceKey" type="password" maxlength="300" placeholder="32바이트 이상 비밀 키"></label><label style="display:grid;gap:4px">서비스 액세스 토큰 (선택)<input name="siteAccess" type="password" maxlength="500" placeholder="필요한 경우에만 입력"></label><label class="check"><input type="checkbox" name="enabled"> 원격 중계 켜기 (허브 시작 시 자동 실행)</label><label class="check"><input type="checkbox" id="remote-share-all"> 모든 방 항상 공유 (새 방 포함)</label><small id="remote-share-count"></small><p id="remote-error" role="status" style="color:#ffb9ad;margin:0;font-size:12px"></p><footer style="display:flex;gap:8px;justify-content:flex-end"><button id="remote-cancel" type="button">취소</button><button type="submit">저장</button></footer></form></dialog>
+:root{--own-bg:#1f2a4a;--own-line:#2f3f6e;--own-name:#b6c8ff;--brand-codex:#4fd1a5;--brand-claude:#f0a27a;--brand-agy:#5ea0ff}
+:root[data-theme="midnight"]{color-scheme:dark;--bg:#07090e;--panel:#0e1118;--raised:#161a24;--hover:#202634;--line:#222836;--text:#eef1f8;--muted:#8f97a8;--accent:#7c9cff;--own-bg:#16203b;--own-line:#273863;--own-name:#b6c8ff;--brand-codex:#4fd1a5;--brand-claude:#f0a27a;--brand-agy:#5ea0ff}
+:root[data-theme="light"]{color-scheme:light;--bg:#f4f6fb;--panel:#ffffff;--raised:#eef1f7;--hover:#e3e8f2;--line:#d5dce8;--text:#171c28;--muted:#5b6477;--accent:#3b66f5;--own-bg:#e6eeff;--own-line:#bdd0ff;--own-name:#2346b8;--brand-codex:#0f9f76;--brand-claude:#d97248;--brand-agy:#2f74e8}
+:root[data-theme="light"] #compose button,:root[data-theme="light"] #save-task{color:#fff}
+:root[data-theme="light"] mark.chat-mark{background:#fde68a;color:#1f2937}
+:root[data-theme="light"] #room-work-mode.dev{background:#e6f7f2;border-color:#7ad3ba;color:#0d6e54}
+:root[data-theme="light"] #room-work-mode.chat{background:#ebeffe;border-color:#b2c0f8;color:#2c44a8}
+.path-pick{display:flex;gap:6px;align-items:center}.path-pick input{flex:1;min-width:0}.browse-btn{flex:none;white-space:nowrap}
+#ranking-form label[hidden],#ranking-form div[hidden],#app-settings-dialog [hidden]{display:none!important}
+.settings-grid{display:grid;gap:8px;margin:12px 0}.settings-grid button{width:100%;text-align:left}
+.room-extra-tools{display:flex;flex-wrap:wrap;gap:6px;padding-top:8px;border-top:1px solid var(--line)}.room-extra-tools button{font-size:12px;padding:6px 10px}.room-extra-tools button.danger{color:#ff9b92;border-color:#5c2b29}
+:root{--sb-thumb:rgba(154,161,176,.28);--sb-thumb-hover:rgba(154,161,176,.52)}
+:root[data-theme="midnight"]{--sb-thumb:rgba(143,151,168,.24);--sb-thumb-hover:rgba(143,151,168,.48)}
+:root[data-theme="light"]{--sb-thumb:rgba(91,100,119,.24);--sb-thumb-hover:rgba(91,100,119,.46)}
+*{scrollbar-width:thin;scrollbar-color:var(--sb-thumb) transparent}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--sb-thumb);border-radius:999px;border:2px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:var(--sb-thumb-hover);border:2px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-corner{background:transparent}</style>
+<aside><h1>Agent Room <small id="current-version" aria-label="현재 버전">버전 확인 중</small></h1><button id="project-btn" type="button" title="작업 프로젝트 폴더 변경">프로젝트: 확인 중…</button><form id="new" autocomplete="off"><input name="name" autocomplete="off" aria-label="채팅방 이름" placeholder="새 채팅방 이름" required maxlength="70"><button aria-label="채팅방 만들기">+</button></form><div id="error" role="status"></div><nav id="rooms"></nav><div id="side-foot"><button id="app-settings-btn" type="button" title="앱 전체 설정">⚙ 설정</button></div></aside><dialog id="app-settings-dialog"><h2>앱 설정</h2><div class="settings-grid"><button id="theme-toggle" type="button" title="화면 테마 변경">테마: 다크</button><button id="open-mode-toggle" type="button" title="실행 창 방식 전환 (다음 실행부터 적용)">열기: 앱 창</button><button id="remote-btn" type="button" title="원격 Site 연결 설정">원격 연결: 꺼짐</button><button id="notify-toggle" type="button">완료 알림 꺼짐</button><button id="open-approval-log" type="button">권한 승인 로그</button><button id="update" type="button">업데이트 확인</button><button id="hard-reload" type="button" title="캐시를 비우고 최신 화면을 다시 불러옵니다">화면 새로고침 (캐시 무시)</button><p id="update-result" role="status"></p></div><footer><button id="app-settings-close" type="button">닫기</button></footer></dialog>
+<main><header><div class="head-row"><button id="rooms-toggle" class="icon-btn" type="button" title="방 목록 접기/펴기" aria-label="방 목록 접기/펴기">☰</button><h2 id="title">채팅방을 선택하세요</h2><button id="room-mode" type="button" hidden title="응답 방식 변경"></button><button id="room-work-mode" type="button" hidden title="대화 모드 / 개발 모드 전환"></button><span class="head-space"></span><button id="search-toggle" class="icon-btn" type="button" hidden title="대화 검색 (Ctrl+F)" aria-label="대화 검색">🔍</button><button id="agents-toggle" class="icon-btn" type="button" hidden title="에이전트 패널 접기/펴기" aria-label="에이전트 패널 접기/펴기">◧</button><button id="room-menu-btn" class="icon-btn" type="button" hidden title="방 설정" aria-label="방 설정" aria-haspopup="menu" aria-expanded="false">⋯</button></div><div id="room-actions" role="menu" hidden><button id="room-settings-btn" type="button" hidden role="menuitem">방 이름 · 설정</button><button id="reply-priority" hidden aria-pressed="false" title="방 구조 모드(자유/순위/계층형)와 메인 에이전트를 설정합니다.">구조 모드</button><button id="open-handoff" hidden>작업 인계</button><button id="pair" hidden>기존 대화 연결 코드 만들기</button><button id="external-say" hidden>외부 메시지 코드 만들기</button></div><p id="pair-guide" hidden></p></header><div id="chat-search" hidden><input id="chat-search-input" type="search" placeholder="대화 내용 검색 (Enter 다음, Shift+Enter 이전, Esc 닫기)" autocomplete="off"><span id="chat-search-count" class="search-count"></span><button id="chat-search-prev" type="button" title="이전 결과 (Shift+Enter)">▲</button><button id="chat-search-next" type="button" title="다음 결과 (Enter)">▼</button><button id="chat-search-close" type="button" title="닫기 (Esc)">✕</button></div><section class="history" id="messages" aria-label="공용 대화"></section><section id="approvals" aria-label="허용 요청" aria-live="polite"></section><div id="attach-list" aria-label="첨부 파일 목록"></div><button type="button" id="first-agent" hidden>첫 에이전트 추가</button><form id="compose" autocomplete="off" hidden style="padding: 12px 25px"><input id="attach" type="file" multiple hidden><button id="attach-btn" type="button" title="파일 첨부 (드래그·붙여넣기 가능)">+ 파일</button><textarea id="draft" rows="1" autocomplete="off" aria-label="메시지" placeholder="방 전체에 메시지 보내기 (Shift+Enter 줄바꿈, 파일 드래그/붙여넣기)" maxlength="8000"></textarea><button type="submit">보내기</button></form></main><section id="agent-panel" aria-label="에이전트"><div class="panel-head"><strong>에이전트</strong><span class="panel-tools"><button id="limits-refresh" type="button" class="icon-btn" title="한도 정보 새로고침 (Codex·Antigravity 즉시, Claude는 다음 응답 때 갱신)" aria-label="한도 정보 새로고침">↻</button><button id="agents-compact" type="button" class="icon-btn" aria-pressed="false" title="간결히 보기" aria-label="간결히 보기">▤</button><button id="add-agent" hidden>+ 추가</button></span></div><section id="activity" aria-label="에이전트 작업 현황"></section></section><dialog id="ranking-dialog"><form id="ranking-form"><h2>방 설정</h2><label>방 이름<input name="name" required maxlength="70" autocomplete="off" placeholder="채팅방 이름"></label><label>이 방의 프로젝트 폴더 (비워 두면 전역 폴더 사용)<input name="project" maxlength="500" placeholder="비워 두면 기본 프로젝트 사용"></label><label>방 성격<select name="workMode"><option value="dev">개발 모드 (코딩 · 파일 수정 · 자동 재호출 켜짐)</option><option value="chat">대화 모드 (아이디어 · 일반 대화 · 실행/재호출 꺼짐)</option></select></label><p id="mode-desc">사용자 메시지가 에이전트들에게 전달되는 방식을 선택합니다.</p><label>구조 모드<select name="mode"><option value="broadcast">자유 · 동시 응답 (모든 에이전트에게 전달)</option><option value="ranking">자동 · 순위 판정 (판단 모델이 담당자 선택)</option><option value="hierarchy">계층형 · 메인 → 하위 → 서브에이전트</option></select></label><label id="main-member-label" hidden>메인 에이전트<select name="mainMember"></select></label><div id="judge-fields" hidden><details id="judge-advanced"><summary>판단 모델 · 지침 설정</summary><div class="dialog-options"><label>판단 CLI<select name="provider"><option value="codex">Codex</option><option value="claude">Claude Code</option><option value="agy">Antigravity</option></select></label><label>모델<select name="model"><option value="">CLI 기본 모델</option></select></label><label>추론 강도<select name="effort"><option value="low">낮음</option><option value="medium">보통</option><option value="high">높음</option></select></label><label>판단 CLI 추가 지침<textarea name="judgePrompt" rows="3" maxlength="2000" placeholder="예: 코드 수정은 수소 우선, UI/문서는 오퍼스 우선, 단순 인사에는 아무도 답하지 마"></textarea></label></div></details></div><label>방 공통 지침 (관리형 에이전트 턴에 전달)<textarea name="memo" rows="3" maxlength="4000" placeholder="예: 배포는 release.ps1 사용, 공통 규칙·결정 사항 기록"></textarea></label><small id="ranking-status" role="status"></small><p id="ranking-error" role="status"></p><footer><button id="ranking-cancel" type="button">취소</button><button type="submit">저장</button></footer></form></dialog><dialog id="agent-dialog"><form id="agent-form" autocomplete="off"><h2 id="agent-title">에이전트 추가</h2><input type="hidden" name="provider" value="codex"><div id="provider-buttons" role="group" aria-label="CLI 종류"><button type="button" data-provider="codex">Codex</button><button type="button" data-provider="claude">Claude Code</button><button type="button" data-provider="agy">Antigravity</button></div><label>모델<select name="model"><option value="">CLI 기본 모델</option></select></label><label id="session-label">대화 시작 방식<select name="thread"><option value="">새 대화 시작</option></select></label><details id="agent-advanced"><summary>이름 · 역할 · 권한 설정</summary><div class="dialog-options"><label>추론 강도<select name="effort"><option value="">CLI 기본값</option><option value="low">낮음</option><option value="medium">보통</option><option value="high">높음</option></select></label><label>권한 (Claude · Antigravity)<select name="permission"><option value="edit">편집: 파일 수정만 자동 허용</option><option value="dev" selected>개발: 편집, 조회, 테스트·빌드, git 커밋</option><option value="full">전체: 모든 명령 자동 허용 (주의)</option></select></label><label id="clear-rules-label" class="check" hidden><input type="checkbox" name="clearRules"> <span id="clear-rules-text">항상 허용 목록 지우기</span></label><div id="saved-rules-list" hidden></div><label>이름<input name="name" autocomplete="off" placeholder="비워 두면 모델명 사용" maxlength="120"></label><label>역할 · 담당 영역<input name="role" autocomplete="off" placeholder="예: 프론트엔드/UI, 허브 백엔드, 리뷰·테스트" maxlength="120"></label></div></details><small id="model-status" role="status"></small><small id="agent-error" role="status"></small><footer><button type="button" id="agent-cancel">취소</button><button id="agent-submit" type="submit">에이전트 추가</button></footer></form></dialog>
+<dialog id="agent-usage-dialog"><form method="dialog"><h2 id="agent-usage-title">사용량</h2><dl><dt>최근 턴</dt><dd id="agent-usage-last"></dd><dt>Agent Room 수집 누적</dt><dd id="agent-usage-total"></dd><dt>현재 컨텍스트 점유율</dt><dd id="agent-usage-context"></dd></dl><p>입력에는 CLI에 따라 캐시가 포함될 수 있습니다. 계정 잔여 한도는 에이전트 목록에서 확인할 수 있습니다.</p><footer><button>닫기</button></footer></form></dialog><dialog id="project-dialog"><form id="project-form" autocomplete="off"><h2>작업 프로젝트 변경</h2><p>새로 추가하는 CLI 에이전트가 사용할 프로젝트 폴더입니다.</p><label>프로젝트 경로<input name="project" required maxlength="500" placeholder="예: E:\my-project"></label><label id="project-room-only-label" class="check"><input type="checkbox" name="roomOnly"> 현재 방에만 이 프로젝트 폴더 적용</label><label class="check"><input type="checkbox" name="applyMcp" checked> 선택한 폴더에 MCP 설정 적용</label><div id="project-recent"></div><p id="project-error" role="status"></p><footer><button id="project-cancel" type="button">취소</button><button type="submit">적용</button></footer></form></dialog><dialog id="remote-dialog"><form id="remote-form" autocomplete="off" style="display:grid;gap:10px"><h2>원격 연결 설정</h2><p>비공개 ChatGPT Site(또는 호환 원격 서버)와 이 PC를 자동 연결합니다. 키는 이 PC의 <code>local/remote-config.json</code>에만 저장됩니다.</p><label style="display:grid;gap:4px">Site 주소<input name="site" maxlength="300" placeholder="https://your-site.chatgpt.site"></label><label style="display:grid;gap:4px">REMOTE_DEVICE_KEY<input name="deviceKey" type="password" maxlength="300" placeholder="32바이트 이상 비밀 키"></label><label style="display:grid;gap:4px">서비스 액세스 토큰 (선택)<input name="siteAccess" type="password" maxlength="500" placeholder="필요한 경우에만 입력"></label><label class="check"><input type="checkbox" name="enabled"> 원격 중계 켜기 (허브 시작 시 자동 실행)</label><label class="check"><input type="checkbox" id="remote-share-all"> 모든 방 항상 공유 (새 방 포함)</label><small id="remote-share-count"></small><label class="check"><input type="checkbox" name="autoSiteUpdate"> 새 릴리스 감지 시 업데이트 전용 세션 자동 기동</label><label style="display:grid;gap:4px">업데이트 전용 CLI<select name="siteUpdaterProvider"><option value="codex">Codex</option><option value="claude">Claude Code</option><option value="agy">Antigravity</option></select></label><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><button id="trigger-site-update" type="button">지금 원격 Site 업데이트 실행</button><small id="site-update-job-status"></small></div><p id="remote-error" role="status" style="color:#ffb9ad;margin:0;font-size:12px"></p><footer style="display:flex;gap:8px;justify-content:flex-end"><button id="remote-cancel" type="button">취소</button><button type="submit">저장</button></footer></form></dialog>
 <dialog id="handoff-dialog"><h2>작업 인계</h2><div id="task-list"></div><form id="task-form" autocomplete="off"><input type="hidden" name="id"><input type="hidden" name="revision"><label>작업 제목<input name="title" required maxlength="120"></label><label>작업 내용·검증 결과<textarea name="summary" rows="3" maxlength="8000"></textarea></label><label>다음 행동<textarea name="next" rows="2" required maxlength="2000"></textarea></label><label id="task-owner-label">첫 담당자<select name="target"></select></label><label>검증자 (선택)<select name="verifier"></select></label><label>완료 기준 (선택)<input name="doneWhen" maxlength="1000" placeholder="예: smoke-test.cjs 통과 및 UI 확인"></label><label>담당 파일 (선택, 쉼표 구분)<input name="files" maxlength="1000" placeholder="예: hub.cjs, index.html"></label><button type="submit" id="save-task">작업 만들기</button><button id="reset-task" type="button" hidden>새 작업 쓰기</button></form><p id="handoff-error" role="status"></p><button id="close-handoff">닫기</button></dialog><dialog id="approval-log-dialog" style="width:min(740px,94vw)"><h2>권한 승인 로그</h2><p>이 방의 권한 허용 요청 기록입니다. (<code>local/approvals.log</code>에도 저장됩니다)</p><div id="approval-log-list" style="display:grid;gap:8px;margin:12px 0"></div><button id="close-approval-log" type="button">닫기</button></dialog>
 <script>
 const byId=id=>document.getElementById(id);
@@ -351,22 +370,25 @@ async function control(body){
  }catch(e){err(e instanceof TypeError?reconnectText:e.message);return false;}
 }
 const reconnectText='앱 서버에 다시 연결하는 중이에요. 업데이트나 재시작이 끝나면 자동으로 이어집니다.';
-let loadedVersion,serverLost=false;
+let loadedVersion,loadedUiStamp,serverLost=false;
 function update(next){
  if(!Array.isArray(next?.rooms))return;
  if(next.authRequired){err('보안 연결이 필요합니다. Agent Room.exe(또는 start.ps1)로 다시 열어 주세요.');return;}
  if(serverLost){serverLost=false;if(byId('error').textContent===reconnectText)err('');}
- if(loadedVersion&&next.version&&next.version!==loadedVersion){
+ if((loadedVersion&&next.version&&next.version!==loadedVersion)||(loadedUiStamp&&next.uiStamp&&next.uiStamp!==loadedUiStamp)){
   sessionStorage.setItem('agentRoomDraft',byId('draft').value);
   if(selected)sessionStorage.setItem('agentRoomSelected',selected);
   location.reload();return;
  }
  loadedVersion=next.version||loadedVersion;
+ loadedUiStamp=next.uiStamp||loadedUiStamp;
  if(!selected&&sessionStorage.getItem('agentRoomSelected')){
   const saved=sessionStorage.getItem('agentRoomSelected');sessionStorage.removeItem('agentRoomSelected');
   if(next.rooms.some(room=>room.id===saved))selected=saved;
  }
  byId('current-version').textContent=next.version?'v'+next.version:'버전 확인 불가';
+ const openBtn=byId('open-mode-toggle');
+ if(openBtn&&next.openMode)openBtn.textContent=next.openMode==='browser'?'열기: 브라우저':'열기: 앱 창';
  syncProjectButton(next);
  const remoteBtn=byId('remote-btn');
  if(remoteBtn&&next.remoteSync){
@@ -408,6 +430,20 @@ function setupPane(button,cls,key){
 }
 setupPane(byId('rooms-toggle'),'rooms-collapsed','agentRoomRoomsCollapsed');
 setupPane(byId('agents-toggle'),'agents-collapsed','agentRoomAgentsCollapsed');
+for(const input of document.querySelectorAll('input[name="project"]')){
+ const browse=el('button','찾아보기…');browse.type='button';browse.className='browse-btn';
+ browse.title='탐색기 창에서 폴더 선택';
+ browse.onclick=async()=>{
+  browse.disabled=true;const label=browse.textContent;browse.textContent='폴더 선택 창 열림…';
+  try{
+   const res=await fetch('/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'pick_folder',room:selected,initial:input.value.trim()})});
+   const next=await res.json();if(!res.ok)throw Error(next.error);
+   if(next.pickedFolder){input.value=next.pickedFolder;input.dispatchEvent(new Event('input',{bubbles:true}));}
+  }catch(e){err(e instanceof TypeError?reconnectText:e.message);}
+  finally{browse.disabled=false;browse.textContent=label;}
+ };
+ const wrap=el('span','');wrap.className='path-pick';input.replaceWith(wrap);wrap.append(input,browse);
+}
 {
  const compactBtn=byId('agents-compact'),panel=byId('agent-panel');
  const applyCompact=on=>{panel.classList.toggle('compact',on);compactBtn.setAttribute('aria-pressed',String(on));compactBtn.title=on?'자세히 보기':'간결히 보기';};
@@ -422,12 +458,31 @@ setupPane(byId('agents-toggle'),'agents-collapsed','agentRoomAgentsCollapsed');
 }
 const quickRoomButton=el('button','방 빠른 준비');
 quickRoomButton.type='button';byId('new').after(quickRoomButton);
+const roomToolsBox=el('div');roomToolsBox.className='room-extra-tools';
 const remoteShareButton=el('button','원격 공유 켜기');
-remoteShareButton.type='button';remoteShareButton.setAttribute('role','menuitem');byId('room-actions').append(remoteShareButton);
+remoteShareButton.type='button';
 const copyChatButton=el('button','대화 전체 복사');
-copyChatButton.type='button';copyChatButton.setAttribute('role','menuitem');byId('room-actions').append(copyChatButton);
+copyChatButton.type='button';copyChatButton.hidden=true;
 const deleteRoomButton=el('button','이 방 삭제');
-deleteRoomButton.type='button';deleteRoomButton.setAttribute('role','menuitem');byId('room-actions').append(deleteRoomButton);
+deleteRoomButton.type='button';deleteRoomButton.className='danger';
+roomToolsBox.append(remoteShareButton,byId('pair'),byId('external-say'),deleteRoomButton);
+byId('ranking-error').after(roomToolsBox);
+byId('app-settings-btn').onclick=()=>byId('app-settings-dialog').showModal();
+byId('app-settings-close').onclick=()=>byId('app-settings-dialog').close();
+byId('hard-reload').onclick=async()=>{
+ try{
+  const draft=byId('draft')?.value;
+  if(draft)sessionStorage.setItem('agentRoomDraft',draft);
+  if(selected)sessionStorage.setItem('agentRoomSelected',selected);
+  if('caches' in window){const keys=await caches.keys();await Promise.all(keys.map(k=>caches.delete(k)));}
+  if(navigator.serviceWorker?.getRegistrations){const regs=await navigator.serviceWorker.getRegistrations();await Promise.all(regs.map(r=>r.unregister()));}
+ }catch{}
+ const u=new URL(location.href);u.searchParams.set('_r',String(Date.now()));location.replace(u.toString());
+};
+byId('open-approval-log').addEventListener('click',()=>byId('app-settings-dialog').close());
+byId('remote-btn').addEventListener('click',()=>byId('app-settings-dialog').close());
+byId('pair').addEventListener('click',()=>byId('ranking-dialog').close());
+byId('external-say').addEventListener('click',()=>byId('ranking-dialog').close());
 const quickRoomDialog=el('dialog'),quickRoomForm=el('form'),quickRoomSource=el('select'),quickRoomName=el('input');
 const quickRoomError=el('p',''),quickRoomCancel=el('button','취소'),quickRoomSubmit=el('button','새 방 열기');
 quickRoomDialog.setAttribute('aria-label','방 빠른 준비');quickRoomForm.style.display='grid';
@@ -482,11 +537,12 @@ copyChatButton.onclick=()=>{
 deleteRoomButton.onclick=()=>{
  const room=snapshot.rooms.find(item=>item.id===selected);
  if(room&&confirm('“'+room.name+'” 방과 로컬 대화 기록을 삭제할까요? 되돌릴 수 없습니다. 첨부 파일과 이미 원격에 전송된 기록은 별도로 남습니다.')){
+  byId('ranking-dialog').close();
   void control({action:'delete_room',room:room.id});
  }
 };
 function closeRoomMenu(){byId('room-actions').hidden=true;byId('room-menu-btn').setAttribute('aria-expanded','false');}
-byId('room-menu-btn').onclick=event=>{event.stopPropagation();const open=byId('room-actions').hidden;byId('room-actions').hidden=!open;byId('room-menu-btn').setAttribute('aria-expanded',String(open));};
+byId('room-menu-btn').onclick=event=>{event.stopPropagation();if(selected)openRoomSettings(false);};
 byId('room-actions').addEventListener('click',closeRoomMenu);
 document.addEventListener('click',event=>{
  if(!byId('room-actions').contains(event.target))closeRoomMenu();
@@ -628,12 +684,7 @@ function renderActivity(members,messages,mainMember){
   }
   return Object.entries(raw).filter(([,w])=>w&&typeof w==='object');
  };
- const quotaPoolKey=m=>{
-  if(m.provider==='claude')return 'claude';
-  if(m.provider==='codex')return 'codex';
-  if(m.provider==='agy')return (!m.model||/gemini/i.test(m.model))?'agy:gemini':'agy:3p';
-  return 'member:'+m.id;
- };
+ const quotaPoolKey=m=>'member:'+m.id;
  const groups=[];
  const groupMap=new Map();
  for(const m of members){
@@ -728,6 +779,11 @@ function renderActivity(members,messages,mainMember){
     const reset=expired?'초기화됨':formatResetTime(raw);
     const hoursLeft=!expired&&Number.isFinite(ms)?(ms-Date.now())/3600000:0;
     const isWeekly=/seven_day|secondary|weekly/i.test(key);
+    const totalHours=isWeekly?168:5;
+    const elapsedHours=Math.max(0,totalHours-hoursLeft);
+    const usedPct=expired?0:Math.max(0,Math.min(100,(Number(w.utilization)||0)*100));
+    const pacePct=(!expired&&Number.isFinite(ms)&&elapsedHours>0.05)?Math.round((usedPct*totalHours)/elapsedHours):null;
+    const paceTxt=pacePct!==null?' · 속도 '+pacePct+'%':'';
     let rateTxt='';
     if(rem>0&&isWeekly&&hoursLeft>=24){
      const perDay=rem/(hoursLeft/24);
@@ -738,8 +794,8 @@ function renderActivity(members,messages,mainMember){
     }
     const row=document.createElement('div');row.className='act-limit';
     const top=document.createElement('div');top.className='act-limit-row';
-    top.append(el('span',(windowLabels[key]||key)+' · '+rem+'% 남음'+rateTxt),el('span',reset));
-    const bar=document.createElement('div');bar.className='act-bar';bar.title=(windowLabels[key]||key)+' · '+rem+'% 남음 · '+reset;
+    top.append(el('span',(windowLabels[key]||key)+' · '+rem+'% 남음'+rateTxt+paceTxt),el('span',reset));
+    const bar=document.createElement('div');bar.className='act-bar';bar.title=(windowLabels[key]||key)+' · '+rem+'% 남음'+paceTxt+' · '+reset;
     const fill=document.createElement('i');fill.style.width=rem+'%';
     if(rem<=10)fill.className='critical';else if(rem<=25)fill.className='low';
     bar.append(fill);row.append(top,bar);limitsBox.append(row);
@@ -931,7 +987,7 @@ function renderHistory(view,messages,roomChanged){
     return prefix+[...byState].map(([st,names])=>names.join(', ')+'('+(status[st]||st)+')').join(', ');
    }).join(' / ');
   }else if(activeDeliveries.length){
-   delivery='모두 응답 생략 (0순위)';
+   delivery='';
   }
   const plan=snapshot.replyPlans?.find(p=>p.seq===m.seq);
   const fallback=plan?.state==='fallback';
@@ -971,7 +1027,7 @@ function renderHistory(view,messages,roomChanged){
   if(title.textContent||title.childElementCount)card.append(title);
   const judgeMs=snapshot.replyPlans?.find(p=>p.seq===m.seq)?.judge_ms;
   const timeStr=new Date(m.created).toLocaleTimeString('ko-KR')+(judgeMs?' · 순위 '+(judgeMs/1000).toFixed(1)+'초':'');
-  const flow=(m.author==='human:'+selected&&!m.retracted&&(sorted.some(d=>d.priority>0)||handoffs.length))
+  const flow=(!m.retracted&&(sorted.some(d=>d.priority>0)||handoffs.length))
    ?requestFlow(sorted,replies,handoffs,status)
    :null;
   card.append(m.retracted?el('p','철회한 메시지입니다.'):markdown(m.body));
@@ -980,7 +1036,7 @@ function renderHistory(view,messages,roomChanged){
    flow.prepend(el('small',timeStr+(fallback?' · 기본 순서 사용':'')+' ·'));
    outside.append(flow);
   }else{
-   const meta=el('small',timeStr+' · '+(delivery||'방에 저장됨'));
+   const meta=el('small',timeStr+(delivery?' · '+delivery:''));
    const foot=el('div');foot.className='msg-foot';foot.append(meta);
    outside.append(foot);
   }
@@ -988,7 +1044,7 @@ function renderHistory(view,messages,roomChanged){
    const actionTarget=flow||outside.lastElementChild;
    const copyBtn=el('button','복사');copyBtn.type='button';copyBtn.className='retract-btn';
    copyBtn.onclick=()=>copyText(m.body,copyBtn);
-   actionTarget.append(copyBtn);
+   if(isOwn)actionTarget.prepend(copyBtn);else actionTarget.append(copyBtn);
   }
   if(m.author==='human:'+selected&&!m.retracted){
    const actionTarget=flow||outside.lastElementChild;
@@ -1005,7 +1061,7 @@ function renderHistory(view,messages,roomChanged){
     retryMsg.onclick=()=>control({action:'promote_delivery',room:selected,seq:m.seq});
     actionTarget.append(retryMsg);
    }
-   const retract=el('button','철회');retract.type='button';retract.className='retract-btn left';
+   const retract=el('button','철회');retract.type='button';retract.className='retract-btn';
    retract.onclick=()=>{if(confirm('이 메시지를 철회할까요? 아직 안 간 에이전트에게는 전달을 취소하고, 이미 받은 에이전트에게는 무시하라고 알립니다.'))control({action:'retract_message',room:selected,seq:m.seq});};
    actionTarget.prepend(retract);
   }
@@ -1447,6 +1503,17 @@ byId('update').onclick=async()=>{
   const res=await fetch('/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'check_update'})});
   const info=await res.json();if(!res.ok)throw Error(info.error);
   status.textContent=info.available?'설치됨 v'+info.version+' · 업데이트 '+info.latest+' ':'v'+info.version+'이 최신 버전이에요.';
+  if(info.siteUpdate){
+   const site=info.siteUpdate;
+   const summary=site.failed?'원격 Site 업데이트 확인 실패':site.available?'원격 Site 업데이트 가능 · v'+site.latest:site.current?'원격 Site v'+site.current:'원격 Site 버전 미확인';
+   status.append(el('div',summary));
+   if(site.instructions&&(site.available||!site.current)){
+    const guide=el('a','원격 Site 업데이트 안내');
+    guide.href=site.instructions;guide.target='_blank';guide.rel='noopener';
+    status.append(guide);
+    if(!site.compatible)status.append(el('div','PC를 먼저 v'+site.minimumRelayVersion+' 이상으로 업데이트하세요.'));
+   }
+  }
   if(info.download){
    const link=el('a','Windows ZIP 받기');link.href=info.download;link.target='_blank';link.rel='noopener';
    const install=el('button','업데이트 설치');
@@ -1511,9 +1578,22 @@ byId('remote-btn').onclick=()=>{
  remoteForm.elements.deviceKey.placeholder=rs.configured?'이미 저장됨 (변경 시에만 입력)':'32바이트 이상 비밀 키';
  remoteForm.elements.siteAccess.placeholder=rs.hasAccessToken?'이미 저장됨 (변경 시에만 입력)':'필요한 경우에만 입력';
  remoteForm.elements.enabled.checked=Boolean(rs.enabled);
+ remoteForm.elements.autoSiteUpdate.checked=Boolean(rs.autoSiteUpdate);
+ remoteForm.elements.siteUpdaterProvider.value=rs.siteUpdaterProvider||'codex';
+ byId('site-update-job-status').textContent=rs.siteUpdateJob?.message||'';
  renderRemoteShareAll();
  byId('remote-error').textContent=rs.lastError||'';
  byId('remote-dialog').showModal();
+};
+byId('trigger-site-update').onclick=async()=>{
+ const btn=byId('trigger-site-update');
+ btn.disabled=true;
+ byId('remote-error').textContent='';
+ try{
+  const ok=await control({action:'trigger_site_update',room:selected});
+  if(ok)byId('site-update-job-status').textContent=snapshot?.remoteSync?.siteUpdateJob?.message||'업데이트 전용 세션을 시작했습니다.';
+  else byId('remote-error').textContent=byId('error').textContent;
+ }finally{btn.disabled=false;}
 };
 byId('remote-cancel').onclick=()=>byId('remote-dialog').close();
 remoteForm.onsubmit=async event=>{
@@ -1522,7 +1602,7 @@ remoteForm.onsubmit=async event=>{
  if(btn)btn.disabled=true;
  byId('remote-error').textContent='';
  try{
-  const ok=await control({action:'remote_sync',room:selected,site:f.site.value.trim(),deviceKey:f.deviceKey.value.trim(),siteAccess:f.siteAccess.value.trim(),enabled:f.enabled.checked});
+  const ok=await control({action:'remote_sync',room:selected,site:f.site.value.trim(),deviceKey:f.deviceKey.value.trim(),siteAccess:f.siteAccess.value.trim(),enabled:f.enabled.checked,autoSiteUpdate:f.autoSiteUpdate.checked,siteUpdaterProvider:f.siteUpdaterProvider.value});
   if(ok)byId('remote-dialog').close();
   else byId('remote-error').textContent=byId('error').textContent;
  }finally{if(btn)btn.disabled=false;}
@@ -1652,5 +1732,23 @@ document.addEventListener('keydown',e=>{
   e.preventDefault();openChatSearch();
  }
 });
+const themeKey='agentRoomTheme',themes=[['dark','다크'],['midnight','블랙'],['light','라이트']];
+function applyTheme(next){
+ const entry=themes.find(([id])=>id===next)||themes[0];
+ if(entry[0]==='dark')delete document.documentElement.dataset.theme;
+ else document.documentElement.dataset.theme=entry[0];
+ byId('theme-toggle').textContent='테마: '+entry[1];
+ localStorage.setItem(themeKey,entry[0]);
+}
+applyTheme(localStorage.getItem(themeKey)||'dark');
+byId('theme-toggle').onclick=()=>{
+ const cur=document.documentElement.dataset.theme||'dark';
+ const idx=themes.findIndex(([id])=>id===cur);
+ applyTheme(themes[(idx+1)%themes.length][0]);
+};
+byId('open-mode-toggle').onclick=()=>{
+ const nextMode=snapshot?.openMode==='browser'?'window':'browser';
+ void control({action:'set_open_mode',mode:nextMode});
+};
 refresh();setInterval(refresh,1500);
 </script></html>

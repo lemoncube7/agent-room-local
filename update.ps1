@@ -86,6 +86,21 @@ try {
         $applied.Add($file)
         Copy-Item -LiteralPath (Join-Path $payload $file) -Destination (Join-Path $PSScriptRoot $file) -Force
     }
+    # Launcher binaries may be locked by the open app window; Windows allows renaming a
+    # running file, so move the old one aside and copy the new one in its place.
+    foreach ($bin in @('Agent Room.exe','agent-room.ico','webview2/Microsoft.Web.WebView2.Core.dll','webview2/Microsoft.Web.WebView2.WinForms.dll','webview2/WebView2Loader.dll','webview2/LICENSE-WebView2.txt')) {
+        $source = Join-Path $payload $bin
+        if (-not (Test-Path -LiteralPath $source)) { continue }
+        $target = Join-Path $PSScriptRoot $bin
+        try {
+            [void][IO.Directory]::CreateDirectory((Split-Path -Parent $target))
+            try { Copy-Item -LiteralPath $source -Destination $target -Force }
+            catch {
+                Rename-Item -LiteralPath $target -NewName ((Split-Path -Leaf $target) + '.old-' + [guid]::NewGuid().ToString('N'))
+                Copy-Item -LiteralPath $source -Destination $target -Force
+            }
+        } catch { Write-Output ('실행 파일 교체를 건너뜀: ' + $bin) }
+    }
     try {
         $projectFile = Join-Path $PSScriptRoot 'local/project.txt'
         $savedProject = if (Test-Path -LiteralPath $projectFile) { (Get-Content -LiteralPath $projectFile -Raw).Trim() } else { $PSScriptRoot }

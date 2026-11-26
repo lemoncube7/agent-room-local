@@ -6,7 +6,7 @@ const http = require('node:http');
 const {createHandoff}=require('./handoff.cjs');
 const {initDb,providerNames,normalizeEffort,normalizePermission}=require('./db.cjs');
 const {readLimits:readLimitsFrom,limitResetAt:limitResetAtFrom,agentQuotaSummary,formatLimitsContext:formatLimitsContextFrom}=require('./limits.cjs');
-const {updaterLaunchCommand:buildUpdaterLaunchCommand,checkUpdate:checkReleaseUpdate,readUpdateLog}=require('./updater.cjs');
+const {updaterLaunchCommand:buildUpdaterLaunchCommand,checkUpdate:checkReleaseUpdate,readUpdateLog,checkSiteUpdate}=require('./updater.cjs');
 const {runCodex,runWarmTurn=((_p,project,prompt,session,provider,model,effort,options)=>runCodex(project,prompt,session,provider,model,effort,options)),prewarmJudge=(()=>{}),runWarmJudge=((_r,project,prompt,provider,model,effort)=>runCodex(project,prompt,null,provider,model,effort,{rank:true})),invalidateWarm=(()=>{}),invalidateWarmJudge=(()=>{}),closeAllWarm=(()=>{}),refreshCodexLimits=(async()=>false),refreshAgyLimits=(async()=>false),discoverModels,cliCommand} = require('./managed-codex.cjs');
 const {spawn,execFile}=require('node:child_process');
 const version=fs.readFileSync(path.join(__dirname,'VERSION'),'utf8').trim();
@@ -360,6 +360,41 @@ function startRemoteSync(){
     remoteRestartTimer.unref?.();
   });
 }
+let siteUpdateJob={state:'idle',targetTag:'',provider:'',message:'',updatedAt:0};
+let siteUpdateAttemptedTag='';
+async function runDedicatedSiteUpdate(targetTag,reason='manual'){
+  const cfg=readRemoteConfig();
+  if(!cfg.site)throw Error('연결된 원격 Site 주소가 없습니다.');
+  if(siteUpdateJob.state==='running')return siteUpdateJob;
+  if(reason==='auto'&&siteUpdateAttemptedTag===targetTag)return siteUpdateJob;
+  const provider=Object.hasOwn(providerNames,cfg.siteUpdaterProvider)?cfg.siteUpdaterProvider:'codex';
+  siteUpdateAttemptedTag=targetTag;
+  siteUpdateJob={state:'running',targetTag,provider,message:targetTag+' 원격 Site 업데이트 전용 세션을 실행 중…',updatedAt:Date.now()};
+  const prompt=[
+    'You are a dedicated background updater for Agent Room remote Site.',
+    'Target release tag: '+targetTag,
+    'Connected remote Site URL: '+cfg.site,
+    'Instructions:',
+    '1. Read REMOTE-SETUP.md in this directory and follow the existing Site update procedure.',
+    '2. Preserve the existing host type (ChatGPT Sites or Cloudflare Workers), URL, D1 database, and secrets. NEVER create a new host or overwrite secrets.',
+    '3. Update remote-site files and apply any unapplied D1 migrations for '+targetTag+', then verify PC sync.',
+    '4. If deployment permissions, login, or quota prevent completion, stop immediately and reply starting with "업데이트 대기: " explaining the exact blocked step.'
+  ].join('\n');
+  void invokeCli(__dirname,prompt,null,provider,null,'low',{permission:'dev'}).then(res=>{
+    const text=String(res?.reply||'').trim();
+    const firstLine=text.split(/\r?\n/).find(Boolean)||'';
+    if(res?.issue){
+      siteUpdateJob={state:'waiting',targetTag,provider,message:'업데이트 대기 ('+res.issue.code+'): '+res.issue.message,updatedAt:Date.now()};
+    }else if(/^업데이트 대기/i.test(firstLine)){
+      siteUpdateJob={state:'waiting',targetTag,provider,message:firstLine.slice(0,220),updatedAt:Date.now()};
+    }else{
+      siteUpdateJob={state:'done',targetTag,provider,message:(firstLine||targetTag+' 원격 Site 업데이트 완료').slice(0,220),updatedAt:Date.now()};
+    }
+  }).catch(err=>{
+    siteUpdateJob={state:'failed',targetTag,provider,message:'업데이트 실패: '+String(err?.message||err).slice(0,200),updatedAt:Date.now()};
+  });
+  return siteUpdateJob;
+}
 function remoteSyncState(){
   const cfg=readRemoteConfig();
   const managed=Boolean(remoteProc&&remoteProc.exitCode===null);
@@ -373,7 +408,7 @@ function remoteSyncState(){
     const pid=legacyRelay.pids.find(p=>{try{process.kill(p,0);return true;}catch{return false;}});
     if(pid)external={pid,site:''};
   }
-  return {configured:Boolean(cfg.site&&cfg.deviceKey),site:cfg.site||external?.site||'',enabled:Boolean(cfg.enabled),running:managed||Boolean(external),external:Boolean(external),hasAccessToken:Boolean(cfg.siteAccess),lastError:remoteLastError};
+  return {configured:Boolean(cfg.site&&cfg.deviceKey),site:cfg.site||external?.site||'',enabled:Boolean(cfg.enabled),running:managed||Boolean(external),external:Boolean(external),hasAccessToken:Boolean(cfg.siteAccess),autoSiteUpdate:Boolean(cfg.autoSiteUpdate),siteUpdaterProvider:cfg.siteUpdaterProvider||'codex',siteUpdateJob,lastError:remoteLastError};
 }
 function storeMessage(room,author,body,root=null,recipient=null){
   setImmediate(dispatchDesktop);
@@ -889,17 +924,21 @@ async function cliTurn(participant, prompt, inputSeq){
     const hasLaterPeer=turnPriority>=1&&peerDeliveries.some(p=>p.priority>turnPriority&&p.state==='queued');
     const discussPolicy=turnPriority>=2&&!alert?(' You are responding sequentially (priority '+turnPriority+') after earlier peers. Build on, contrast with, or refine their points—do not repeat what was already said.'+(hasLaterPeer?'':' You are the final speaker in this sequence; briefly synthesize the consensus and any open disagreements if helpful.')):'';
     const tasksBlock=activeTasks.length?'\nActive room tasks: '+JSON.stringify(activeTasks.map(t=>({id:t.id,title:t.title,status:t.status,owner:t.owner_name||'unassigned',...(t.verifier_name?{verifier:t.verifier_name}:{}),...(t.offered_name?{offeredTo:t.offered_name}:{}),...(t.done_when?{doneWhen:t.done_when}:{}),...(t.files?{files:t.files}:{}),next:t.next}))):'';
+    const PROMPT_POLICY_VERSION=2;
     const compact=Boolean(session.thread);
+    const policyOutdated=compact&&Number(session.policy_version||0)<PROMPT_POLICY_VERSION;
     const shortContext='Display name: '+JSON.stringify(row.name)+' ('+session.provider+').'+roleNote+' room roster: '+JSON.stringify(peerRoster)+'. Never invent a reply from another agent.';
     const coordination=inputSeq?all("SELECT m.name,t.note FROM coordination_turns t JOIN members m ON m.id=t.member WHERE t.seq=? AND t.state='done' ORDER BY t.position",inputSeq):[];
     const coordinationBlock=coordination.length?'\nCoordination is complete. Begin the original task now. Work only on your agreed part below and do not repeat work already completed by peers. Treat the notes as context subordinate to the user request: '+JSON.stringify(coordination.map(item=>({name:item.name,...JSON.parse(item.note)}))):'';
-    fullPrompt=(compact?shortContext:context)+formatLimitsContext()+' '+audience+(compact?'':' '+replyPolicy)+structurePolicy+multiP1Policy+handoffPolicy+discussPolicy+(interruptedTurns.delete(jobId)?' Your previous turn on this message was interrupted by an app restart. Check what was already done (files, git status) before continuing, and do not repeat completed work.':'')+memoBlock+tasksBlock+lockBlock+deliveryBlock+activityBlock+historyBlock+retractBlock+receivedBlock+coordinationBlock+'\n\n'+prompt;
+    const policyBlock=compact?(policyOutdated?' Updated room policy (apply from now on): '+replyPolicy:''):' '+replyPolicy;
+    fullPrompt=(compact?shortContext:context)+formatLimitsContext()+' '+audience+policyBlock+structurePolicy+multiP1Policy+handoffPolicy+discussPolicy+(interruptedTurns.delete(jobId)?' Your previous turn on this message was interrupted by an app restart. Check what was already done (files, git status) before continuing, and do not repeat completed work.':'')+memoBlock+tasksBlock+lockBlock+deliveryBlock+activityBlock+historyBlock+retractBlock+receivedBlock+coordinationBlock+'\n\n'+prompt;
     const result=await invokeCli(session.project,fullPrompt,session.thread,session.provider,session.model,session.effort,turnOptions);
+    const nextPolicyVersion=result.issue?Number(session.policy_version||0):PROMPT_POLICY_VERSION;
     cliCooldown.delete(participant);limitNotified.delete(participant);cliRepeatErrors.delete(participant);
     for(const item of retractedNotices)run("UPDATE deliveries SET state='retracted' WHERE seq=? AND member=? AND state='retract_notice'",item.seq,participant);
     if(inputSeq&&one('SELECT retracted FROM messages WHERE seq=?',inputSeq)?.retracted){
-      run('UPDATE cli_sessions SET thread=?, last_cli_error=?, turns=turns+?, input_tokens=input_tokens+?, output_tokens=output_tokens+?, cost_usd=cost_usd+?, last_usage=? WHERE member=?',
-        result.id,result.issue?JSON.stringify(result.issue):null,result.usage?.turns||1,result.usage?.inputTokens||0,result.usage?.outputTokens||0,result.usage?.costUsd||0,JSON.stringify(result.usage||null),participant);
+      run('UPDATE cli_sessions SET thread=?, last_cli_error=?, turns=turns+?, input_tokens=input_tokens+?, output_tokens=output_tokens+?, cost_usd=cost_usd+?, last_usage=?, policy_version=? WHERE member=?',
+        result.id,result.issue?JSON.stringify(result.issue):null,result.usage?.turns||1,result.usage?.inputTokens||0,result.usage?.outputTokens||0,result.usage?.costUsd||0,JSON.stringify(result.usage||null),nextPolicyVersion,participant);
       if(row.state==='starting')run("UPDATE members SET state='approved' WHERE id=? AND state='starting'",participant);
       run("UPDATE deliveries SET state='retracted' WHERE seq=? AND member=?",inputSeq,participant);
       return;
@@ -912,7 +951,7 @@ async function cliTurn(participant, prompt, inputSeq){
       const action=decision[1]==='ACCEPT'?'handoff_accept':'handoff_decline';
       try{handoff.change({action,id:alert.task,revision:alert.revision},participant,row.room);}
       catch(error){storeMessage(row.room,participant,'작업 #'+alert.task+' 인계 상태를 변경하지 못했어요: '+error.message);}
-      run('UPDATE cli_sessions SET thread=? WHERE member=?',result.id,participant);
+      run('UPDATE cli_sessions SET thread=?, policy_version=? WHERE member=?',result.id,nextPolicyVersion,participant);
       run("UPDATE deliveries SET state='answered' WHERE seq=? AND member=?",inputSeq,participant);
       return;
     }
@@ -964,8 +1003,8 @@ async function cliTurn(participant, prompt, inputSeq){
     const endTag=parsed.endTag;
     const body=parsed.body;
     const silent=!body||body==='[[AGENT_ROOM_NO_REPLY]]';
-    run('UPDATE cli_sessions SET thread=?, last_cli_error=?, turns=turns+?, input_tokens=input_tokens+?, output_tokens=output_tokens+?, cost_usd=cost_usd+?, last_usage=? WHERE member=?',
-      result.id,result.issue?JSON.stringify(result.issue):null,result.usage?.turns||1,result.usage?.inputTokens||0,result.usage?.outputTokens||0,result.usage?.costUsd||0,JSON.stringify(result.usage||null),participant);
+    run('UPDATE cli_sessions SET thread=?, last_cli_error=?, turns=turns+?, input_tokens=input_tokens+?, output_tokens=output_tokens+?, cost_usd=cost_usd+?, last_usage=?, policy_version=? WHERE member=?',
+      result.id,result.issue?JSON.stringify(result.issue):null,result.usage?.turns||1,result.usage?.inputTokens||0,result.usage?.outputTokens||0,result.usage?.costUsd||0,JSON.stringify(result.usage||null),nextPolicyVersion,participant);
     if(result.issue?.code==='auth_expired')openLoginTerminal(session.provider,session.project);
     if(session.provider==='codex')void refreshCodexLimits();
     if(row.state==='starting')run("UPDATE members SET state='approved' WHERE id=? AND state='starting'",participant);
@@ -1527,6 +1566,15 @@ function saveProjectSelection(projectDir){
   recordRecentProject(resolved);
   return resolved;
 }
+function readLauncherMode(){
+  try{
+    const parsed=JSON.parse(fs.readFileSync(path.join(local,'launcher.json'),'utf8'));
+    return parsed?.openMode==='browser'?'browser':'window';
+  }catch{return 'window';}
+}
+function readUiStamp(){
+  try{return Math.floor(fs.statSync(path.join(__dirname,'index.html')).mtimeMs);}catch{return null;}
+}
 function state(roomId=null){
   const scoped=typeof roomId==='string'&&roomId.trim()?roomId.trim():null;
   const members=all("SELECT members.id,room,name,state,parent,members.paused,members.role,cli_sessions.provider,cli_sessions.model,cli_sessions.effort,cli_sessions.permission_profile,cli_sessions.last_cli_error,cli_sessions.thread,cli_sessions.turns,cli_sessions.input_tokens,cli_sessions.output_tokens,cli_sessions.cost_usd,cli_sessions.last_usage FROM members LEFT JOIN cli_sessions ON cli_sessions.member=members.id WHERE state<>'human' ORDER BY COALESCE(members.position,members.rowid),members.rowid").map(({thread,paused,...row})=>{
@@ -1538,7 +1586,7 @@ function state(roomId=null){
   const editCounts=new Map();
   for(const m of members)if(m.editing){const k=m.room+':'+m.editing;editCounts.set(k,(editCounts.get(k)||0)+1);}
   for(const m of members){m.conflict=m.editing&&editCounts.get(m.room+':'+m.editing)>1?m.editing:null;delete m.editing;}
-  return {version,project:readActiveProject(),recentProjects:readRecentProjects(),approvals:[...approvals.values()].filter(item=>item.state==='pending').map(({id,room,name,tool,input,rule,created})=>({id,room,name,tool,input,rule,created})),approvalRules:all('SELECT member,rule FROM approval_rules'),approvalLogs:scoped?all('SELECT * FROM approval_logs WHERE room=? ORDER BY created DESC LIMIT 100',scoped):all('SELECT * FROM approval_logs ORDER BY created DESC LIMIT 100'),limits:readLimits(),ranking:all('SELECT room,enabled,mode,main_member,judge_provider,judge_model,judge_effort,judge_prompt FROM room_ranking'),replyPlans:scoped?all('SELECT seq,state,coordinate_mode,round,max_rounds,judge_ms FROM reply_plans WHERE room=?',scoped):all('SELECT seq,state,coordinate_mode,round,max_rounds,judge_ms FROM reply_plans'),remoteConfigured:remoteConfigured(),remoteShareAll:Boolean(one('SELECT share_all FROM remote_options LIMIT 1')?.share_all),remoteRooms:selectedRemoteRooms(),remoteSync:remoteSyncState(),tasks:handoff.list(scoped),updateStatus:readUpdateLog(updateLog).trim().split(/\r?\n/).at(-1)||null,rooms:all('SELECT rooms.*,m.latest_incoming_seq FROM rooms LEFT JOIN (SELECT room,MAX(seq) AS last_seq,MAX(CASE WHEN author<>\'human:\'||room AND retracted=0 AND request NOT LIKE \'receipt:%\' THEN seq END) AS latest_incoming_seq FROM messages GROUP BY room) m ON m.room=rooms.id ORDER BY COALESCE(m.last_seq,0) DESC, rooms.rowid DESC'),
+  return {version,uiStamp:readUiStamp(),openMode:readLauncherMode(),project:readActiveProject(),recentProjects:readRecentProjects(),approvals:[...approvals.values()].filter(item=>item.state==='pending').map(({id,room,name,tool,input,rule,created})=>({id,room,name,tool,input,rule,created})),approvalRules:all('SELECT member,rule FROM approval_rules'),approvalLogs:scoped?all('SELECT * FROM approval_logs WHERE room=? ORDER BY created DESC LIMIT 100',scoped):all('SELECT * FROM approval_logs ORDER BY created DESC LIMIT 100'),limits:readLimits(),ranking:all('SELECT room,enabled,mode,main_member,judge_provider,judge_model,judge_effort,judge_prompt FROM room_ranking'),replyPlans:scoped?all('SELECT seq,state,coordinate_mode,round,max_rounds,judge_ms FROM reply_plans WHERE room=?',scoped):all('SELECT seq,state,coordinate_mode,round,max_rounds,judge_ms FROM reply_plans'),remoteConfigured:remoteConfigured(),remoteShareAll:Boolean(one('SELECT share_all FROM remote_options LIMIT 1')?.share_all),remoteRooms:selectedRemoteRooms(),remoteSync:remoteSyncState(),tasks:handoff.list(scoped),updateStatus:readUpdateLog(updateLog).trim().split(/\r?\n/).at(-1)||null,rooms:all('SELECT rooms.*,m.latest_incoming_seq FROM rooms LEFT JOIN (SELECT room,MAX(seq) AS last_seq,MAX(CASE WHEN author<>\'human:\'||room AND retracted=0 AND request NOT LIKE \'receipt:%\' THEN seq END) AS latest_incoming_seq FROM messages GROUP BY room) m ON m.room=rooms.id ORDER BY COALESCE(m.last_seq,0) DESC, rooms.rowid DESC'),
     members,
     messages:scoped?all("SELECT messages.*,members.name FROM messages JOIN members ON messages.author=members.id WHERE messages.room=? AND messages.request NOT LIKE 'receipt:%' ORDER BY seq",scoped):all("SELECT messages.*,members.name FROM messages JOIN members ON messages.author=members.id WHERE messages.request NOT LIKE 'receipt:%' ORDER BY seq"),
     deliveries:scoped?all('SELECT deliveries.seq,deliveries.member,members.name,deliveries.state,deliveries.priority FROM deliveries JOIN messages ON messages.seq=deliveries.seq JOIN members ON deliveries.member=members.id WHERE messages.room=?',scoped):all('SELECT deliveries.seq,deliveries.member,members.name,deliveries.state,deliveries.priority FROM deliveries JOIN members ON deliveries.member=members.id')};
@@ -1750,9 +1798,16 @@ const server=http.createServer(async(req,res)=>{
         const deviceKey=args.deviceKey?String(args.deviceKey).trim().slice(0,300):cur.deviceKey;
         const siteAccess=args.clearAccessToken?'':(args.siteAccess?String(args.siteAccess).trim().slice(0,500):cur.siteAccess);
         const enabled=Boolean(args.enabled);
+        const autoSiteUpdate=args.autoSiteUpdate!==undefined?Boolean(args.autoSiteUpdate):Boolean(cur.autoSiteUpdate);
+        const siteUpdaterProvider=Object.hasOwn(providerNames,args.siteUpdaterProvider)?args.siteUpdaterProvider:(cur.siteUpdaterProvider||'codex');
         if(enabled&&(!site||!deviceKey))throw Error('원격 중계를 켜려면 Site 주소와 REMOTE_DEVICE_KEY를 입력해 주세요.');
-        saveRemoteConfig({site,deviceKey,siteAccess,enabled});
+        saveRemoteConfig({site,deviceKey,siteAccess,enabled,autoSiteUpdate,siteUpdaterProvider});
         if(enabled)startRemoteSync();else{stopRemoteSync();remoteLastError='';}
+      }
+      else if(args.action==='trigger_site_update'){
+        const tag=typeof args.tag==='string'&&/^v?\d+\.\d+\.\d+$/.test(args.tag.trim())?(args.tag.trim().startsWith('v')?args.tag.trim():'v'+args.tag.trim()):('v'+version);
+        const job=await runDedicatedSiteUpdate(tag,'manual');
+        result={...state(typeof args.room==='string'&&args.room?args.room:null),siteUpdateJob:job};
       }
       else if(args.action==='remote_share'){
         if(!one('SELECT id FROM rooms WHERE id=?',String(args.room||'')))throw Error('Room not found.');
@@ -1799,6 +1854,25 @@ const server=http.createServer(async(req,res)=>{
           });
         }
       }
+      else if(args.action==='set_open_mode'){
+        if(args.mode!=='window'&&args.mode!=='browser')throw Error('Invalid open mode.');
+        const file=path.join(local,'launcher.json');
+        let current={};
+        try{current=JSON.parse(fs.readFileSync(file,'utf8'))||{};}catch{}
+        fs.writeFileSync(file,JSON.stringify({...current,openMode:args.mode},null,2));
+      }
+      else if(args.action==='pick_folder'){
+        // Native folder picker (Windows Explorer dialog) so users need not type paths.
+        if(process.platform!=='win32')throw Error('폴더 선택 창은 Windows에서만 지원합니다.');
+        const initial=typeof args.initial==='string'&&args.initial.length<500&&fs.existsSync(args.initial)?args.initial:'';
+        // Modern Explorer-style picker (IFileOpenDialog with FOS_PICKFOLDERS), sent as an encoded command
+        // so Korean text survives Windows PowerShell's codepage handling.
+        const script="$src = @'\nusing System;\nusing System.Runtime.InteropServices;\npublic static class ModernFolderPicker {\n  [ComImport, Guid(\"DC1C5A9C-E88A-4dde-A5A1-60F82A20AEF7\")] class FileOpenDialogRCW {}\n  [ComImport, Guid(\"42f85136-db7e-439c-85f1-e4075d135fc8\"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]\n  interface IFileOpenDialog {\n    [PreserveSig] int Show(IntPtr parent);\n    void SetFileTypes(); void SetFileTypeIndex(); void GetFileTypeIndex(); void Advise(); void Unadvise();\n    void SetOptions(uint fos); void GetOptions(out uint fos);\n    void SetDefaultFolder(IShellItem si); void SetFolder(IShellItem si);\n    void GetFolder(); void GetCurrentSelection();\n    void SetFileName([MarshalAs(UnmanagedType.LPWStr)] string name); void GetFileName();\n    void SetTitle([MarshalAs(UnmanagedType.LPWStr)] string title);\n    void SetOkButtonLabel([MarshalAs(UnmanagedType.LPWStr)] string text);\n    void SetFileNameLabel(); void GetResult(out IShellItem si);\n  }\n  [ComImport, Guid(\"43826D1E-E718-42EE-BC55-A1E261C37BFE\"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]\n  interface IShellItem {\n    void BindToHandler(); void GetParent();\n    void GetDisplayName(uint sigdn, [MarshalAs(UnmanagedType.LPWStr)] out string name);\n  }\n  [DllImport(\"shell32.dll\", CharSet = CharSet.Unicode, PreserveSig = false)]\n  static extern void SHCreateItemFromParsingName(string path, IntPtr pbc, [MarshalAs(UnmanagedType.LPStruct)] Guid riid, out IShellItem item);\n  public static string Pick(string title, string initial) {\n    var dlg = (IFileOpenDialog)new FileOpenDialogRCW();\n    dlg.SetOptions(0x20 | 0x40 | 0x800); // PICKFOLDERS | FORCEFILESYSTEM | PATHMUSTEXIST\n    dlg.SetTitle(title);\n    dlg.SetOkButtonLabel(\"이 폴더 선택\");\n    if (!string.IsNullOrEmpty(initial)) {\n      try { IShellItem f; SHCreateItemFromParsingName(initial, IntPtr.Zero, typeof(IShellItem).GUID, out f); dlg.SetFolder(f); } catch { }\n    }\n    if (dlg.Show(IntPtr.Zero) != 0) return null;\n    IShellItem result; dlg.GetResult(out result);\n    string path; result.GetDisplayName(0x80058000, out path); // SIGDN_FILESYSPATH\n    return path;\n  }\n}\n'@\nAdd-Type -TypeDefinition $src\n$picked = [ModernFolderPicker]::Pick('Agent Room 작업 폴더 선택', $env:AR_PICK_INITIAL)\nif ($picked) { [Console]::OutputEncoding = [Text.Encoding]::UTF8; [Console]::Write($picked) }\n\n";
+        const powershell=path.join(process.env.SystemRoot||'C:/Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
+        const picked=await new Promise(resolve=>execFile(powershell,['-NoProfile','-STA','-ExecutionPolicy','Bypass','-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],
+          {windowsHide:true,timeout:10*60*1000,encoding:'utf8',env:{...process.env,AR_PICK_INITIAL:initial}},(error,stdout)=>resolve(error?'':String(stdout||'').trim())));
+        result={...state(typeof args.room==='string'&&args.room?args.room:null),pickedFolder:picked&&fs.existsSync(picked)?picked:null};
+      }
       else if(args.action==='refresh_limits'){
         // Manual refresh from the agent panel: Codex and Antigravity are queried now;
         // Claude only reports limits inside a reply stream, so it updates on its next turn.
@@ -1814,7 +1888,24 @@ const server=http.createServer(async(req,res)=>{
         if(!Object.hasOwn(providerNames,args.provider))throw Error('Unknown agent provider.');
         result={sessions:discoverSessions(args.provider)};
       }
-      else if(args.action==='check_update')result=await checkUpdate();
+      else if(args.action==='check_update'){
+        result=await checkUpdate();
+        const cfg=readRemoteConfig();
+        if(cfg.site){
+          let current=null;
+          try{
+            const alive=JSON.parse(fs.readFileSync(path.join(local,'remote-alive.json'),'utf8'));
+            if(alive.site===new URL(cfg.site).origin&&Date.now()-alive.at<15000&&typeof alive.siteVersion==='string'&&/^\d+\.\d+\.\d+$/.test(alive.siteVersion))current=alive.siteVersion;
+          }catch{}
+          try{
+            result.siteUpdate=await checkSiteUpdate(result.latest,current,version);
+            if(result.siteUpdate?.available&&cfg.autoSiteUpdate&&result.latest){
+              result.siteUpdateJob=await runDedicatedSiteUpdate(result.latest,'auto');
+            }
+          }
+          catch{result.siteUpdate={current,failed:true};}
+        }
+      }
       else if(args.action==='apply_update'){
         if(process.platform!=='win32')throw Error('자동 설치는 Windows에서 사용할 수 있어요.');
         if(updating)throw Error('이미 업데이트를 준비하고 있어요.');

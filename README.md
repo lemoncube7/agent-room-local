@@ -58,6 +58,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1 -Project 'E:\my-
 ```
 
 - `-SelectProject`를 넣으면 `local/project.txt`에 기본 프로젝트가 저장되어 앱을 열 때 프로젝트 선택 창을 건너뜁니다. 전역 MCP까지 함께 등록하려면 `-Global`을 추가합니다.
+- **네이티브 앱 창 준비:** `setup.ps1` 출력의 `native_window`에서 `Agent Room.exe`·`webview2/` SDK·WebView2 런타임 준비 여부를 확인할 수 있습니다. 런타임이 없으면 `winget install --id Microsoft.EdgeWebView2Runtime --silent`로 설치하고, 실행 방식은 `-OpenMode window` 또는 `-OpenMode browser`로 지정할 수 있습니다.
 - **설정 파일 위치:** Codex는 프로젝트의 `.codex/config.toml`, Claude Code는 `.mcp.json`, 앱 상태·선택된 프로젝트는 `local/` 폴더에 저장됩니다. Antigravity(`agy`)는 허브가 CLI를 직접 실행하므로 별도 프로젝트 설정 파일이 필요 없습니다.
 - **허브 API로 첫 방을 구성할 때:** 설치 폴더의 `local/hub.json`에서 `url`, `token`, `browserUrl`을 읽어 로컬 요청에만 사용한다. `GET /state`는 `Authorization: Bearer <token>`으로 조회한다. `POST /control`은 `browserUrl`을 먼저 열어 받은 `agent_room` 세션 쿠키와 `Origin: <url>`, `Content-Type: application/json`을 사용한다. 자동화 클라이언트는 같은 쿠키 세션을 유지한다. 키·토큰·쿠키를 출력하지 않는다.
   - 방 생성은 `{"action":"create","name":"테스트 방"}`을 보내고 응답의 `createdRoom`을 사용한다.

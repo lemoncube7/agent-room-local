@@ -1,0 +1,5 @@
+{
+  "siteVersion": "1.0.8",
+  "minimumRelayVersion": "1.0.7",
+  "migration": "0003_remote_command_id.sql"
+}

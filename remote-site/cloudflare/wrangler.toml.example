@@ -1,0 +1,22 @@
+name = "agent-room-remote"
+main = "worker.mjs"
+compatibility_date = "2026-01-01"
+
+[[rules]]
+type = "Text"
+globs = ["**/*.html"]
+fallthrough = true
+
+# 1) Create D1 database:
+#    npx wrangler d1 create agent-room-db
+# 2) Copy database_id below and rename this file to wrangler.toml.
+[[d1_databases]]
+binding = "DB"
+database_name = "agent-room-db"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+
+# Required secrets (set via `npx wrangler secret put <NAME>`):
+#   REMOTE_DEVICE_KEY       (32+ random chars; same key used in PC Agent Room remote settings)
+#   REMOTE_ACCESS_PASSWORD  (16+ chars; owner login password for browser access)
+# Optional:
+#   REMOTE_OWNER_ID         (defaults to "owner")

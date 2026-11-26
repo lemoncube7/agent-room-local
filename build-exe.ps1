@@ -97,7 +97,9 @@ if (-not (Test-Path -LiteralPath $csc -PathType Leaf)) {
     throw '.NET Framework csc.exe not found.'
 }
 
-& $csc /nologo /target:winexe /optimize+ "/win32icon:$icoPath" "/out:$exePath" $csPath
+$sdkDir = Join-Path $PSScriptRoot 'webview2'
+$refs = @('System.Windows.Forms.dll', 'System.Drawing.dll', (Join-Path $sdkDir 'Microsoft.Web.WebView2.Core.dll'), (Join-Path $sdkDir 'Microsoft.Web.WebView2.WinForms.dll')) | ForEach-Object { "/reference:$_" }
+& $csc /nologo /target:winexe /platform:x64 /optimize+ "/win32icon:$icoPath" "/out:$exePath" @refs $csPath
 if ($LASTEXITCODE -ne 0) { throw "csc.exe failed with exit code $LASTEXITCODE" }
 Write-Output "Built: $exePath ($((Get-Item -LiteralPath $exePath).Length) bytes)"
 
