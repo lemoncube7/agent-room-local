@@ -97,16 +97,18 @@ function Start-AgentRoom([string]$projectDir, [bool]$skipSetupIfConfigured = $fa
 
     $hubPath = Join-Path $PSScriptRoot 'hub.cjs'
     $running = Get-RoomHub
-    if ($running -and $running.version -ne $expectedVersion) {
+    if ($running) {
         $escapedHub = [regex]::Escape($hubPath)
         $matching = @(Get-CimInstance Win32_Process -Filter "Name='node.exe'" |
-            Where-Object CommandLine -Match ('\s+"' + $escapedHub + '"\s*\z'))
-        if ($matching.Count -ne 1) {
-            throw '이전 버전의 Agent Room 허브가 실행 중입니다. 기존 허브를 닫고 다시 열어 주세요.'
+            Where-Object CommandLine -Match ('(?:^|\s)"?' + $escapedHub + '"?(?:\s|$)'))
+        if (-not $matching.Count) {
+            throw '실행 중인 Agent Room 허브를 재시작하지 못했습니다. 기존 허브를 닫고 다시 열어 주세요.'
         }
-        $oldHub = Get-Process -Id $matching[0].ProcessId
-        if (-not $oldHub.HasExited) { $oldHub.Kill() }
-        if (-not $oldHub.WaitForExit(5000)) { throw '이전 버전의 Agent Room 허브가 종료되지 않았습니다.' }
+        foreach ($proc in $matching) {
+            $oldHub = Get-Process -Id $proc.ProcessId -ErrorAction SilentlyContinue
+            if ($oldHub -and -not $oldHub.HasExited) { $oldHub.Kill() }
+            if ($oldHub -and -not $oldHub.WaitForExit(5000)) { throw '기존 Agent Room 허브가 종료되지 않았습니다.' }
+        }
     }
     if (-not (Test-RoomHub)) {
         $hub = Start-Process -FilePath $node.Source -ArgumentList ('"' + $hubPath + '"') -WorkingDirectory $PSScriptRoot -WindowStyle Hidden -PassThru

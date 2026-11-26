@@ -57,7 +57,7 @@ try {
     Expand-Archive -LiteralPath $zip -DestinationPath $unpacked
     $payload = Join-Path $unpacked 'Agent-Room'
     if ((Get-Content -LiteralPath (Join-Path $payload 'VERSION') -Raw).Trim() -ne $Tag.Substring(1)) { throw '내려받은 릴리스 버전이 일치하지 않습니다.' }
-    $payloadFiles = @(Get-ChildItem -LiteralPath $payload -File | Select-Object -ExpandProperty Name)
+    $payloadFiles = @(Get-ChildItem -LiteralPath $payload -File | Select-Object -ExpandProperty Name | Where-Object { $_ -notin @('Agent Room.exe','agent-room.ico') })
     $files = @($files + $payloadFiles | Select-Object -Unique)
     foreach ($file in $files) {
         if (-not (Test-Path -LiteralPath (Join-Path $payload $file) -PathType Leaf)) { throw "업데이트 파일이 없습니다: $file" }
