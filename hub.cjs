@@ -180,7 +180,7 @@ async function coordinateTurn(plan,turn){
     if(error.cliCode==='usage_limit')cliCooldown.set(turn.member,recordQuotaLimit(agent.provider,agent.model,error));
     run("UPDATE coordination_turns SET state='blocked' WHERE seq=? AND member=? AND state='working'",plan.seq,turn.member);
     run("UPDATE deliveries SET state='coordination_blocked' WHERE seq=? AND member=? AND state='coordination_speaking'",plan.seq,turn.member);
-  }finally{cliBusy.delete(turn.member);}
+  }finally{cliBusy.delete(turn.member);applyPendingProjectSwitch(turn.member);}
 }
 function dispatchCoordination(){
   if(draining||updatePending)return;
@@ -190,7 +190,24 @@ function dispatchCoordination(){
   }
 }
 const usageCooldownMs=15*60*1000;
-const cliCooldown=new Map(), limitNotified=new Set(), judgeCooldown=new Map(), cliRepeatErrors=new Map();
+const cliCooldown=new Map(), limitNotified=new Set(), judgeCooldown=new Map(), cliRepeatErrors=new Map(), pendingProjectSwitch=new Map();
+function applyPendingProjectSwitch(memberId){
+  const next=pendingProjectSwitch.get(memberId);
+  if(!next||cliBusy.has(memberId))return;
+  pendingProjectSwitch.delete(memberId);
+  run('UPDATE cli_sessions SET project=? WHERE member=?',next,memberId);
+}
+function queueAgentProjectSwitch(roomId,newProject){
+  if(!newProject)return;
+  const rows=roomId
+    ?all("SELECT c.member,c.project FROM cli_sessions c JOIN members m ON m.id=c.member WHERE m.room=? AND m.state IN ('approved','starting','start_failed')",roomId)
+    :all("SELECT c.member,c.project FROM cli_sessions c JOIN members m ON m.id=c.member JOIN rooms r ON r.id=m.room WHERE COALESCE(r.project,'')='' AND m.state IN ('approved','starting','start_failed')");
+  for(const r of rows){
+    if(r.project===newProject){pendingProjectSwitch.delete(r.member);continue;}
+    if(cliBusy.has(r.member))pendingProjectSwitch.set(r.member,newProject);
+    else{pendingProjectSwitch.delete(r.member);run('UPDATE cli_sessions SET project=? WHERE member=?',newProject,r.member);}
+  }
+}
 async function planReplies(plan){
   rankingRooms.add(plan.room);
   try{
@@ -1123,6 +1140,7 @@ async function cliTurn(participant, prompt, inputSeq){
     }
   }finally{
     cliBusy.delete(participant);
+    applyPendingProjectSwitch(participant);
     if(inputSeq&&row)try{maybeWrapUp(row.room,inputSeq);}catch(error){console.error('Wrap-up check failed:',error.message);}
     liveTurns.delete(participant);
     liveProgress.delete(participant);
@@ -1840,9 +1858,11 @@ const server=http.createServer(async(req,res)=>{
         let resolved='';
         if(roomOnly&&!String(args.project||'').trim()){
           run("UPDATE rooms SET project='' WHERE id=?",args.room);
+          queueAgentProjectSwitch(args.room,readActiveProject());
         }else{
           resolved=roomOnly?validateProjectDir(args.project):saveProjectSelection(args.project);
           if(roomOnly){recordRecentProject(resolved);run('UPDATE rooms SET project=? WHERE id=?',resolved,args.room);}
+          queueAgentProjectSwitch(roomOnly?args.room:null,resolved);
         }
         if(resolved&&args.applyMcp===true&&process.platform==='win32'){
           const powershell=path.join(process.env.SystemRoot||'C:/Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
