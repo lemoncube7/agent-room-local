@@ -79,7 +79,9 @@ function formatLimitsContext(localDir, limits = readLimits(localDir)) {
     }
     if (Object.keys(wins).length) out[provider] = wins;
   }
-  return Object.keys(out).length ? ' Quota limits: ' + JSON.stringify(out) + '.' : '';
+  if (!Object.keys(out).length) return '';
+  const text = Object.entries(out).map(([provider, wins]) => provider + ' ' + Object.entries(wins).map(([k, w]) => k + ' ' + w.remaining + (w.resets ? ' (' + w.resets + ')' : '')).join(', ')).join(' | ');
+  return ' Quota remaining: ' + text + '.';
 }
 
 module.exports = { readLimits, limitResetAt, agentQuotaSummary, formatLimitsContext };
