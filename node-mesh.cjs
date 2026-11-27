@@ -21,17 +21,19 @@ function loadNodePolicy() {
 }
 
 function canUserRunDev(userId, ownerId) {
-  if (!userId || !ownerId || userId === ownerId) return true;
+  if (!userId || !ownerId) return false;
+  if (userId === ownerId) return true;
   const policy = loadNodePolicy();
   return policy.mode === 'trustedUsers' && policy.trustedUsers.includes(userId);
 }
 
-async function syncFromHub({ hubUrl, nodeKey, room, nodeId, sinceSeq = 0 }) {
+async function syncFromHub({ hubUrl, nodeKey, room, nodeId, sinceSeq = 0, taskSince = 0 }) {
   const url = String(hubUrl || '').replace(/\/+$/, '') + '/api/node/sync';
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-agent-room-node-key': nodeKey || '' },
-    body: JSON.stringify({ room, nodeId, sinceSeq }),
+    redirect: 'error',signal: AbortSignal.timeout(8000),
+    body: JSON.stringify({ room, nodeId, sinceSeq, taskSince, publicHistory:true }),
   });
   if (!res.ok) throw new Error('Node sync HTTP ' + res.status);
   return res.json();
@@ -62,6 +64,7 @@ let meshState = {
   updatedAt: null,
 };
 let timer = null;
+let generation = 0;
 
 function loadIdentity() {
   try {
@@ -78,14 +81,17 @@ function loadIdentity() {
   return id;
 }
 
-async function postRendezvous(site, deviceKey, endpoint, body) {
+async function postRendezvous(site, deviceKey, endpoint, body, siteAccess) {
   const url = String(site || '').replace(/\/+$/, '') + '/api/room/rendezvous/' + endpoint;
   const res = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'x-agent-room-key': deviceKey,
+      ...(siteAccess ? {'OAI-Sites-Authorization': 'Bearer '+siteAccess} : {}),
     },
+    redirect: 'error',
+    signal: AbortSignal.timeout(8000),
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error('Rendezvous HTTP ' + res.status);
@@ -101,9 +107,10 @@ function startMesh(opts = {}) {
     ...meshState,
     enabled: true,
     nodeId: id.nodeId,
-    label: opts.label || id.label,
+    label: opts.label || id.label,room,
     lastError: null,
   };
+  const active = generation;
   let registered = false;
   const tick = async () => {
     try {
@@ -116,7 +123,9 @@ function startMesh(opts = {}) {
         canHost: Boolean(canHost && publicUrl),
         priority,
         electionMode,
-      });
+        report: await opts.report?.(meshState.hostNodeId),
+      }, opts.siteAccess);
+      if (active !== generation) return;
       registered = true;
       const prevRole = meshState.role;
       const prevEpoch = meshState.epoch;
@@ -131,22 +140,32 @@ function startMesh(opts = {}) {
         lastError: null,
         updatedAt: Date.now(),
       };
+      if(data.role==='node' && opts.mirror && data.hubUrl && (opts.trustedHubs||[]).includes(data.hubUrl)){
+        const origin=new URL(data.hubUrl);
+        if(origin.protocol!=='https:'||origin.origin!==data.hubUrl)throw Error('Trusted hub must be an HTTPS origin');
+        const source=data.hostNodeId;
+        const page=await syncFromHub({hubUrl:origin.origin,nodeKey:deviceKey,room,nodeId:id.nodeId,sinceSeq:opts.cursor(source),taskSince:opts.taskCursor(source)});
+        if(active===generation && page.room===room && page.mesh?.nodeId===source && page.mesh?.epoch===data.epoch && page.mesh?.role==='hub')opts.mirror(source,page.messages,page.tasks);
+      }
       if ((prevRole !== meshState.role || prevEpoch !== meshState.epoch) && typeof onRoleChange === 'function') {
         try { onRoleChange({ ...meshState }); } catch {}
       }
     } catch (err) {
-      meshState.lastError = err.message || String(err);
+      if (active === generation) meshState.lastError = err.message || String(err);
     }
   };
-  void tick();
-  timer = setInterval(tick, 10000);
+  let running=false;
+  const poll=async()=>{if(running)return;running=true;try{await tick();}finally{running=false;}};
+  void poll();
+  timer = setInterval(poll, 10000);
   timer.unref?.();
   return getMeshStatus();
 }
 
 function stopMesh() {
   if (timer) { clearInterval(timer); timer = null; }
-  meshState.enabled = false;
+  generation++;
+  Object.assign(meshState,{enabled:false,mode:'standalone',hostNodeId:null,hubUrl:null,epoch:0,nodes:[],lastError:null,updatedAt:null});
   meshState.role = 'standalone';
 }
 

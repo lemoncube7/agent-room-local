@@ -167,6 +167,19 @@ body:not(.agents-hidden){grid-template-columns:clamp(170px,18vw,230px) minmax(0,
 
 #history{overflow-anchor:none}
 #draft::placeholder{white-space:nowrap}
+
+@media(max-width:720px){
+ body{height:var(--phone-height,100dvh);overscroll-behavior:none}
+ #history{min-height:0;overscroll-behavior:contain}
+ #compose{flex:none;min-width:0;gap:4px!important}
+ #draft{flex:1 1 0;min-width:0;min-height:48px;font-size:16px}
+ #compose>button{flex:0 0 44px}
+}
+
+#reply-suggestions{display:flex;flex:none;gap:6px;overflow-x:auto;padding:4px 12px;scrollbar-width:thin}
+#reply-suggestions[hidden]{display:none}
+#reply-suggestions button{flex:none;white-space:nowrap;padding:5px 10px;border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--text);font-size:12px}
+#reply-suggestions button:hover{border-color:var(--accent)}
 </style>
 <aside>
  <button id="close-rooms" type="button">방 목록 닫기</button>
@@ -196,7 +209,7 @@ body:not(.agents-hidden){grid-template-columns:clamp(170px,18vw,230px) minmax(0,
  <div id="compose-wrap">
   <div id="remote-slash-menu" hidden aria-label="빠른 명령어"></div>
   <div id="remote-attach-list" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px"></div>
-  <form id="compose" autocomplete="off"><input id="remote-attach" type="file" multiple hidden><button id="remote-attach-btn" type="button" title="파일·이미지 첨부 (드래그·붙여넣기 가능)" style="flex:none;background:var(--raised);border:1px solid var(--line);color:var(--text)" aria-label="파일 첨부"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5l-8.4 8.4a5 5 0 0 1-7.1-7.1l9-9a3.5 3.5 0 0 1 5 5l-9 9a2 2 0 0 1-2.8-2.8l8.4-8.4"/></svg></button><textarea id="draft" rows="1" aria-label="메시지" placeholder="메시지 입력" title="/ 빠른 명령 · Shift+Enter 줄바꿈" maxlength="8000"></textarea><button type="submit" title="보내기" aria-label="보내기"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5m-6 6 6-6 6 6"/></svg></button></form>
+  <div id="reply-suggestions" role="group" aria-label="답변 추천" hidden></div><form id="compose" autocomplete="off"><input id="remote-attach" type="file" multiple hidden><button id="remote-attach-btn" type="button" title="파일·이미지 첨부 (드래그·붙여넣기 가능)" style="flex:none;background:var(--raised);border:1px solid var(--line);color:var(--text)" aria-label="파일 첨부"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5l-8.4 8.4a5 5 0 0 1-7.1-7.1l9-9a3.5 3.5 0 0 1 5 5l-9 9a2 2 0 0 1-2.8-2.8l8.4-8.4"/></svg></button><textarea id="draft" rows="1" aria-label="메시지" placeholder="메시지 입력" title="/ 빠른 명령 · Shift+Enter 줄바꿈" maxlength="8000"></textarea><button type="submit" title="보내기" aria-label="보내기"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5m-6 6 6-6 6 6"/></svg></button></form>
   <p id="status" role="status"></p>
  </div>
  <dialog id="remote-settings-dialog"><div class="rhelp-head"><h2>방 설정</h2><button id="remote-settings-close" type="button" aria-label="닫기">✕</button></div><div class="rset-body"><form id="remote-room-name-form"><label>방 이름<input name="name" required maxlength="70"></label><button type="submit">이름 저장</button></form><label id="mode-sel-wrap">응답 방식 (구조 모드)<select id="mode-sel" aria-label="구조 모드"><option value="broadcast">자유 · 동시 응답</option><option value="ranking">자동 · 순위 판정</option><option value="hierarchy">계층형 · 메인→하위</option></select></label><label id="main-sel-wrap" hidden>메인 에이전트<select id="main-sel" aria-label="메인 에이전트"></select></label></div><form id="direct-form"><h3>PC 직접 연결</h3><p>같은 네트워크에서는 PC에 직접 연결하고, 외부에서는 Site를 경유합니다.</p><label for="direct-url">PC에서 발급한 LAN 링크</label><input id="direct-url" type="password" autocomplete="off" spellcheck="false" required placeholder="접속 키가 포함된 링크 붙여넣기"><div class="actions"><button type="submit">링크 저장</button><button type="button" id="direct-remove">연결 해제</button></div><p id="direct-feedback" role="status"></p></form></dialog>
@@ -211,6 +224,7 @@ body:not(.agents-hidden){grid-template-columns:clamp(170px,18vw,230px) minmax(0,
 <section id="agent-panel" aria-label="에이전트 패널">
  <button id="close-agents" type="button">닫기</button>
  <h3>에이전트</h3>
+ <section id="desktop-status" hidden></section>
  <section id="activity" aria-label="에이전트 작업 현황"></section>
 </section>
 <script>
@@ -318,6 +332,31 @@ function renderRooms(rooms){
  }));
 }
 function renderPanel(){
+ const desktops=lastSnap?.desktops;
+ const panel=document.querySelector('#desktop-status');
+ panel.hidden=desktops?.room!==selected||!desktops?.nodes?.length;
+ if(!panel.hidden){
+  const cards=desktops.nodes.map(node=>{
+   const card=document.createElement('div');
+   const info=node.report;
+   card.append(el('strong',node.label+(node.node_id===desktops.host?' · 허브':'')));
+   if(node.last_seen)card.append(el('small','마지막 보고 '+new Date(node.last_seen).toLocaleTimeString('ko-KR')));
+   card.append(el('p',info?[info.platform,info.version,info.policy==='trustedUsers'?'허용 사용자 DEV':'소유자 DEV'].join(' · '):'실행 환경 보고 대기'));
+   if(info){
+    for(const p of info.repositories||[])card.append(el('p',p.name+' · '+(!p.exists?'폴더 없음':p.commit?p.commit.slice(0,10):'커밋 미확인')));
+    card.append(el('p','등록된 실행 환경: '+(info.agents.map(a=>[a.provider,a.model,a.permission_profile,({present:'CLI 확인',missing:'CLI 파일 없음'})[a.cli]||'CLI 경로 미확인'].filter(Boolean).join(' / ')).join(', ')||'없음')));
+    card.append(el('p','공유 대화 사본: '+(info.copies.map(c=>(desktops.nodes.find(n=>n.node_id===c.source)?.label||c.source)+' #'+c.seq+'까지').join(', ')||'확인된 사본 없음')));
+   }
+   return card;
+  });
+  const tasks=(desktops.tasks||[]).map(task=>{
+   const block=document.createElement('details');
+   const pc=desktops.nodes.find(n=>n.node_id===task.owner_node)?.label||task.owner_node||'미지정';
+   block.append(el('summary','#'+task.id+' '+task.title),el('p','담당 PC · '+pc+' / 개정 '+task.revision),el('p','다음 행동 · '+task.next));
+   return block;
+  });
+  panel.replaceChildren(el('h3','참여 PC'),...cards,...(tasks.length?[el('h3','진행 중인 작업'),...tasks]:[]),el('small','복제 범위: 공유 대화 본문. 첨부 파일·프로젝트 파일·CLI 세션은 각 PC에 보관됩니다.'));
+ }
  const roomObj=lastRooms.find(r=>r.id===selected);
  titleEl.textContent=roomObj?.name||'채팅방을 선택하세요';
  const ranking=lastSnap?.ranking?.find(r=>r.room===selected);
@@ -443,12 +482,14 @@ function renderPanel(){
   return box;
  }));
 }
-const netErrText='원격 서버에 연결하지 못했어요. 네트워크를 확인하거나 새로고침(로그인 확인)해 주세요.';
-const timeoutErrText='원격 서버 응답이 늦어지고 있어요. 다시 시도합니다.';
+const offlineErrText='내 기기(브라우저)의 인터넷 연결이 끊겼습니다. 네트워크를 확인해 주세요.';
+const netErrText='원격 서버(Site)에 연결하지 못했어요. 기기 네트워크나 Site 주소를 확인해 주세요.';
+const timeoutErrText='원격 서버(Site) 응답이 늦어지고 있습니다. (PC가 아니라 원격 서버/네트워크 지연)';
 function formatNetError(e){
+ if(typeof navigator!=='undefined'&&navigator.onLine===false)return offlineErrText;
  if(e?.name==='TimeoutError'||e?.name==='AbortError')return timeoutErrText;
  if(e instanceof TypeError)return netErrText;
- return e?.message||'연결 오류가 발생했어요.';
+ return e?.message||'원격 연결 오류가 발생했어요.';
 }
 const roomCachePrefix='agentRoomRemoteCache:';
 function readCachedEvents(roomId){
@@ -504,15 +545,20 @@ historyView.addEventListener('scroll',()=>{
  historyLimit+=historyPageSize;
  renderEventsView(events,busy,true);
 },{passive:true});
+function hideSavedDoneTag(text){
+ return String(text??'').replace(/^[ \t]*\[\[DONE\]\][ \t]*(?:\r?\n|$)[ \t]*(?:\r?\n[ \t]*)*/i,'');
+}
 function renderEventsView(events,busy,preserveScroll=false){
  if(historyRoom!==selected){historyRoom=selected;historyLimit=historyPageSize;}
  renderedHistory={events,busy};
+ const lastReply=events.at(-1);
+ renderReplySuggestions(selected&&lastReply&&agentCls(lastReply.name)!=='own'?lastReply.text:'');
  const visibleEvents=events.slice(-historyLimit);
  const hiddenCount=events.length-visibleEvents.length;
  const delMap=new Map();
  for(const d of lastSnap?.deliveries||[]){if(!delMap.has(d.seq))delMap.set(d.seq,[]);delMap.get(d.seq).push(d);}
  const delSig=visibleEvents.map(e=>(delMap.get(e.seq)||[]).map(d=>[d.member,d.state,d.priority]));
- const key=JSON.stringify([selected,hiddenCount,visibleEvents.map(e=>e.seq),delSig,busy.map(b=>[b.id,b.progress?.updatedAt,b.progress?.step])]);
+ const key=JSON.stringify([selected,hiddenCount,visibleEvents.map(e=>[e.seq,e.siteAcceptedAt]),lastSnap?.deliveryHistory,delSig,busy.map(b=>[b.id,b.progress?.updatedAt,b.progress?.step])]);
  if(key===cursor)return false;
  const nearBottom=historyView.scrollHeight-historyView.scrollTop-historyView.clientHeight<110||!cursor;
  cursor=key;
@@ -523,7 +569,18 @@ function renderEventsView(events,busy,preserveScroll=false){
   const nb=m?.provider==='agy'&&m?.model?(/claude|sonnet|opus|haiku/i.test(m.model)?'name-claude':/gpt|codex|o[134]/i.test(m.model)?'name-codex':''):'';
   if(cls)a.className=cls+(nb?' '+nb:'');
   if(!isOwn)a.append(el('strong',event.name));
-  a.append(renderMd(event.text));
+  a.append(renderMd(!isOwn&&m?hideSavedDoneTag(event.text):event.text));
+  if(event.commandId){
+   const history=document.createElement('details');
+   history.append(el('summary','전달 이력'));
+   const stamp=value=>new Date(value).toLocaleTimeString('ko-KR');
+   if(event.siteAcceptedAt)history.append(el('div',stamp(event.siteAcceptedAt)+' · Site 접수'));
+   history.append(el('div',stamp(event.created)+' · PC 대화에 저장'));
+   for(const step of lastSnap?.deliveryHistory||[]){
+    if(step.seq===event.seq)history.append(el('div',stamp(step.at)+' · '+step.name+' · '+(delStatus[step.state]||step.state)));
+   }
+   a.append(history);
+  }
   const dels=(delMap.get(event.seq)||[]).slice().sort((x,y)=>(x.priority??999)-(y.priority??999));
   let flowTxt='';
   if(dels.length){
@@ -598,9 +655,9 @@ async function refresh(){
   const direct=directResponses.has(r);
   const {events:delta,rooms,snapshot}=await r.json();
   if(turn!==request)return;
-  if(statusLine.textContent===netErrText||statusLine.textContent===timeoutErrText||statusLine.textContent==='원격 상태를 불러오지 못했어요. 잠시 후 다시 시도합니다.')statusLine.textContent='';
+  if(statusLine.textContent===offlineErrText||statusLine.textContent===netErrText||statusLine.textContent===timeoutErrText||statusLine.textContent==='원격 상태를 불러오지 못했어요. 잠시 후 다시 시도합니다.')statusLine.textContent='';
   const fresh=Number.isFinite(snapshot?.syncedAt)&&Date.now()-snapshot.syncedAt<75000; // relay heartbeats every 60s while a phone is on the direct path
-  conn.className=fresh?'pill':'pill err';conn.lastChild.textContent=fresh?'Site 경유 · PC 연결됨':snapshot?'Site 경유 · PC 동기화 대기':'Site 경유 · PC 상태 미확인';
+  conn.className=fresh?'pill':'pill err';conn.lastChild.textContent=fresh?'Site 경유 · PC 연결됨':snapshot?'Site 경유 · PC 오프라인/동기화 대기':'Site 경유 · PC 미연결';
   if(direct){conn.className='pill';conn.lastChild.textContent='PC 직접 연결';}
   lastRooms=rooms;lastSnap=snapshot||null;
   // Messages stored on the Site but never picked up by the PC are surfaced instead of waiting silently.
@@ -644,7 +701,13 @@ async function refresh(){
   renderEventsView(events,busy);
   if(busy.length||curApprovals.length||controlRequests.size||delta.length){idleStreak=0;nextDelay=2000;}
   else{idleStreak=Math.min(idleStreak+1,3);nextDelay=idleStreak>=3?10000:idleStreak>=2?8000:5000;}
- }catch(e){conn.className='pill err';conn.lastChild.textContent='연결 확인 필요';statusLine.textContent=formatNetError(e);nextDelay=5000;}
+ }catch(e){
+  conn.className='pill err';
+  const reason=(typeof navigator!=='undefined'&&navigator.onLine===false)?'내 기기 오프라인':/로그인|인증/.test(e?.message||'')?'Site 인증 필요':(e?.name==='TimeoutError'||e?.name==='AbortError')?'Site 응답 지연':'Site 연결 오류';
+  conn.lastChild.textContent=reason;
+  statusLine.textContent=formatNetError(e);
+  nextDelay=5000;
+ }
  finally{refreshInFlight--;schedulePoll(nextDelay);}
 }
 function showAgentPanel(open){
@@ -720,7 +783,7 @@ async function roomRequest(qs,options={}){
     return response;
    }
    // A definitive room or payload rejection applies on either transport.
-   if(response.status<500&&![401,403,408,429].includes(response.status))return response;
+   if(response.status<500&&![401,403,408,429].includes(response.status)&&!(response.status===404&&!response.headers.get('content-type')?.includes('application/json')))return response;
   }catch(error){
    if(signal.aborted)throw signal.reason;
   }
@@ -792,36 +855,83 @@ document.querySelector('#remote-settings-btn').onclick=()=>{
 remoteSettingsDialog.addEventListener('close',()=>{directInput.value='';});
 document.querySelector('#remote-settings-close')?.addEventListener('click',()=>remoteSettingsDialog?.close());
 document.querySelector('#fab-agents')?.addEventListener('click',()=>openMobilePane('agents'));
-let touchStartX=0,touchStartY=0,touchTracking=false;
-document.addEventListener('touchstart',e=>{
- if(!mobileView()||e.touches.length!==1)return;
- if(e.target instanceof Element&&e.target.closest('pre,table,input,textarea,select,dialog'))return;
- touchStartX=e.touches[0].clientX;touchStartY=e.touches[0].clientY;touchTracking=true;
-},{passive:true});
-document.addEventListener('touchcancel',()=>{touchTracking=false;},{passive:true});
-function closeSwipedPane(selector,direction){
- const panel=document.querySelector(selector);
- if(matchMedia('(prefers-reduced-motion: reduce)').matches||!panel?.animate){openMobilePane('chat');return;}
- if(panel.getAnimations().some(animation=>animation.id==='swipe-close'))return;
- const animation=panel.animate([{transform:'translateX(0)'},{transform:'translateX('+direction*100+'%)'}],{duration:180,easing:'ease-in'});
- animation.id='swipe-close';
- animation.onfinish=()=>openMobilePane('chat');
+// 1:1 interactive finger-tracking swipe with strict direction lock
+{
+ let sx=0,sy=0,st=0,lock=null,drag=null,panel=null,w=280,lastDx=0;
+ const scrim=document.querySelector('#panel-scrim');
+ const clearDrag=()=>{
+  if(panel){panel.style.transition='';panel.style.transform='';panel.style.animation='';}
+  if(scrim){scrim.style.transition='';scrim.style.opacity='';scrim.style.animation='';}
+  lock=null;drag=null;panel=null;lastDx=0;
+ };
+ document.addEventListener('touchstart',e=>{
+  if(!mobileView()||e.touches.length!==1)return;
+  if(e.target instanceof Element&&e.target.closest('pre,code,table,input,textarea,select,dialog,#reply-suggestions'))return;
+  sx=e.touches[0].clientX;sy=e.touches[0].clientY;st=Date.now();lock=null;drag=null;panel=null;lastDx=0;
+ },{passive:true});
+ document.addEventListener('touchmove',e=>{
+  if(!mobileView()||e.touches.length!==1||lock==='v')return;
+  const dx=e.touches[0].clientX-sx, dy=e.touches[0].clientY-sy;
+  if(!lock){
+   if(Math.hypot(dx,dy)<12)return;
+   if(Math.abs(dx)<=Math.abs(dy)*1.7){lock='v';return;}
+   lock='h';
+   const roomsOpen=document.body.classList.contains('rooms-open');
+   const agentsOpen=!document.body.classList.contains('agents-hidden');
+   if(dx>0){
+    if(agentsOpen){drag='close-agents';panel=document.querySelector('#agent-panel');}
+    else if(!roomsOpen){drag='open-rooms';openMobilePane('rooms');panel=document.querySelector('body>aside');}
+   }else{
+    if(roomsOpen){drag='close-rooms';panel=document.querySelector('body>aside');}
+    else if(!agentsOpen){drag='open-agents';openMobilePane('agents');panel=document.querySelector('#agent-panel');}
+   }
+   if(!drag||!panel){lock='v';return;}
+   w=Math.max(200,panel.getBoundingClientRect().width||280);
+   panel.style.transition='none';panel.style.animation='none';
+   if(scrim){scrim.style.transition='none';scrim.style.animation='none';}
+  }
+  if(!drag||!panel)return;
+  lastDx=dx;
+  if(drag==='open-rooms'){
+   const x=Math.min(0,Math.max(-w,-w+Math.max(0,dx)));
+   panel.style.transform='translateX('+x+'px)';
+   if(scrim)scrim.style.opacity=String(Math.max(0,Math.min(1,(x+w)/w)));
+  }else if(drag==='close-rooms'){
+   const x=Math.max(-w,Math.min(0,dx));
+   panel.style.transform='translateX('+x+'px)';
+   if(scrim)scrim.style.opacity=String(Math.max(0,Math.min(1,1+x/w)));
+  }else if(drag==='open-agents'){
+   const x=Math.max(0,Math.min(w,w+Math.min(0,dx)));
+   panel.style.transform='translateX('+x+'px)';
+   if(scrim)scrim.style.opacity=String(Math.max(0,Math.min(1,(w-x)/w)));
+  }else if(drag==='close-agents'){
+   const x=Math.min(w,Math.max(0,dx));
+   panel.style.transform='translateX('+x+'px)';
+   if(scrim)scrim.style.opacity=String(Math.max(0,Math.min(1,1-x/w)));
+  }
+ },{passive:true});
+ const finishDrag=()=>{
+  if(!drag||!panel){clearDrag();return;}
+  const vel=Math.abs(lastDx)/Math.max(1,Date.now()-st);
+  const ratio=Math.abs(lastDx)/w;
+  const commit=ratio>0.28||vel>0.45;
+  const p=panel,d=drag;
+  p.style.transition='transform 180ms cubic-bezier(.2,.75,.25,1)';
+  if(scrim)scrim.style.transition='opacity 180ms ease';
+  const keepOpen=(d==='open-rooms'||d==='open-agents')?commit:!commit;
+  if(d==='open-rooms'||d==='close-rooms'){
+   p.style.transform=keepOpen?'translateX(0)':'translateX(-100%)';
+   if(scrim)scrim.style.opacity=keepOpen?'1':'0';
+   setTimeout(()=>{if(!keepOpen)openMobilePane('chat');clearDrag();},185);
+  }else{
+   p.style.transform=keepOpen?'translateX(0)':'translateX(100%)';
+   if(scrim)scrim.style.opacity=keepOpen?'1':'0';
+   setTimeout(()=>{if(!keepOpen)openMobilePane('chat');clearDrag();},185);
+  }
+ };
+ document.addEventListener('touchend',finishDrag,{passive:true});
+ document.addEventListener('touchcancel',clearDrag,{passive:true});
 }
-document.addEventListener('touchend',e=>{
- if(!touchTracking||!mobileView()||!e.changedTouches.length)return;
- touchTracking=false;
- const dx=e.changedTouches[0].clientX-touchStartX, dy=e.changedTouches[0].clientY-touchStartY;
- if(Math.abs(dx)<55||Math.abs(dx)<Math.abs(dy)*1.4)return;
- const roomsOpen=document.body.classList.contains('rooms-open');
- const agentsOpen=!document.body.classList.contains('agents-hidden');
- if(dx>0){
-  if(agentsOpen)closeSwipedPane('#agent-panel',1);
-  else if(!roomsOpen)openMobilePane('rooms');
- }else{
-  if(roomsOpen)closeSwipedPane('body>aside',-1);
-  else if(!agentsOpen)openMobilePane('agents');
- }
-},{passive:true});
 const remoteSlashCommands=[
  {cmd:'/방목록',desc:'방 목록 열기',run:()=>{if(mobileView())openMobilePane('rooms');}},
  {cmd:'/에이전트',desc:'에이전트 패널 열기',run:()=>{if(mobileView())openMobilePane('agents');else showAgentPanel(true);}},
@@ -864,7 +974,15 @@ async function addRemoteFiles(files){
  }
  renderRemoteAttachments();
 }
-document.querySelector('#remote-attach-btn').onclick=()=>attachInput.click();
+document.querySelector('#remote-attach-btn').onclick=async()=>{
+ if(typeof window.showOpenFilePicker!=='function'){attachInput.click();return;}
+ try{
+  const handles=await window.showOpenFilePicker({multiple:true,startIn:'documents'});
+  await addRemoteFiles(await Promise.all(handles.map(handle=>handle.getFile())));
+ }catch(error){
+  if(error.name!=='AbortError')statusLine.textContent='파일 선택기를 열지 못했어요.';
+ }
+};
 attachInput.onchange=()=>{if(attachInput.files?.length)void addRemoteFiles([...attachInput.files]);attachInput.value='';};
 draft.onpaste=e=>{const files=[...(e.clipboardData?.files||[])];if(files.length){e.preventDefault();void addRemoteFiles(files);}};
 for(const zone of [form,historyView]){
@@ -906,7 +1024,37 @@ form.onsubmit=async event=>{
  }catch(e){statusLine.textContent=formatNetError(e);}
  finally{button.disabled=false;}
 };
-function fitDraft(){draft.style.height='auto';draft.style.height=Math.min(draft.scrollHeight+2,180)+'px';}
+let suggestedReplies=[];
+function chooseReplySuggestions(body){
+ const tail=String(body||'').replace(/\x60{3}[\s\S]*?\x60{3}/g,'').trim().slice(-650);
+ if(!tail)return [];
+ if(/원인|오류|실패|문제/.test(tail))return ['원인부터 확인해줘','고치는 방법을 알려줘'];
+ if(/방법|선택지|추천|비교|어느 쪽/.test(tail))return ['어떤 게 더 나아?','차이를 간단히 비교해줘'];
+ if(/확인|테스트|검증|적용|수정/.test(tail))return ['어떻게 확인했어?','남은 작업만 정리해줘'];
+ if(/[?？]|할까요|어떨까요/.test(tail))return ['다음 단계는 뭐야?','먼저 자세히 설명해줘'];
+ return ['핵심만 요약해줘','조금 더 설명해줘'];
+}
+function renderReplySuggestions(body){
+ const box=document.getElementById('reply-suggestions');
+ const composer=draft;
+ if(body!==undefined){
+  const next=chooseReplySuggestions(body);
+  if(JSON.stringify(next)!==JSON.stringify(suggestedReplies)){
+   suggestedReplies=next;
+   box.replaceChildren(...next.map(text=>{
+    const button=document.createElement('button');
+    button.type='button';button.textContent=text;
+    button.onclick=()=>{
+     if(composer.value.trim()||composer.disabled)return;
+     composer.value=text;fitDraft();composer.focus();
+    };
+    return button;
+   }));
+  }
+ }
+ box.hidden=!suggestedReplies.length||composer.disabled||Boolean(composer.value.trim());
+}
+function fitDraft(){draft.style.height='auto';draft.style.height=Math.min(draft.scrollHeight+2,180)+'px';renderReplySuggestions();}
 draft.oninput=fitDraft;
 draft.onkeydown=event=>{
  if(event.key!=='Enter'||event.shiftKey||event.isComposing||event.keyCode===229||matchMedia('(pointer:coarse)').matches)return;
@@ -943,4 +1091,19 @@ document.querySelector('#remote-theme-toggle')?.addEventListener('click',()=>{
  applyRemoteTheme(rThemes[(idx+1)%rThemes.length][0]);
 });
 void refresh();
+
+const phoneViewport=window.visualViewport;
+function syncPhoneHeight(){
+ if(phoneViewport&&phoneViewport.scale===1){
+  document.body.style.setProperty('--phone-height',Math.round(phoneViewport.height)+'px');
+  document.body.style.setProperty('--phone-top',Math.max(0,Math.round(phoneViewport.offsetTop))+'px');
+  if(mobileView()&&window.scrollY)window.scrollTo(0,0);
+ }else{
+  document.body.style.removeProperty('--phone-height');
+  document.body.style.removeProperty('--phone-top');
+ }
+}
+phoneViewport?.addEventListener('resize',syncPhoneHeight);
+phoneViewport?.addEventListener('scroll',syncPhoneHeight);
+syncPhoneHeight();
 </script></html>

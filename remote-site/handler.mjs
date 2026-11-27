@@ -30,28 +30,38 @@ async function ensureMeshTables(db){
   if(meshTablesReady)return;
   await db.prepare('CREATE TABLE IF NOT EXISTS room_nodes (room TEXT NOT NULL, node_id TEXT NOT NULL, label TEXT NOT NULL, public_url TEXT NOT NULL DEFAULT \'\', can_host INTEGER NOT NULL DEFAULT 0, priority INTEGER NOT NULL DEFAULT 0, last_seen INTEGER NOT NULL, PRIMARY KEY (room, node_id))').run();
   await db.prepare('CREATE TABLE IF NOT EXISTS room_hosts (room TEXT PRIMARY KEY, host_node_id TEXT, hub_url TEXT, epoch INTEGER NOT NULL DEFAULT 1, election_mode TEXT NOT NULL DEFAULT \'rule\', lease_expires_at INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL DEFAULT 0)').run();
+  await db.prepare('CREATE TABLE IF NOT EXISTS node_reports(room TEXT,node_id TEXT,data TEXT NOT NULL,PRIMARY KEY(room,node_id))').run();
   meshTablesReady=true;
 }
+const hostLeaseMs=25000;
 async function electHost(db,room,now,requestedMode){
   await ensureMeshTables(db);
   await db.prepare('DELETE FROM room_nodes WHERE room=? AND last_seen<?').bind(room,now-45000).run();
-  const nodes=(await db.prepare('SELECT node_id,label,public_url,can_host,priority,last_seen FROM room_nodes WHERE room=? ORDER BY priority DESC, node_id ASC').bind(room).all()).results||[];
-  const candidates=nodes.filter(n=>n.can_host&&n.public_url);
-  const current=await db.prepare('SELECT host_node_id,hub_url,epoch,election_mode,lease_expires_at FROM room_hosts WHERE room=?').bind(room).first();
+  const readHost=()=>db.prepare('SELECT host_node_id,hub_url,epoch,election_mode,lease_expires_at FROM room_hosts WHERE room=?').bind(room).first();
+  const current=await readHost();
+  const nodes=(await db.prepare('SELECT node_id,label,public_url,can_host,priority,last_seen FROM room_nodes WHERE room=? ORDER BY priority DESC,node_id ASC').bind(room).all()).results||[];
+  const reports=(await db.prepare('SELECT r.node_id,r.data FROM node_reports r JOIN room_nodes n ON n.room=r.room AND n.node_id=r.node_id WHERE r.room=?').bind(room).all()).results||[];
+  const byNode=new Map(reports.map(r=>[r.node_id,JSON.parse(r.data)]));
+  for(const n of nodes)n.report=byNode.get(n.node_id)||null;
+  const candidates=nodes.filter(node=>node.can_host&&node.public_url&&node.last_seen+hostLeaseMs>now);
   const mode=requestedMode==='random'?'random':requestedMode==='rule'?'rule':(current?.election_mode||'rule');
-  const currentAlive=current?.host_node_id&&current.lease_expires_at>now&&candidates.some(c=>c.node_id===current.host_node_id);
-  if(currentAlive){
-    return {mode:'hub',hostNodeId:current.host_node_id,hubUrl:current.hub_url,epoch:current.epoch,electionMode:mode,leaseExpiresAt:current.lease_expires_at,nodes};
+  const incumbent=candidates.find(node=>node.node_id===current?.host_node_id);
+  if(!(incumbent&&current.lease_expires_at>now)){
+    const next=mode==='random'?candidates[Math.floor(Math.random()*candidates.length)]:candidates[0];
+    if(!current||current.host_node_id||next){
+      // A concurrent election or heartbeat may have already renewed the lease.
+      await db.prepare(`INSERT INTO room_hosts(room,host_node_id,hub_url,epoch,election_mode,lease_expires_at,updated_at)
+        VALUES(?,?,?,?,?,?,?) ON CONFLICT(room) DO UPDATE SET
+        host_node_id=excluded.host_node_id,hub_url=excluded.hub_url,epoch=excluded.epoch,
+        election_mode=excluded.election_mode,lease_expires_at=excluded.lease_expires_at,updated_at=excluded.updated_at
+        WHERE room_hosts.epoch=? AND room_hosts.lease_expires_at=?`)
+        .bind(room,next?.node_id??null,next?.public_url??null,(current?.epoch??0)+1,mode,
+          next?next.last_seen+hostLeaseMs:0,now,current?.epoch??-1,current?.lease_expires_at??-1).run();
+    }
   }
-  const nextEpoch=(current?.epoch||0)+1;
-  if(!candidates.length){
-    await db.prepare('INSERT INTO room_hosts(room,host_node_id,hub_url,epoch,election_mode,lease_expires_at,updated_at) VALUES(?,NULL,NULL,?,?,0,?) ON CONFLICT(room) DO UPDATE SET host_node_id=NULL,hub_url=NULL,epoch=excluded.epoch,election_mode=excluded.election_mode,lease_expires_at=0,updated_at=excluded.updated_at').bind(room,nextEpoch,mode,now).run();
-    return {mode:'offline_queue',hostNodeId:null,hubUrl:null,epoch:nextEpoch,electionMode:mode,leaseExpiresAt:0,nodes};
-  }
-  const picked=mode==='random'?candidates[Math.floor(Math.random()*candidates.length)]:candidates[0];
-  const lease=now+25000;
-  await db.prepare('INSERT INTO room_hosts(room,host_node_id,hub_url,epoch,election_mode,lease_expires_at,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(room) DO UPDATE SET host_node_id=excluded.host_node_id,hub_url=excluded.hub_url,epoch=excluded.epoch,election_mode=excluded.election_mode,lease_expires_at=excluded.lease_expires_at,updated_at=excluded.updated_at').bind(room,picked.node_id,picked.public_url,nextEpoch,mode,lease,now).run();
-  return {mode:'hub',hostNodeId:picked.node_id,hubUrl:picked.public_url,epoch:nextEpoch,electionMode:mode,leaseExpiresAt:lease,nodes};
+  const elected=await readHost();
+  return {mode:elected.host_node_id?'hub':'offline_queue',hostNodeId:elected.host_node_id,hubUrl:elected.hub_url,
+    epoch:elected.epoch,electionMode:elected.election_mode,leaseExpiresAt:elected.lease_expires_at,nodes};
 }
 export async function handleRoom(request,env){
   const route=new URL(request.url).pathname;
@@ -69,7 +79,16 @@ export async function handleRoom(request,env){
     await ensureMeshTables(env.DB);
     await env.DB.prepare('INSERT INTO room_nodes(room,node_id,label,public_url,can_host,priority,last_seen) VALUES(?,?,?,?,?,?,?) ON CONFLICT(room,node_id) DO UPDATE SET label=excluded.label,public_url=excluded.public_url,can_host=excluded.can_host,priority=excluded.priority,last_seen=excluded.last_seen').bind(room,nodeId,label,publicUrl,canHost,priority,now).run();
     if(route==='/api/room/rendezvous/heartbeat'&&canHost){
-      await env.DB.prepare('UPDATE room_hosts SET lease_expires_at=?,hub_url=?,updated_at=? WHERE room=? AND host_node_id=?').bind(now+25000,publicUrl,now,room,nodeId).run();
+      await env.DB.prepare('UPDATE room_hosts SET lease_expires_at=?,hub_url=?,updated_at=? WHERE room=? AND host_node_id=?').bind(now+hostLeaseMs,publicUrl,now,room,nodeId).run();
+    }
+    if(payload.report && typeof payload.report==='object'){
+      const raw=payload.report;
+      const short=v=>typeof v==='string'?v.slice(0,80):'';
+      const report={platform:short(raw.platform),version:short(raw.version),policy:short(raw.policy),
+        repositories:(Array.isArray(raw.repositories)?raw.repositories:[]).slice(0,8).map(p=>({name:short(p?.name),exists:p?.exists===true,commit:/^[0-9a-f]{40,64}$/.test(p?.commit)?p.commit:''})),
+        agents:(Array.isArray(raw.agents)?raw.agents:[]).slice(0,24).map(a=>({provider:short(a?.provider),model:short(a?.model),permission_profile:short(a?.permission_profile),cli:['present','missing'].includes(a?.cli)?a.cli:'unverified'})),
+        copies:(Array.isArray(raw.copies)?raw.copies:[]).filter(c=>c&&Number.isSafeInteger(c.seq)&&c.seq>0).slice(0,12).map(c=>({source:short(c.source),seq:c.seq}))};
+      await env.DB.prepare('INSERT INTO node_reports(room,node_id,data) VALUES(?,?,?) ON CONFLICT(room,node_id) DO UPDATE SET data=excluded.data').bind(room,nodeId,JSON.stringify(report)).run();
     }
     const res=await electHost(env.DB,room,now,payload.electionMode);
     return json({...res,role:res.hostNodeId===nodeId?'hub':'node'});
@@ -138,9 +157,9 @@ export async function handleRoom(request,env){
     let events=[];
     if(room){
       if(Number.isSafeInteger(since)&&since>0){
-        events=(await env.DB.prepare('SELECT seq,name,text,created,command_id AS commandId FROM remote_events WHERE room=? AND seq>? ORDER BY seq ASC LIMIT 100').bind(room,since).all()).results;
+        events=(await env.DB.prepare('SELECT seq,name,text,created,command_id AS commandId,(SELECT c.created FROM remote_commands c WHERE c.id=remote_events.command_id AND c.room=remote_events.room) AS siteAcceptedAt FROM remote_events WHERE room=? AND seq>? ORDER BY seq ASC LIMIT 100').bind(room,since).all()).results;
       }else{
-        events=(await env.DB.prepare('SELECT seq,name,text,created,command_id AS commandId FROM remote_events WHERE room=? ORDER BY seq DESC LIMIT 100').bind(room).all()).results.reverse();
+        events=(await env.DB.prepare('SELECT seq,name,text,created,command_id AS commandId,(SELECT c.created FROM remote_commands c WHERE c.id=remote_events.command_id AND c.room=remote_events.room) AS siteAcceptedAt FROM remote_events WHERE room=? ORDER BY seq DESC LIMIT 100').bind(room).all()).results.reverse();
       }
     }
     let snapshot=null;

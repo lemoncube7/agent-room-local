@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.0.27
+- **로컬 캐시 & 연결 상태 진단 (`index.html`, `remote-site/page.html`):**
+  - 브라우저 `localStorage` 캐시(`agentRoomSnapCache`, `agentRoomSelected`)를 추가해 페이지 접속·새로고침 시 마지막 방과 최근 60개 메시지를 즉시 표시한 뒤 백그라운드로 동기화합니다.
+  - 연결이 끊겼을 때 내 기기 오프라인 / PC 허브·터널 끊김 / 백업 원격 호스팅 실패 / 인증 만료를 구분해 표시합니다.
+- **모바일 UX & 완료 태그 수정 (`index.html`, `remote-site/page.html`, `hub.cjs`):**
+  - 모바일 서랍 스와이프 제스처(손가락 이동 연동 · 세로 스크롤과 구분)를 추가하고 입력창이 키보드·스크롤과 겹치지 않도록 개선했습니다. 첨부 시 파일 선택기를 우선 열도록 보완했습니다.
+  - 답변 첫 줄이나 마지막 줄에 단독으로 쓴 `[[DONE]]`/`[[CONTINUE]]`/`[[WAIT]]` 완료 태그를 모두 처리하고 채팅 본문·화면에서 숨기도록 수정했습니다.
+- **단일 활성 에이전트 & 릴리스 안정성 (`hub.cjs`, `updater.cjs`, `README.md`):**
+  - 방에 활성화된 에이전트가 1명뿐일 때 `priority = 0`으로 빠지지 않고 `priority = 1`로 전달되도록 수정했습니다.
+  - `updater.cjs`에서 ZIP과 `SHA256SUMS.txt`가 모두 올라온 릴리스만 자동 설치 후보로 고르도록 보강했습니다.
+  - `README.md`에서 제거된 `1순위로 깨우기` 안내를 정리하고 단일 PC 권장 테스트 범위를 명시했습니다.
+- **다중 PC 인계 기반 (`handoff.cjs`, `hub.cjs`, `db.cjs`, `node-mesh.cjs`, `remote-site/` — 개발 중):**
+  - 작업 인계 카드에 담당 PC 지정 및 다른 PC로의 읽기 전용 사본 동기화, 검증자 건너뛰기 수정, 비활성 담당자 인수 기록을 추가했습니다.
+  - *(미완성 · 주의)* 다중 PC 간 원격 에이전트 자동 실행, 동일 작업 실행권 락, 허브 승계 시 사본의 편집 가능 승격, 물리 PC 2대 E2E 테스트는 아직 미완성입니다.
+
 ## v1.0.26
 - **`/state` 경량화 (`hub.cjs`, `index.html`):** 기본 `/state` 요청에 `limit` · `logs=0`을 적용해 최근 메시지와 해당 `deliveries` · `replyPlans`만 내려보내고, 위로 스크롤할 때만 과거 메시지를 추가 로드(`hasMoreMessages`)합니다. 권한 승인 로그는 창을 열 때 `GET /approval-logs`로 지연 조회합니다.
 - **WebSocket(`/ws`) 실시간 푸시 (`hub.cjs`, `index.html`):** Node 기본 `node:crypto`로 경량 WebSocket(`/ws`)을 추가해 상태 변경 시 즉시 푸시하며, 연결 불가 시 기존 SSE(`/events`)로 자동 폴백합니다.

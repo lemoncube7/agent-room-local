@@ -62,7 +62,10 @@ async function checkUpdate(version) {
     };
   }
   const releases = (await response.json()).filter(item => !item.draft && /^v\d+\.\d+\.\d+$/.test(item.tag_name));
-  const latest = releases.reduce((best, item) => !best || newer(item.tag_name.slice(1), best.tag_name.slice(1)) ? item : best, null);
+  const completeReleases = releases.filter(item => Array.isArray(item.assets) &&
+    item.assets.some(asset => asset.name === 'Agent-Room-' + item.tag_name + '-Windows.zip') &&
+    item.assets.some(asset => asset.name === 'SHA256SUMS.txt'));
+  const latest = completeReleases.reduce((best, item) => !best || newer(item.tag_name.slice(1), best.tag_name.slice(1)) ? item : best, null);
   const available = Boolean(latest && newer(latest.tag_name.slice(1), version));
   const tag = latest?.tag_name;
   const zip = latest?.assets.find(asset => asset.name === 'Agent-Room-' + tag + '-Windows.zip');

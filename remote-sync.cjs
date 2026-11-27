@@ -79,6 +79,8 @@ async function main(){
         members:(state.members||[]).filter(m=>allowed.has(m.room)&&m.state!=='disconnected').map(({id,room,name,state:st,provider,model,paused,busy,progress,conflict,cliError,effort,role})=>({id,room,name,state:st,provider,model,paused,busy,progress,conflict,cliError,effort,role})),
         approvals:(state.approvals||[]).filter(a=>allowed.has(a.room)).map(({id,room,name,tool,input,created})=>({id,room,name,tool,input:String(input||'').slice(0,800),created})),
         deliveries,
+        deliveryHistory:(state.deliveryHistory||[]).filter(h=>state.messages.some(m=>m.seq===h.seq&&allowed.has(m.room)&&!m.recipient&&!m.retracted&&m.seq>selection.find(x=>x.room===m.room).since)),
+        desktops:state.mesh?.enabled&&allowed.has(state.mesh.room)?{room:state.mesh.room,host:state.mesh.hostNodeId,tasks:(state.tasks||[]).filter(t=>t.room===state.mesh.room&&t.status!=='done').slice(0,40).map(({id,title,next,owner_node,status,revision})=>({id,title,next,owner_node,status,revision})),nodes:state.mesh.nodes.map(({node_id,label,last_seen,report})=>({node_id,label,last_seen,report}))}:null,
         limits:state.limits||{},
         ranking:(state.ranking||[]).filter(r=>allowed.has(r.room)).map(({room,enabled,mode,main_member})=>({room,enabled,mode,main_member})),
         controlResults:[...controlResults.values()].filter(item=>item.room===null||allowed.has(item.room))

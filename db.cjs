@@ -123,6 +123,15 @@ function initDb(rootDir) {
   const selectedRemoteRooms = () => all('SELECT room,since FROM remote_rooms');
   const remoteConfigured = () => Boolean(one('SELECT enabled FROM remote_options'));
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS delivery_history(id INTEGER PRIMARY KEY,seq INTEGER NOT NULL,member TEXT NOT NULL,state TEXT NOT NULL,at TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS delivery_history_seq ON delivery_history(seq,id);
+    CREATE TRIGGER IF NOT EXISTS delivery_history_insert AFTER INSERT ON deliveries BEGIN
+      INSERT INTO delivery_history(seq,member,state,at) VALUES(NEW.seq,NEW.member,NEW.state,strftime('%Y-%m-%dT%H:%M:%fZ','now')); END;
+    CREATE TRIGGER IF NOT EXISTS delivery_history_update AFTER UPDATE OF state ON deliveries WHEN OLD.state<>NEW.state BEGIN
+      INSERT INTO delivery_history(seq,member,state,at) VALUES(NEW.seq,NEW.member,NEW.state,strftime('%Y-%m-%dT%H:%M:%fZ','now')); END;
+    CREATE TABLE IF NOT EXISTS mesh_message_copy(room TEXT,source TEXT,seq INTEGER,author TEXT,body TEXT,created TEXT,PRIMARY KEY(room,source,seq));
+  `);
   return {
     db, all, one, run,
     local, outbox, spool, uploads, updateLog,

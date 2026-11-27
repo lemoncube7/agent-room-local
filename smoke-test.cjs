@@ -309,11 +309,18 @@ async function main(){
   };
   const {code}=await rpc('/control',{action:'room_code',room:room2.id});
   assert.equal((await joinAgain(21,code)).isError,true);
+  const verifiedTask=(await rpc('/tool',{action:'handoff_create',room:room.id,participant:pending.id,verifier:managed.id,title:'Verification gate',next:'Verify'})).task;
+  const finish=(t,p)=>({action:'handoff_complete',room:room.id,id:t.id,revision:t.revision,participant:p});
+  const waiting=(await rpc('/tool',finish(verifiedTask,pending.id))).task;
+  assert.equal(waiting.status,'verifying');
+  assert.equal((await post('/tool',finish(waiting,pending.id))).status,400);
+  assert.equal((await rpc('/tool',finish(waiting,managed.id))).task.status,'done');
   const orphan=(await rpc('/tool',{action:'handoff_create',room:room.id,participant:pending.id,title:'Orphan check',next:'Keep going'})).task;
   assert.equal((await post('/tool',{action:'handoff_update',room:room.id,participant:managed.id,id:orphan.id,revision:orphan.revision,note:'blocked while owner is active'})).status,400);
   await rpc('/control',{action:'disconnect',participant:pending.id});
   const takeover=(await rpc('/tool',{action:'handoff_update',room:room.id,participant:managed.id,id:orphan.id,revision:orphan.revision,note:'took over'})).task;
   assert.equal(takeover.revision,orphan.revision+1);
+  assert.equal(takeover.owner,managed.id);
   assert.ok((await rpc('/control',{action:'handoff_history',room:room.id,id:orphan.id})).events[0].note.startsWith('[inactive owner override]'));
   const tagFailTask=(await rpc('/tool',{action:'handoff_create',room:room.id,participant:managedClaude.id,title:'Tag fail',next:'x'})).task;
   await rpc('/control',{action:'user_message',room:room.id,text:'Tag [[HANDOFF_COMPLETE:'+tagFailTask.id+']]'});
