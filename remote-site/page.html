@@ -220,6 +220,7 @@ const modeSel=document.querySelector('#mode-sel'),mainSel=document.querySelector
 let cursor='',pending,selected='',request=0,lastSnap=null,lastRooms=[],showAct=!matchMedia('(max-width:850px)').matches;
 let refreshInFlight=0;
 const controlRequests=new Map();
+const sentWatch=new Map(); // message id → {at,text} until the PC's reply event (commandId) shows up
 function el(tag,text){const e=document.createElement(tag);e.textContent=text;return e;}
 function agentCls(name,provider){
  if(name==='나')return 'own';
@@ -581,10 +582,14 @@ async function refresh(){
   const {events:delta,rooms,snapshot}=await r.json();
   if(turn!==request)return;
   if(statusLine.textContent===netErrText||statusLine.textContent===timeoutErrText||statusLine.textContent==='원격 상태를 불러오지 못했어요. 잠시 후 다시 시도합니다.')statusLine.textContent='';
-  const fresh=Number.isFinite(snapshot?.syncedAt)&&Date.now()-snapshot.syncedAt<20000;
+  const fresh=Number.isFinite(snapshot?.syncedAt)&&Date.now()-snapshot.syncedAt<75000; // relay heartbeats every 60s while a phone is on the direct path
   conn.className=fresh?'pill':'pill err';conn.lastChild.textContent=fresh?'Site 경유 · PC 연결됨':snapshot?'Site 경유 · PC 동기화 대기':'Site 경유 · PC 상태 미확인';
   if(direct){conn.className='pill';conn.lastChild.textContent='PC 직접 연결';}
   lastRooms=rooms;lastSnap=snapshot||null;
+  // Messages stored on the Site but never picked up by the PC are surfaced instead of waiting silently.
+  for(const e of delta||[])if(e.commandId)sentWatch.delete(e.commandId);
+  for(const result of lastSnap?.controlResults||[])if(result.kind==='message'&&sentWatch.delete(result.id))statusLine.textContent='⚠ '+result.error;
+  for(const [id,w] of sentWatch)if(fresh&&Date.now()-w.at>45000){sentWatch.delete(id);statusLine.textContent='⚠ PC가 연결돼 있는데도 "'+w.text+'…" 메시지를 45초째 받지 못했어요. PC의 원격 중계 상태를 확인해 주세요.';}
   for(const result of lastSnap?.controlResults||[]){
    if(controlRequests.delete(result.id))statusLine.textContent=result.ok==='scheduled'?'현재 답변이 끝나면 설정이 자동 적용됩니다.':result.ok?'PC에 반영됐어요.':'PC에서 요청을 처리하지 못했어요. 현재 상태를 확인해 주세요.';
   }
@@ -860,7 +865,13 @@ form.onsubmit=async event=>{
   const sent=pending;
   const body={id:sent.id,room:sent.room,text:sent.text,attachments:sent.attachments};
   const r=await roomRequest('',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  if(!r.ok)throw Error('전송하지 못했어요. 다시 시도해 주세요.');
+  if(!r.ok){
+   // Say WHY it failed instead of a generic "전송 실패".
+   let detail='';try{detail=(await r.clone().json()).error||'';}catch{}
+   const why={400:'메시지 형식이나 첨부를 받을 수 없어요',403:'로그인이 만료됐어요. 새로고침해서 다시 로그인해 주세요',404:'이 방이 원격에 공유돼 있지 않아요',409:'같은 요청 ID가 이미 다른 내용으로 쓰였어요',413:'첨부가 너무 커요'}[r.status]||'서버 오류';
+   throw Error('전송 실패 ('+r.status+'): '+why+(detail?' — '+detail:''));
+  }
+  if(!directResponses.has(r))sentWatch.set(sent.id,{at:Date.now(),text:sent.text.slice(0,24)});
   if(selected===sent.room){
    if(draft.value===sent.text){draft.value='';fitDraft();}
    remoteAttachments=remoteAttachments.filter(file=>!sent.attachments.includes(file));

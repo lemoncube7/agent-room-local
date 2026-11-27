@@ -82,8 +82,11 @@ async function main(){
       const syncKey=JSON.stringify({rooms,snapshot});
       const stateChanged=syncKey!==lastSyncKey;
       const anyBusy=snapshot.members.some(m=>m.busy)||snapshot.approvals.length>0;
-      const heartbeatDue=Date.now()-lastHeartbeat>=15000;
-      if(!stateChanged&&!messages.length&&!acknowledged.length&&!heartbeatDue){
+      // While the phone is talking to the PC directly (seen in the last 30s), the Site is only a backup:
+      // skip status-only uploads and send a heartbeat once a minute. New messages still go up immediately.
+      const directQuiet=Date.now()-(state.directSeenAt||0)<30000;
+      const heartbeatDue=Date.now()-lastHeartbeat>=(directQuiet?60000:15000);
+      if((!stateChanged||directQuiet)&&!messages.length&&!acknowledged.length&&!heartbeatDue){
         await wait(anyBusy?2000:5000);
         continue;
       }
@@ -126,7 +129,16 @@ async function main(){
         if(typeof command.text==='string'&&command.text.startsWith('{"__msg":true,')){
           try{const parsed=JSON.parse(command.text);msgText=String(parsed.text||'');attachments=Array.isArray(parsed.attachments)?parsed.attachments:[];}catch{}
         }
-        await request(hub.url+'/tool',post({Authorization:'Bearer '+hub.token},{action:'remote_user_message',room:command.room,request:command.id,text:msgText,attachments}));
+        try{
+          await request(hub.url+'/tool',post({Authorization:'Bearer '+hub.token},{action:'remote_user_message',room:command.room,request:command.id,text:msgText,attachments}));
+        }catch(error){
+          // A message the hub rejects (4xx) must not block every later message: report it and move on.
+          // Network/5xx errors still stop here so the same command is retried on the next cycle.
+          if(!(error.status>=400&&error.status<500))throw error;
+          controlResults.set(command.id,{id:command.id,room:command.room,ok:false,kind:'message',error:'PC가 이 메시지를 받지 못했어요 (HTTP '+error.status+')'});
+          if(controlResults.size>80)controlResults.delete(controlResults.keys().next().value);
+          console.error('Remote message rejected by hub: HTTP '+error.status);
+        }
         acknowledged.push(command.id);
       }
       try{const alive=path.join(localDir,'remote-alive.json');fs.writeFileSync(alive+'.tmp',JSON.stringify({pid:process.pid,site:site.origin,at:Date.now(),siteVersion:response.siteVersion}));fs.renameSync(alive+'.tmp',alive);}catch{}

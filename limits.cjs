@@ -71,9 +71,9 @@ function formatLimitsContext(localDir, limits = readLimits(localDir)) {
       const expired = Number.isFinite(ms) && ms <= Date.now();
       const rem = expired ? 100 : Math.max(0, Math.min(100, Math.round(100 - (Number(w.utilization) || 0) * 100)));
       const resets = expired
-        ? '초기화됨'
+        ? 'reset'
         : Number.isFinite(ms)
-          ? new Date(ms).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
+          ? 'in ' + (ms - Date.now() >= 86400000 ? Math.floor((ms - Date.now()) / 86400000) + 'd ' : '') + Math.floor(((ms - Date.now()) % 86400000) / 3600000) + 'h ' + Math.floor(((ms - Date.now()) % 3600000) / 60000) + 'm'
           : undefined;
       wins[k] = { remaining: rem + '%', ...(resets ? { resets } : {}) };
     }
