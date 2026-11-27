@@ -243,7 +243,7 @@ function renderRoomList(){
   button.append(label,badges);
   button.onclick=()=>{
    selected=room.id;
-   if(narrowView()){document.body.classList.add('rooms-collapsed');localStorage.setItem('agentRoomRoomsCollapsed','1');}
+   if(narrowView()){document.body.classList.add('rooms-collapsed');localStorage.setItem('agentRoomRoomsCollapsed','1');syncMobileScrim();}
    render();void refresh();
   };
   const more=el('button','⋯');more.type='button';more.className='room-more-btn';more.title='방 메뉴 (폴더 · 삭제)';more.setAttribute('aria-label',room.name+' 메뉴');
@@ -689,7 +689,7 @@ quickRoomForm.onsubmit=async event=>{
  event.preventDefault();
  quickRoomSubmit.disabled=true;
  if(await control({action:'prepare_room',source:quickRoomSource.value,name:quickRoomName.value.trim()})){
-  quickRoomDialog.close();if(narrowView())document.body.classList.add('rooms-collapsed');
+  quickRoomDialog.close();if(narrowView()){document.body.classList.add('rooms-collapsed');syncMobileScrim();}
  }else quickRoomError.textContent=byId('error').textContent;
  quickRoomSubmit.disabled=false;
 };
@@ -725,6 +725,7 @@ document.addEventListener('click',event=>{
  if(!byId('room-actions').contains(event.target))closeRoomMenu();
  if(!narrowView()||!(event.target instanceof Element)||event.target.closest('body>aside,#agent-panel,#rooms-toggle,#agents-toggle,#work-dock,.request-flow,dialog'))return;
  for(const [cls,key] of [['rooms-collapsed','agentRoomRoomsCollapsed'],['agents-collapsed','agentRoomAgentsCollapsed']])if(!document.body.classList.contains(cls)){document.body.classList.add(cls);localStorage.setItem(key,'1');}
+ syncMobileScrim();
 });
 document.addEventListener('keydown',event=>{if(event.key==='Escape')closeRoomMenu();});
 const agentItemMenu=el('div');agentItemMenu.id='agent-item-menu';agentItemMenu.hidden=true;
@@ -1347,13 +1348,18 @@ byId('messages').addEventListener('scroll',()=>{
  const view=byId('messages');
  if(!snapshot||view.scrollTop>120)return;
  const roomMsgs=snapshot.messages.filter(m=>m.room===selected);
- if(roomMsgs.length>chatLimit){chatLimit+=60;renderHistory(view,roomMsgs,false);}
+ if(roomMsgs.length>chatLimit||snapshot.hasMoreMessages){
+  chatLimit+=60;
+  if(snapshot.hasMoreMessages)void refresh();
+  else renderHistory(view,roomMsgs,false);
+ }
 },{passive:true});
 async function refresh(){
  if(refreshing)return;refreshing=true;
  const reqRoom=selected;
  try{
-  const target=reqRoom?'/state?room='+encodeURIComponent(reqRoom):'/state';
+  const limit=chatLimit+40;
+  const target=reqRoom?`/state?room=${encodeURIComponent(reqRoom)}&limit=${limit}&logs=0`:`/state?limit=${limit}&logs=0`;
   const res=await fetch(target,{signal:AbortSignal.timeout(canUseFallback()?3000:10000)});
   if(!res.ok)throw Error('로컬 허브 연결을 확인하세요.');
   const data=await res.json();
@@ -1593,8 +1599,11 @@ byId('open-handoff').onclick=()=>{
  handoffRoom=selected;handoffRenderKey=null;taskEdit();renderHandoff();byId('handoff-error').textContent='';byId('handoff-dialog').showModal();
 };
 byId('close-handoff').onclick=()=>byId('handoff-dialog').close();
-byId('open-approval-log').onclick=()=>{
- const logs=(snapshot?.approvalLogs||[]).filter(item=>!selected||item.room===selected);
+byId('open-approval-log').onclick=async()=>{
+ let logs=(snapshot?.approvalLogs||[]).filter(item=>!selected||item.room===selected);
+ if(!logs.length){
+  try{const r=await fetch('/approval-logs'+(selected?'?room='+encodeURIComponent(selected):''));if(r.ok){const d=await r.json();logs=d.approvalLogs||[];}}catch{}
+ }
  const labels={pending:'대기 중',allowed:'허용',allowed_always:'항상 허용',auto_allowed:'자동 허용',denied:'거부',expired:'만료'};
  byId('approval-log-list').replaceChildren(...(logs.length?logs.map(item=>{
   const card=el('article','');card.style.maxWidth='100%';
@@ -2116,9 +2125,9 @@ for(const b of byId('theme-seg')?.querySelectorAll('button')||[]){
 for(const b of byId('open-mode-seg')?.querySelectorAll('button')||[]){
  b.onclick=()=>void control({action:'set_open_mode',mode:b.dataset.mode});
 }
-let sseConnected=false,sseSource=null,lastPollAt=0;
+let sseConnected=false,sseSource=null,wsSocket=null,wsConnected=false,lastPollAt=0;
 function connectEvents(){
- if(typeof EventSource!=='function'||sseSource)return;
+ if(typeof EventSource!=='function'||sseSource||wsConnected)return;
  try{
   const es=new EventSource('/events');
   sseSource=es;
@@ -2127,11 +2136,23 @@ function connectEvents(){
   es.onerror=()=>{sseConnected=false;};
  }catch{}
 }
-connectEvents();
+function connectWs(){
+ if(typeof WebSocket!=='function'||wsSocket)return;
+ try{
+  const ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws');
+  wsSocket=ws;
+  ws.onopen=()=>{wsConnected=true;sseConnected=true;if(sseSource){try{sseSource.close();}catch{} sseSource=null;}};
+  ws.onmessage=()=>{lastPollAt=Date.now();void refresh();};
+  ws.onclose=()=>{wsConnected=false;wsSocket=null;sseConnected=false;connectEvents();};
+  ws.onerror=()=>{wsConnected=false;};
+ }catch{connectEvents();}
+}
+connectWs();
 refresh();
 document.addEventListener('visibilitychange',()=>{
  if(!document.hidden){
-  if(!sseConnected){try{sseSource?.close();}catch{} sseSource=null;connectEvents();}
+  if(!wsConnected&&!wsSocket)connectWs();
+  else if(!sseConnected&&!wsConnected){try{sseSource?.close();}catch{} sseSource=null;connectEvents();}
   lastPollAt=Date.now();
   void refresh();
  }

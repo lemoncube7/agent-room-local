@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.26
+- **`/state` 경량화 (`hub.cjs`, `index.html`):** 기본 `/state` 요청에 `limit` · `logs=0`을 적용해 최근 메시지와 해당 `deliveries` · `replyPlans`만 내려보내고, 위로 스크롤할 때만 과거 메시지를 추가 로드(`hasMoreMessages`)합니다. 권한 승인 로그는 창을 열 때 `GET /approval-logs`로 지연 조회합니다.
+- **WebSocket(`/ws`) 실시간 푸시 (`hub.cjs`, `index.html`):** Node 기본 `node:crypto`로 경량 WebSocket(`/ws`)을 추가해 상태 변경 시 즉시 푸시하며, 연결 불가 시 기존 SSE(`/events`)로 자동 폴백합니다.
+- **모바일 방 전환 스크림 수정 (`index.html`):** 모바일에서 방을 선택하거나 바깥을 눌러 서랍을 닫을 때 어두운 배경막(`#panel-scrim`)이 남지 않도록 `syncMobileScrim()` 호출을 보완했습니다.
+
 ## v1.0.25
 - **모바일 전용 UI & 사용성 개선 (`hub.cjs`, `index.html`):**
   - 모바일 브라우저(`?view=mobile` / User-Agent 자동 감지)에서 전용 `mobile-ui` 레이아웃을 제공합니다(`⚙ 설정 → 화면 보기`에서 모바일/데스크톱 전환 가능).
