@@ -1,88 +1,43 @@
-# Agent Room 원격 연결 안내
+# Agent Room 원격 연결 안내 (직접 서버 · Cloudflare Workers + D1)
 
-## 원격 연결 작업을 맡은 GPT/Codex
+Agent Room은 **직접 서버 (PC 허브 · PWA)**와 **Cloudflare Workers + D1 원격 호스팅** 두 가지 원격 방식을 지원하며, **둘 다** 켜 두면 PC가 켜져 있을 때는 직접 서버(실시간 SSE), PC가 꺼지면 Cloudflare Workers로 자동 전환됩니다.
 
-사용자가 Agent Room 원격 연결을 요청하면 아래 절차를 실행한다.
+## 1. 직접 서버 (PC 허브 · PWA)
+- PC 앱 왼쪽 아래 **⚙ 설정 → 원격 연결**에서 **직접 서버** 또는 **둘 다**를 선택하고 저장합니다.
+- 허브가 `0.0.0.0:4317`로 열리며, 화면에 표시되는 접속 URL과 접속 키로 폰·외부 기기에서 바로 접속해 **홈 화면에 추가 / 앱 설치(PWA)**로 쓸 수 있습니다.
+- **외부에서 폰 앱 없이 HTTPS로 바로 접속하려면 (한도 없음):**
+  - **Tailscale Funnel:** PC에 Tailscale을 켜고 `tailscale funnel 4317` 실행 → 폰에 Tailscale 앱을 깔지 않아도 공인 HTTPS 주소(`https://내PC.tailXXXX.ts.net`)로 바로 접속 가능.
+  - **Cloudflare Tunnel:** `cloudflared tunnel --url http://127.0.0.1:4317` 실행 → 즉시 HTTPS 주소 생성(요청 수 한도 없음).
 
-1. 현재 설치 버전, 실행 중인 허브, 원격 중계 설정과 연결된 주소를 확인한다. Windows에서 허브를 조회할 때는 설치 폴더의 `local/hub.json`에 있는 URL과 Bearer 토큰을 로컬 요청에만 사용한다. `/state`의 `version`, `remoteSync`, `remoteRooms`만 확인하면 된다. 설정 파일 원문이나 토큰은 출력하지 않는다.
-2. 아래 **호스트 선택** 기준을 적용한다. 설치된 PC 버전과 호환되는 정식 GitHub 릴리스에서 원격 소스와 마이그레이션을 가져온다. 이미 연결된 원격 주소와 접근 설정, 기존 로컬 기록, 진행 중인 CLI 세션을 보존한다.
-3. PC 앱의 **원격 연결**에서 Site와 중계를 연결하고, 에이전트가 연결된 새 테스트 방 하나만 공유한다. 기존 방 전체 공유는 사용자가 요청한 경우에 설정한다. 키와 토큰은 채팅·로그·저장소에 출력하지 않는다.
-4. **Site → PC → 에이전트 → Site**를 실제로 검증한다. 완료 보고에는 접속 링크와 확인한 단계를 적는다. 사용자 계정 로그인, Sites 접근 또는 Windows PC 접근이 필요한 경우에는 이미 끝낸 단계와 사용자가 해야 할 동작을 구체적으로 알린다.
+## 2. Cloudflare Workers + D1 원격 호스팅 (PC 꺼짐 대비)
+PC가 꺼져 있을 때도 폰에서 이전 대화를 보고 메시지를 예약 전송하려면 개인 Cloudflare 무료 계정으로 Worker + D1을 배포합니다.
 
-### 호스트 선택
+1. Windows ZIP을 푼 폴더에서 PowerShell을 열고 아래 명령을 실행합니다:
+   ```powershell
+   cd "설치폴더\app\remote-site\cloudflare"
+   .\deploy.ps1
+   ```
+   - 처음 실행 시 Cloudflare 로그인, D1 데이터베이스(`agent-room-db`) 생성, `wrangler.toml` 생성, `REMOTE_DEVICE_KEY`·`REMOTE_ACCESS_PASSWORD` 시크릿 등록, D1 마이그레이션, Worker 배포까지 자동으로 진행됩니다. (자세한 내용은 `app\remote-site\cloudflare\README.md` 참고)
+2. PC 앱 **⚙ 설정 → 원격 연결**에서 **원격 호스팅** 또는 **둘 다**를 선택하고 아래 값을 입력합니다.
+   - **Cloudflare Worker 주소:** `https://agent-room-remote.<subdomain>.workers.dev`
+   - **REMOTE_DEVICE_KEY:** `deploy.ps1` 실행 시 출력된 64자리 장치 키
+   - **Cloudflare 접속 비밀번호:** `REMOTE_ACCESS_PASSWORD` (직접 서버 PWA에서 PC가 꺼졌을 때 자동 전환용)
+3. 저장 후 상태가 **실행 중**인지 확인하고, 공유할 방의 방 설정에서 **원격 공유 켜기**를 선택합니다. (또는 **모든 방 항상 공유** 체크)
 
-- **기존 호스트가 있으면 재사용한다.** 기존 주소와 연결된 프로젝트를 먼저 확인한다. 로그인 오류나 배포 권한 부족은 다른 호스트로 이전하라는 신호가 아니다.
-- **처음 연결하고 ChatGPT Sites 도구와 배포 권한이 있으면** 아래 ChatGPT Site 절차를 진행한다. ChatGPT 계정이나 Codex CLI가 있다는 사실만으로 Sites 배포 권한이 있다고 판단하지 않는다.
-- **Sites를 사용할 수 없고 사용자가 외부 호스팅을 원하면** [외부 호스팅 준비 기준](#외부-호스팅-준비-기준)을 따른다. 사용자 소유 계정에서 무료 플랜을 기준으로 준비한다. 유료 플랜이나 도메인이 필요하다면 결제가 생기기 전에 사용자에게 알린다.
-
-## 연결 흐름
-
-원격 사용자는 소유자 비공개 Site에서 메시지를 입력한다. Site는 해당 메시지를 대기열에 넣는다. Windows PC의 원격 연결 프로그램은 HTTPS로 그 대기열을 읽고 Agent Room의 한 방에 넣는다. Agent Room의 공개 메시지는 같은 연결을 통해 Site로 돌아온다. PC의 4317 포트는 로컬 전용이다.
-
-- PC의 원격 방 설정에서 공유할 방을 선택한다. 새로 선택한 방의 기존 기록과 지정 수신자가 있는 메시지는 보내지 않는다.
-- 사이트에는 채팅 본문과 표시 이름, 작성 시각만 전달한다. 프로젝트 파일·작업 폴더 경로·토큰은 업로드하지 않는다. 답변 본문 자체에 민감한 자료가 들어 있으면 해당 방을 원격으로 연결하지 않는다.
-- PC가 꺼졌거나 허브가 내려가면 Site의 새 메시지는 대기한다. 원격 연결을 켜 두면 허브가 다시 시작될 때 중계도 함께 시작한다.
-- 원격 Site 하나에는 PC 한 대만 연결한다. 같은 PC의 여러 방을 분리해 표시한다.
-
-## 1. Site 준비
-
-1. ChatGPT Sites에서 서버 동작을 지원하는 Vinext 시작 프로젝트를 **소유자 비공개**로 만든다. 공개 URL로 전환하지 않는다.
-2. `remote-site/page.jsx`를 `app/page.jsx`에 복사한다. `remote-site/route.js`와 `handler.mjs`를 둘 다 `app/api/room/[...route]/`에 복사한다.
-3. Sites의 D1 바인딩 이름을 `DB`로 선언한다. `remote-site/schema.sql`, `remote-site/0001_multiple_rooms.sql`, `remote-site/0002_remote_state.sql`, `remote-site/0003_remote_command_id.sql`의 테이블과 인덱스를 시작 프로젝트의 D1 마이그레이션에 반영한다. 시작 프로젝트에서 제공하는 Drizzle 마이그레이션 생성·검증 절차를 사용한다.
-4. Site의 비밀 설정에 무작위 32바이트 이상의 `REMOTE_DEVICE_KEY`를 등록한다. ChatGPT 로그인 상태로 비공개 Site의 `/api/room/whoami`에서 확인한 소유자 ID를 `REMOTE_OWNER_ID`에 등록한다. 비밀은 브라우저 코드나 Git에 넣지 않는다.
-5. 해당 비공개 Site가 Windows에서 호출을 받을 수 있도록 Sites의 서비스 액세스를 준비한다. `siwc_bypass_bearer_token`이 제공되면 대상 Site 호출에만 사용한다. 이 토큰은 브라우저 방문자 신원이 아니다. 제공 여부나 유효 기간을 추측하지 말고 실제 설정과 기기 호출로 확인한다.
-
-## 2. 홈 PC에 연결
-
-Agent Room을 열고 왼쪽 아래 **설정 → 원격 연결**에서 Site 주소, 장치 키, 필요한 경우 서비스 액세스 토큰을 입력한다. 이전 버전에서는 **원격 연결**이 왼쪽 아래에 바로 보인다. 원격 중계를 켜고 저장한 뒤 **실행 중**인지 확인한다. 새 테스트 방을 만들고 방 설정에서 **원격 공유 켜기**를 선택한다. 기존 공유 설정은 그대로 두고 실제 자료 대신 시험 문장을 보낸다.
-
-### 수동 중계 진단
-
-앱에서 관리하는 중계를 끈 상태에서만 Agent Room 설치 폴더에서 아래 명령으로 별도 중계를 시험한다. 실제 키나 토큰은 로컬 PowerShell의 보안 입력 프롬프트로 입력한다.
+## 3. 수동 중계 진단
+앱에서 관리하는 중계를 끈 상태에서 설치 폴더의 `app` 디렉터리에서 PowerShell로 직접 시험할 수 있습니다.
 
 ```powershell
-$site = Read-Host '비공개 Site 주소'
+$site = Read-Host 'Cloudflare Worker 주소'
 $room = Read-Host '테스트 방 이름 또는 ID'
-$key = Read-Host 'Site에 등록한 REMOTE_DEVICE_KEY' -AsSecureString
-$access = Read-Host 'Sites 서비스 액세스 토큰 (제공되지 않으면 Enter)' -AsSecureString
+$key = Read-Host 'Worker에 등록한 REMOTE_DEVICE_KEY' -AsSecureString
 try {
   $env:AGENT_ROOM_DEVICE_KEY = [pscredential]::new('agent-room', $key).GetNetworkCredential().Password
-  $env:AGENT_ROOM_SITE_ACCESS = [pscredential]::new('agent-room', $access).GetNetworkCredential().Password
   node .\remote-sync.cjs $site $room
 } finally {
-  Remove-Item Env:AGENT_ROOM_DEVICE_KEY,Env:AGENT_ROOM_SITE_ACCESS -ErrorAction SilentlyContinue
+  Remove-Item Env:AGENT_ROOM_DEVICE_KEY -ErrorAction SilentlyContinue
 }
 ```
 
-## 기존 Site 업데이트
-
-PC 앱의 **업데이트 확인**에서 PC와 연결된 원격 Site의 버전을 비교한다. **원격 Site 업데이트 안내**가 표시되면 해당 태그의 `remote-site/`와 `release.json`을 기준으로 진행한다. 이전 배포가 버전을 보고하지 않으면 화면에 `원격 Site 버전 미확인`이 표시된다.
-
-Sites 권한을 가진 GPT/Codex가 이 업데이트를 요청받으면 기존 Site의 프로젝트 ID, 접근 설정, D1과 시크릿을 유지한다. 태그가 제공하는 Site 소스와 미적용 마이그레이션으로 빌드하고 같은 Site에 비공개 배포한다. Windows ZIP의 무결성은 해당 릴리스의 `SHA256SUMS.txt`로 확인한다. 워커에서 보고하는 `siteVersion`은 배포하는 소스 버전과 일치해야 한다.
-
-배포 후 PC 중계가 새 버전을 보고하는지 확인하고 테스트 방에서 메시지 왕복을 확인한다. Site 배포는 해당 Site 계정의 권한으로 실행한다. PC의 장치 키는 중계 API 인증에 사용한다.
-
-### 업데이트 전용 에이전트
-
-배포 권한이 있는 세션에서 기존 Site 업데이트만 맡길 수 있다. 실행할 때 기존 Site URL과 프로젝트 ID, 대상 정식 릴리스 태그를 확인한다. 같은 태그를 이미 적용했거나 버전이 더 최신이면 종료한다. 현재 버전을 읽지 못하면 기존 배포 기록과 적용된 마이그레이션을 먼저 확인한다. 진행 중인 같은 배포가 있으면 그 결과를 이어서 확인한다.
-
-배포 성공은 Sites의 배포 상태로 확인하고, **PC 중계 버전 확인과 테스트 방 왕복 결과**는 따로 보고한다. 권한·로그인·한도 때문에 진행이 불가능하면 `업데이트 대기`와 막힌 단계를 보고한다. Agent Room에서 업데이트를 감지해 세션을 자동으로 여는 기능과, 무인 세션이 Sites 배포 권한을 갖는지는 아직 구현·검증되지 않았다.
-
-### 외부 호스팅 준비 기준
-
-현재 저장소에는 ChatGPT Sites 배포 경로가 포함되어 있다. 독립 Cloudflare Workers + D1 배포는 아래 조건을 충족하는 호스트 어댑터와 배포 설정이 필요하다.
-
-1. 브라우저 요청에는 호스트에서 검증한 사용자 신원으로 소유자 접근 제한을 적용한다. 클라이언트가 직접 제출한 `oai-authenticated-user-id`를 신원으로 사용하면 안 된다. PC 중계 API에는 브라우저 로그인과 별도로 HTTPS와 기존 장치 키 인증을 유지한다.
-2. 사용자 소유 D1에 저장소의 스키마와 미적용 마이그레이션을 순서대로 적용하고 `DB`에 연결한다. 현재 중계의 폴링·반복 쓰기에서 무료 한도를 넘기지 않는지 실제 사용량을 확인한다. Sites 서비스 토큰은 외부 주소에 전달하지 않는다.
-3. 자동 배포를 준비한다면 사용자 계정의 CI가 원본 저장소의 새 정식 릴리스를 확인하도록 구성한다. 사용자 포크에 대한 푸시 감지만으로는 원본의 새 릴리스가 전달되지 않는다. 배포 실패 시 이전 버전을 유지하거나 복구할 수 있는 절차를 둔다.
-4. 비인가 브라우저 요청과 잘못된 장치 키가 거절되는 것, 허용된 테스트 방의 메시지가 한 번만 왕복하는 것, 이후 릴리스가 선택한 자동 배포 경로를 통해 적용되는 것을 확인한다. 검증이 끝나기 전에는 실제 방을 공유하지 않는다.
-
-## 3. 실제 왕복 확인
-
-- 소유자 계정이 아닌 요청의 조회·전송이 거절되는지 확인한다.
-- 원격 Site에서 테스트 문장을 보내고 로컬 방에 한 번만 들어오는지 확인한다.
-- 에이전트의 답변이 원격 Site에 표시되는지 확인한다.
-- 테스트 허브를 잠깐 다시 시작한 뒤 원격 대기열의 문장이 중복 없이 들어오는지 확인한다.
-- 첫 연결 전에 있던 기록, 지정 수신자 메시지, 다른 방의 메시지가 Site 목록에 없는지 확인한다.
-
-`node remote-site/smoke-test.mjs`는 D1과 호환되는 테스트 어댑터로 요청 권한, 양방향 대기열, 중복 방지를 검사한다. 실제 Sites 배포와 서비스 액세스는 따로 검증해야 한다.
+## 4. 검증
+- `node remote-site/smoke-test.mjs`로 권한 검사, 양방향 대기열, 방 분리, 중복 방지를 로컬에서 검증할 수 있습니다.

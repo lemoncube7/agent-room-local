@@ -30,7 +30,7 @@ export async function handleRoom(request,env){
   const owner=request.headers.get('oai-authenticated-user-id');
   if(route==='/api/room/device'&&request.method==='POST'){
     if(!await sameSecret(request.headers.get('x-agent-room-key'),env.REMOTE_DEVICE_KEY))return json({error:'Unauthorized'},403);
-    let payload;try{payload=await readBody(request,1500000);}catch{return json({error:'Invalid payload'},400);}
+    let payload;try{payload=await readBody(request,25*1024*1024);}catch{return json({error:'Invalid payload'},400);}
     if(!Array.isArray(payload.rooms)||!payload.rooms.every(room=>isId(room?.id)&&isText(room.name,70))||
        !Array.isArray(payload.events)||payload.events.length>35||!Array.isArray(payload.acknowledged)||payload.acknowledged.length>20)return json({error:'Invalid batch'},400);
     const ids=new Set(payload.rooms.map(room=>room.id));
@@ -103,7 +103,7 @@ export async function handleRoom(request,env){
   // Only a Bearer token verified by the standalone Worker may skip the same-origin check.
   const hasBearer=env.BEARER_VERIFIED===true&&Boolean(request.headers.get('authorization')?.startsWith('Bearer '));
   if(request.method!=='POST'||(request.headers.get('origin')!==new URL(request.url).origin&&!hasBearer))return json({error:'Forbidden'},403);
-  let payload;try{payload=await readBody(request,1500000);}catch{return json({error:'Invalid payload'},400);}
+  let payload;try{payload=await readBody(request,25*1024*1024);}catch{return json({error:'Invalid payload'},400);}
   if(!isId(payload.id))return json({error:'Invalid message'},400);
   let storedText=payload.text, targetRoom=payload.room;
   if(payload.control){
@@ -124,11 +124,8 @@ export async function handleRoom(request,env){
     const rawAttachments=Array.isArray(payload.attachments)?payload.attachments:[];
     if(rawAttachments.length>5)return json({error:'Too many attachments'},400);
     const attachments=[];
-    let totalData=0;
     for(const item of rawAttachments){
       if(!isText(item?.name,120)||typeof item?.data!=='string'||!/^[A-Za-z0-9+/=]+$/.test(item.data))return json({error:'Invalid attachment'},400);
-      totalData+=item.data.length;
-      if(totalData>1200000)return json({error:'Attachments too large'},400);
       attachments.push({name:item.name.trim(),data:item.data});
     }
     const textVal=typeof payload.text==='string'?payload.text:'';

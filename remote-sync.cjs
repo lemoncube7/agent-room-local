@@ -71,9 +71,14 @@ async function main(){
       const allowed=new Set(selection.map(item=>item.room));
       const rooms=state.rooms.filter(room=>allowed.has(room.id)).map(({id,name})=>({id,name}));
       const floors=new Map(selection.map(x=>[x.room,Math.max(x.since,cursor[key(x.room)]||0)]));
+      const recentSeqs=new Set(state.messages.filter(m=>allowed.has(m.room)).slice(-40).map(m=>m.seq));
+      const deliveries=(state.deliveries||[])
+        .filter(d=>recentSeqs.has(d.seq)&&(d.priority>0||['queued','working','submitting','accepted','ranking','coordination_wait','coordination_speaking'].includes(d.state)))
+        .map(({seq,member,name,state:st,priority})=>({seq,member,name,state:st,priority}));
       const snapshot={
         members:(state.members||[]).filter(m=>allowed.has(m.room)&&m.state!=='disconnected').map(({id,room,name,state:st,provider,model,paused,busy,progress,conflict,cliError,effort,role})=>({id,room,name,state:st,provider,model,paused,busy,progress,conflict,cliError,effort,role})),
         approvals:(state.approvals||[]).filter(a=>allowed.has(a.room)).map(({id,room,name,tool,input,created})=>({id,room,name,tool,input:String(input||'').slice(0,800),created})),
+        deliveries,
         limits:state.limits||{},
         ranking:(state.ranking||[]).filter(r=>allowed.has(r.room)).map(({room,enabled,mode,main_member})=>({room,enabled,mode,main_member})),
         controlResults:[...controlResults.values()].filter(item=>item.room===null||allowed.has(item.room))

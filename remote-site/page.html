@@ -465,7 +465,7 @@ function mergeEvents(cached,fresh){
  for(const e of fresh)bySeq.set(e.seq,e);
  return [...bySeq.values()].sort((a,b)=>a.seq-b.seq).slice(-200);
 }
-let remoteNotify=false,seenApprovals=new Set(),seenMaxSeq=new Map(),pollTimer=null,idleStreak=0;
+let remoteNotify=false,seenApprovals=new Set(),approvalsInitialized=false,seenMaxSeq=new Map(),pollTimer=null,idleStreak=0;
 try{remoteNotify=localStorage.getItem('agentRoomRemoteNotify')==='1';}catch{}
 function syncRemoteNotifyBtn(){
  const btn=document.querySelector('#remote-notify-toggle');
@@ -509,10 +509,14 @@ function renderEventsView(events,busy,preserveScroll=false){
  renderedHistory={events,busy};
  const visibleEvents=events.slice(-historyLimit);
  const hiddenCount=events.length-visibleEvents.length;
- const key=JSON.stringify([selected,hiddenCount,visibleEvents.map(e=>e.seq),busy.map(b=>[b.id,b.progress?.updatedAt,b.progress?.step])]);
+ const delMap=new Map();
+ for(const d of lastSnap?.deliveries||[]){if(!delMap.has(d.seq))delMap.set(d.seq,[]);delMap.get(d.seq).push(d);}
+ const delSig=visibleEvents.map(e=>(delMap.get(e.seq)||[]).map(d=>[d.member,d.state,d.priority]));
+ const key=JSON.stringify([selected,hiddenCount,visibleEvents.map(e=>e.seq),delSig,busy.map(b=>[b.id,b.progress?.updatedAt,b.progress?.step])]);
  if(key===cursor)return false;
  const nearBottom=historyView.scrollHeight-historyView.scrollTop-historyView.clientHeight<110||!cursor;
  cursor=key;
+ const delStatus={queued:'대기 중',working:'작업 중',submitting:'전달 중',accepted:'전달 접수',answered:'답변 완료',ranking:'순위 판정 중',coordination_wait:'조율 대기',coordination_speaking:'조율 중',coordination_done:'조율 완료',no_reply:'응답 생략',failed:'전송 실패',uncertain:'응답 확인 중'};
  const nodes=visibleEvents.map(event=>{
   const a=document.createElement('article'),m=lastSnap?.members?.find(x=>x.room===selected&&x.name===event.name),cls=agentCls(event.name,m?.provider);
   const isOwn=cls==='own';
@@ -520,8 +524,20 @@ function renderEventsView(events,busy,preserveScroll=false){
   if(cls)a.className=cls+(nb?' '+nb:'');
   if(!isOwn)a.append(el('strong',event.name));
   a.append(renderMd(event.text));
-  if(event.created){
-   const t=el('small',new Date(event.created).toLocaleTimeString('ko-KR'));
+  const dels=(delMap.get(event.seq)||[]).slice().sort((x,y)=>(x.priority??999)-(y.priority??999));
+  let flowTxt='';
+  if(dels.length){
+   const stages=new Map();
+   for(const d of dels){
+    const p=d.priority==null?'':String(d.priority);
+    if(!stages.has(p))stages.set(p,[]);
+    stages.get(p).push(d.name+'('+(delStatus[d.state]||d.state)+')');
+   }
+   flowTxt=[...stages].map(([p,items])=>(p?p+'순위 · ':'')+items.join(', ')).join(' / ');
+  }
+  if(event.created||flowTxt){
+   const timePart=event.created?new Date(event.created).toLocaleTimeString('ko-KR'):'';
+   const t=el('small',[timePart,flowTxt].filter(Boolean).join(' · '));
    t.className='msg-time'+(isOwn?' own':'');
    a.append(t);
   }
@@ -606,14 +622,23 @@ async function refresh(){
    const maxSeq=events[events.length-1].seq;
    if(prevMax!==undefined&&maxSeq>prevMax){
     const incoming=events.filter(e=>e.seq>prevMax&&agentCls(e.name)!=='own');
-    if(incoming.length){const last=incoming[incoming.length-1];notifyRemote(last.name,last.text);}
+    const quotaEvents=incoming.filter(e=>String(e.text||'').startsWith('🔔'));
+    if(quotaEvents.length){const q=quotaEvents[quotaEvents.length-1];notifyRemote('Agent Room · 한도 복구',String(q.text||'').replace(/^🔔\s*/,''));}
+    const normal=incoming.filter(e=>!String(e.text||'').startsWith('🔔'));
+    if(normal.length){const last=normal[normal.length-1];notifyRemote(last.name,last.text);}
    }
    seenMaxSeq.set(selected,maxSeq);
   }
-  const curApprovals=(lastSnap?.approvals||[]).filter(a=>a.room===selected);
-  const newApp=curApprovals.find(a=>!seenApprovals.has(a.id));
-  if(newApp&&seenApprovals.size>0)notifyRemote(newApp.name+' · 허용 요청',newApp.tool);
-  seenApprovals=new Set(curApprovals.map(a=>a.id));
+  const allApprovals=lastSnap?.approvals||[];
+  const curApprovals=allApprovals.filter(a=>a.room===selected);
+  const newApps=allApprovals.filter(a=>!seenApprovals.has(a.id));
+  if(approvalsInitialized&&newApps.length){
+   const first=newApps[0];
+   const extra=newApps.length>1?' 외 '+(newApps.length-1)+'건':'';
+   notifyRemote(first.name+' · 허용 요청',first.tool+extra);
+  }
+  approvalsInitialized=true;
+  seenApprovals=new Set(allApprovals.map(a=>a.id));
   const busy=(lastSnap?.members||[]).filter(m=>m.room===selected&&m.busy);
   renderEventsView(events,busy);
   if(busy.length||curApprovals.length||controlRequests.size||delta.length){idleStreak=0;nextDelay=2000;}
@@ -830,13 +855,10 @@ function renderRemoteAttachments(){
 async function addRemoteFiles(files){
  for(const file of files){
   if(remoteAttachments.length>=5){statusLine.textContent='원격 첨부는 한 번에 최대 5개까지 가능합니다.';break;}
-  if(file.size>900*1024){statusLine.textContent=file.name+': 원격 첨부는 파일당 900KB 이하만 가능합니다.';continue;}
   const buf=await file.arrayBuffer();
   const bytes=new Uint8Array(buf);let bin='';
   for(let i=0;i<bytes.length;i++)bin+=String.fromCharCode(bytes[i]);
   const data=btoa(bin);
-  const total=remoteAttachments.reduce((s,a)=>s+a.data.length,0)+data.length;
-  if(total>1200000){statusLine.textContent='원격 첨부 전체 크기는 1.2MB(base64) 이하여야 합니다.';break;}
   remoteAttachments.push({name:file.name||'image.png',data});
  }
  renderRemoteAttachments();
