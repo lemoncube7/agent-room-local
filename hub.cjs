@@ -513,10 +513,24 @@ function remoteSyncState(){
   const port=server.address()?.port||Number(process.env.ROOM_PORT||4317);
   return {configured:Boolean(cfg.site&&cfg.deviceKey),remoteMode:mode,directEnabled:directOn,directActive:directActiveOnBoot,directNeedsRestart:directOn!==directActiveOnBoot,directUrls:directOn?listDirectUrls(port,cfg):[],site:cfg.site||external?.site||'',enabled:hostedModeEnabled(cfg),running:managed||Boolean(external),external:Boolean(external),hasAccessToken:Boolean(cfg.siteAccess),autoSiteUpdate:Boolean(cfg.autoSiteUpdate),siteUpdaterProvider:cfg.siteUpdaterProvider||'codex',siteUpdateJob,lastError:remoteLastError};
 }
+const sseClients=new Set();
+let sseTimer=null;
+function notifyStateChange(){
+  if(!sseClients.size||sseTimer)return;
+  sseTimer=setTimeout(()=>{
+    sseTimer=null;
+    for(const res of sseClients){
+      try{res.write('event: update\ndata: 1\n\n');}catch{sseClients.delete(res);}
+    }
+  },80);
+  sseTimer.unref?.();
+}
 function storeMessage(room,author,body,root=null,recipient=null){
   setImmediate(dispatchDesktop);
-  return Number(run('INSERT INTO messages(room,author,request,body,created,relay_root,recipient) VALUES(?,?,?,?,?,?,?)',
+  const id=Number(run('INSERT INTO messages(room,author,request,body,created,relay_root,recipient) VALUES(?,?,?,?,?,?,?)',
     room,author,randomUUID(),body,new Date().toISOString(),root,recipient).lastInsertRowid);
+  notifyStateChange();
+  return id;
 }
 function routeAgentReply(room,author,seq,recipient,called,root,wake){
   if(recipient){if(wake)queueForRoom(room,author,seq,recipient,root);return;}
@@ -1960,6 +1974,16 @@ const server=http.createServer(async(req,res)=>{
     }
     if(!browserAuthorized(req,isLocal))return res.writeHead(401,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}).end(lockedPage);
     return res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}).end(fs.readFileSync(path.join(__dirname,'index.html')));
+  }
+  if(req.method==='GET'&&parsedUrl.pathname==='/events'){
+    if(!readAuthorized(req,isLocal))return res.writeHead(401).end();
+    res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','Connection':'keep-alive'});
+    res.write(': connected\n\n');
+    sseClients.add(res);
+    const ping=setInterval(()=>{try{res.write(': ping\n\n');}catch{clearInterval(ping);sseClients.delete(res);}},25000);
+    ping.unref?.();
+    req.on('close',()=>{clearInterval(ping);sseClients.delete(res);});
+    return;
   }
   if(req.method==='GET'&&parsedUrl.pathname==='/state'){
     // Unauthenticated callers (launcher and updater health checks) only learn the version.
