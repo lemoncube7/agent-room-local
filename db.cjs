@@ -93,6 +93,7 @@ function initDb(rootDir) {
   if (!replyPlanColumns.has('round')) db.exec('ALTER TABLE reply_plans ADD COLUMN round INTEGER NOT NULL DEFAULT 1');
   if (!replyPlanColumns.has('max_rounds')) db.exec('ALTER TABLE reply_plans ADD COLUMN max_rounds INTEGER NOT NULL DEFAULT 3');
   if (!replyPlanColumns.has('judge_ms')) db.exec('ALTER TABLE reply_plans ADD COLUMN judge_ms INTEGER');
+  if (!replyPlanColumns.has('wrap_up')) db.exec('ALTER TABLE reply_plans ADD COLUMN wrap_up INTEGER NOT NULL DEFAULT 1');
   db.exec(`CREATE TABLE IF NOT EXISTS coordination_turns (
     seq INTEGER NOT NULL, member TEXT NOT NULL, position INTEGER NOT NULL,
     state TEXT NOT NULL, note TEXT, PRIMARY KEY(seq,member)

@@ -100,7 +100,8 @@ export async function handleRoom(request,env){
     }catch{}
     return json({rooms,events,snapshot});
   }
-  if(request.method!=='POST'||request.headers.get('origin')!==new URL(request.url).origin)return json({error:'Forbidden'},403);
+  const hasBearer=Boolean(request.headers.get('authorization')?.startsWith('Bearer '));
+  if(request.method!=='POST'||(request.headers.get('origin')!==new URL(request.url).origin&&!hasBearer))return json({error:'Forbidden'},403);
   let payload;try{payload=await readBody(request,1500000);}catch{return json({error:'Invalid payload'},400);}
   if(!isId(payload.id))return json({error:'Invalid message'},400);
   let storedText=payload.text, targetRoom=payload.room;

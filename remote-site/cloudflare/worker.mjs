@@ -35,7 +35,23 @@ async function isOwnerSignedIn(request,env){
   const expected=await expectedCookieValue(env);
   if(!expected)return false;
   const got=parseCookie(request.headers.get('cookie'),COOKIE_NAME);
-  return sameToken(got,expected);
+  if(await sameToken(got,expected))return true;
+  const auth=request.headers.get('authorization')||'';
+  if(auth.startsWith('Bearer ')){
+    const bearerHash=await sha256Hex(auth.slice(7).trim()+':agent-room-owner');
+    if(await sameToken(bearerHash,expected))return true;
+  }
+  return false;
+}
+function withCors(request,response){
+  const origin=request.headers.get('origin');
+  if(!origin)return response;
+  const headers=new Headers(response.headers);
+  headers.set('Access-Control-Allow-Origin',origin);
+  headers.set('Access-Control-Allow-Headers','Authorization, Content-Type');
+  headers.set('Access-Control-Allow-Methods','GET, POST, OPTIONS');
+  headers.set('Vary','Origin');
+  return new Response(response.body,{status:response.status,statusText:response.statusText,headers});
 }
 
 function loginPage(error=''){
@@ -88,11 +104,15 @@ export default {
     const signedIn=await isOwnerSignedIn(request,env);
 
     if(route.startsWith('/api/room/')){
+      if(request.method==='OPTIONS'){
+        return withCors(request,new Response(null,{status:204}));
+      }
       const headers=new Headers(request.headers);
       headers.delete('oai-authenticated-user-id');
       if(signedIn)headers.set('oai-authenticated-user-id',env.REMOTE_OWNER_ID||'owner');
       const proxied=new Request(request,{headers});
-      return handleRoom(proxied,env);
+      const res=await handleRoom(proxied,env);
+      return request.headers.get('authorization')?.startsWith('Bearer ')?withCors(request,res):res;
     }
 
     if(route==='/'||route==='/index.html'){
