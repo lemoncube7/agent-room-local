@@ -71,16 +71,20 @@ try {
     $exeSourceRoot = $payloadRoot
     $exeTargetDir = if ((Split-Path -Leaf $PSScriptRoot) -eq 'app') { Split-Path -Parent $PSScriptRoot } else { $PSScriptRoot }
     if ((Get-Content -LiteralPath (Join-Path $payload 'VERSION') -Raw).Trim() -ne $Tag.Substring(1)) { throw '내려받은 릴리스 버전이 일치하지 않습니다.' }
-    $payloadFiles = @(Get-ChildItem -LiteralPath $payload -File | Select-Object -ExpandProperty Name | Where-Object { $_ -notin @('Agent Room.exe','agent-room.ico') })
+    $payloadFiles = @(Get-ChildItem -LiteralPath $payload -Recurse -File | ForEach-Object { $_.FullName.Substring($payload.Length + 1).Replace('\','/') } | Where-Object { $_ -notin @('Agent Room.exe','agent-room.ico') -and -not $_.StartsWith('webview2/') -and -not $_.StartsWith('local/') })
     $files = @($files + $payloadFiles | Select-Object -Unique)
     foreach ($file in $files) {
         if (-not (Test-Path -LiteralPath (Join-Path $payload $file) -PathType Leaf)) { throw "업데이트 파일이 없습니다: $file" }
         $current = Join-Path $PSScriptRoot $file
-        if (Test-Path -LiteralPath $current) { Copy-Item -LiteralPath $current -Destination (Join-Path $backup $file) }
+        if (Test-Path -LiteralPath $current) {
+            $bakFile = Join-Path $backup $file
+            [void][IO.Directory]::CreateDirectory((Split-Path -Parent $bakFile))
+            Copy-Item -LiteralPath $current -Destination $bakFile
+        }
     }
     if ($hub -and -not $hub.HasExited) {
         $hubConfig = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'local/hub.json') -Raw | ConvertFrom-Json
-        if ($hubConfig.url -ne 'http://127.0.0.1:4317') { throw '예상하지 못한 Agent Room 주소입니다.' }
+        if ($hubConfig.url -notmatch '^http://127\.0\.0\.1:\d+$') { throw '예상하지 못한 Agent Room 주소입니다.' }
         Write-Output 'Agent Room 허브 종료를 기다리는 중...'
         $shutdownDeadline = (Get-Date).AddSeconds(330)
         $announced = $false
@@ -103,7 +107,9 @@ try {
     Write-Output '새 버전 파일을 설치하는 중...'
     foreach ($file in $files) {
         $applied.Add($file)
-        Copy-Item -LiteralPath (Join-Path $payload $file) -Destination (Join-Path $PSScriptRoot $file) -Force
+        $dest = Join-Path $PSScriptRoot $file
+        [void][IO.Directory]::CreateDirectory((Split-Path -Parent $dest))
+        Copy-Item -LiteralPath (Join-Path $payload $file) -Destination $dest -Force
     }
     # Launcher binaries may be locked by the open app window; Windows allows renaming a
     # running file, so move the old one aside and copy the new one in its place.
@@ -145,7 +151,10 @@ try {
             foreach ($file in $applied) {
                 $current = Join-Path $PSScriptRoot $file
                 $original = Join-Path $backup $file
-                if (Test-Path -LiteralPath $original) { Copy-Item -LiteralPath $original -Destination $current -Force }
+                if (Test-Path -LiteralPath $original) {
+                    [void][IO.Directory]::CreateDirectory((Split-Path -Parent $current))
+                    Copy-Item -LiteralPath $original -Destination $current -Force
+                }
                 elseif (Test-Path -LiteralPath $current) { Remove-Item -LiteralPath $current }
             }
             $oldHub = Start-RoomHub

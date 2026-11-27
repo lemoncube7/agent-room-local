@@ -3,7 +3,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
+const zlib = require('node:zlib');
 const {createHandoff}=require('./handoff.cjs');
+let getMeshStatus=()=>({enabled:false,role:'standalone',nodes:[]}), canUserRunDev=()=>true;
+try{({getMeshStatus,canUserRunDev}=require('./node-mesh.cjs'));}catch{}
 const {initDb,providerNames,normalizeEffort,normalizePermission}=require('./db.cjs');
 const {readLimits:readLimitsFrom,limitResetAt:limitResetAtFrom,agentQuotaSummary,formatLimitsContext:formatLimitsContextFrom}=require('./limits.cjs');
 const {updaterLaunchCommand:buildUpdaterLaunchCommand,checkUpdate:checkReleaseUpdate,readUpdateLog,checkSiteUpdate}=require('./updater.cjs');
@@ -1855,7 +1858,7 @@ function state(roomId=null){
   const editCounts=new Map();
   for(const m of members)if(m.editing){const k=m.room+':'+m.editing;editCounts.set(k,(editCounts.get(k)||0)+1);}
   for(const m of members){m.conflict=m.editing&&editCounts.get(m.room+':'+m.editing)>1?m.editing:null;delete m.editing;}
-  return {version,uiStamp:readUiStamp(),openMode:readLauncherMode(),project:readActiveProject(),recentProjects:readRecentProjects(),approvals:[...approvals.values()].filter(item=>item.state==='pending').map(({id,room,name,tool,input,rule,created})=>({id,room,name,tool,input,rule,created})),approvalRules:all('SELECT member,rule FROM approval_rules'),approvalLogs:scoped?all('SELECT * FROM approval_logs WHERE room=? ORDER BY created DESC LIMIT 100',scoped):all('SELECT * FROM approval_logs ORDER BY created DESC LIMIT 100'),limits:readLimits(),ranking:all('SELECT room,enabled,mode,main_member,judge_provider,judge_model,judge_effort,judge_prompt FROM room_ranking'),replyPlans:scoped?all('SELECT seq,state,coordinate_mode,round,max_rounds,judge_ms FROM reply_plans WHERE room=?',scoped):all('SELECT seq,state,coordinate_mode,round,max_rounds,judge_ms FROM reply_plans'),remoteConfigured:remoteConfigured(),directSeenAt,remoteShareAll:Boolean(one('SELECT share_all FROM remote_options LIMIT 1')?.share_all),remoteRooms:selectedRemoteRooms(),remoteSync:remoteSyncState(),tasks:handoff.list(scoped),updateStatus:readUpdateLog(updateLog).trim().split(/\r?\n/).at(-1)||null,rooms:all('SELECT rooms.*,m.latest_incoming_seq FROM rooms LEFT JOIN (SELECT room,MAX(seq) AS last_seq,MAX(CASE WHEN author<>\'human:\'||room AND retracted=0 AND request NOT LIKE \'receipt:%\' THEN seq END) AS latest_incoming_seq FROM messages GROUP BY room) m ON m.room=rooms.id ORDER BY COALESCE(m.last_seq,0) DESC, rooms.rowid DESC'),
+  return {version,uiStamp:readUiStamp(),openMode:readLauncherMode(),project:readActiveProject(),recentProjects:readRecentProjects(),approvals:[...approvals.values()].filter(item=>item.state==='pending').map(({id,room,name,tool,input,rule,created})=>({id,room,name,tool,input,rule,created})),approvalRules:all('SELECT member,rule FROM approval_rules'),approvalLogs:scoped?all('SELECT * FROM approval_logs WHERE room=? ORDER BY created DESC LIMIT 100',scoped):all('SELECT * FROM approval_logs ORDER BY created DESC LIMIT 100'),limits:readLimits(),ranking:all('SELECT room,enabled,mode,main_member,judge_provider,judge_model,judge_effort,judge_prompt FROM room_ranking'),replyPlans:scoped?all('SELECT seq,state,coordinate_mode,round,max_rounds,judge_ms FROM reply_plans WHERE room=?',scoped):all('SELECT seq,state,coordinate_mode,round,max_rounds,judge_ms FROM reply_plans'),remoteConfigured:remoteConfigured(),directSeenAt,remoteShareAll:Boolean(one('SELECT share_all FROM remote_options LIMIT 1')?.share_all),remoteRooms:selectedRemoteRooms(),remoteSync:remoteSyncState(),mesh:getMeshStatus(),tasks:handoff.list(scoped),updateStatus:readUpdateLog(updateLog).trim().split(/\r?\n/).at(-1)||null,rooms:all('SELECT rooms.*,m.latest_incoming_seq FROM rooms LEFT JOIN (SELECT room,MAX(seq) AS last_seq,MAX(CASE WHEN author<>\'human:\'||room AND retracted=0 AND request NOT LIKE \'receipt:%\' THEN seq END) AS latest_incoming_seq FROM messages GROUP BY room) m ON m.room=rooms.id ORDER BY COALESCE(m.last_seq,0) DESC, rooms.rowid DESC'),
     members,
     messages:scoped?all("SELECT messages.*,members.name FROM messages JOIN members ON messages.author=members.id WHERE messages.room=? AND messages.request NOT LIKE 'receipt:%' ORDER BY seq",scoped):all("SELECT messages.*,members.name FROM messages JOIN members ON messages.author=members.id WHERE messages.request NOT LIKE 'receipt:%' ORDER BY seq"),
     deliveries:scoped?all('SELECT deliveries.seq,deliveries.member,members.name,deliveries.state,deliveries.priority FROM deliveries JOIN messages ON messages.seq=deliveries.seq JOIN members ON deliveries.member=members.id WHERE messages.room=?',scoped):all('SELECT deliveries.seq,deliveries.member,members.name,deliveries.state,deliveries.priority FROM deliveries JOIN members ON deliveries.member=members.id')};
@@ -1897,7 +1900,7 @@ function deliver(args){
 }
 function dispatchQueuedTurns(){
   if(draining||updatePending)return;
-  const rows=all("SELECT deliveries.seq,deliveries.member,deliveries.priority,messages.body,messages.relay_root,messages.room,messages.author,authors.name AS sender FROM deliveries JOIN messages USING(seq) JOIN members AS authors ON authors.id=messages.author JOIN members ON members.id=deliveries.member WHERE deliveries.state='queued' AND members.state='approved' AND members.paused=0 ORDER BY deliveries.seq,COALESCE(deliveries.priority,0)");
+  const rows=all("SELECT deliveries.seq,deliveries.member,deliveries.priority,messages.body,messages.relay_root,messages.room,messages.author,messages.request,authors.name AS sender FROM deliveries JOIN messages USING(seq) JOIN members AS authors ON authors.id=messages.author JOIN members ON members.id=deliveries.member WHERE deliveries.state='queued' AND members.state='approved' AND members.paused=0 ORDER BY deliveries.seq,COALESCE(deliveries.priority,0)");
   const byMember=new Map();
   for(const row of rows){
     if(!byMember.has(row.member))byMember.set(row.member,[]);
@@ -1930,7 +1933,8 @@ function dispatchQueuedTurns(){
     const row=runnable.find(isAlert)??runnable.find(isCoordinated)??runnable.at(-1);
     if(!isAlert(row)&&!isCoordinated(row))for(const older of runnable)if(older.seq<row.seq&&!isAlert(older)&&!isCoordinated(older))run("UPDATE deliveries SET state='context_only' WHERE seq=? AND member=? AND state='queued'",older.seq,participant);
     run("UPDATE deliveries SET state='submitting' WHERE seq=? AND member=?",row.seq,participant);
-    const prompt='Current request (seq '+row.seq+') from '+(String(row.author).startsWith('human:')?'the user ("'+row.sender+'")':'agent '+JSON.stringify(row.sender))+':\n'+row.body;
+    const viaRemote=String(row.request||'').startsWith('remote:')?' (원격)':'';
+    const prompt='Current request (seq '+row.seq+') from '+(String(row.author).startsWith('human:')?'the user ("'+row.sender+'")'+viaRemote:'agent '+JSON.stringify(row.sender))+':\n'+row.body;
     void cliTurn(participant,prompt,row.seq);
   }
 }
@@ -1983,18 +1987,42 @@ async function checkUpdateWithSite(){
   }
   return res;
 }
-async function applyUpdateRelease(requestedTag){
+const pendingUpdateWakeFile=path.join(local,'pending-update-wake.json');
+function savePendingUpdateWake(participant,room,toVersion){
+  if(!participant)return;
+  const mem=one("SELECT id,room FROM members WHERE id=? AND state='approved'",participant);
+  if(!mem)return;
+  fs.writeFileSync(pendingUpdateWakeFile,JSON.stringify({participant:mem.id,room:room||mem.room,fromVersion:version,toVersion:String(toVersion||'').replace(/^v/,''),at:Date.now()}),{mode:0o600});
+}
+function consumePendingUpdateWake(){
+  if(!fs.existsSync(pendingUpdateWakeFile))return;
+  let info=null;
+  try{info=JSON.parse(fs.readFileSync(pendingUpdateWakeFile,'utf8'));}catch{}
+  try{fs.rmSync(pendingUpdateWakeFile,{force:true});}catch{}
+  if(!info?.participant||Date.now()-(info.at||0)>30*60*1000)return;
+  const mem=one("SELECT members.id,members.room,members.paused FROM members JOIN cli_sessions ON cli_sessions.member=members.id WHERE members.id=? AND members.state='approved'",info.participant);
+  if(!mem||mem.paused)return;
+  const ok=!info.toVersion||version===info.toVersion;
+  const notice=ok
+    ?'[Agent Room 업데이트 완료 알림] v'+version+' 업데이트 및 허브 재시작이 완료되었습니다'+(info.fromVersion?' (이전: v'+info.fromVersion+')':'')+'. 필요한 후속 확인이나 안내를 이어서 진행하세요.'
+    :'[Agent Room 업데이트 확인 알림] 목표 버전(v'+info.toVersion+')으로 전환되지 않고 현재 v'+version+' 상태입니다. update.log를 확인해 주세요.';
+  setTimeout(()=>{if(!draining)void cliTurn(mem.id,notice,null);},1500).unref?.();
+}
+async function applyUpdateRelease(requestedTag,caller=null){
   if(process.platform!=='win32')throw Error('자동 설치는 Windows에서 사용할 수 있어요.');
   if(updating)throw Error('이미 업데이트를 준비하고 있어요.');
   const update=await checkUpdate();
   const targetTag=requestedTag||update.latest;
   if(!update.download||!targetTag||update.latest!==targetTag)throw Error('업데이트를 다시 확인해 주세요.');
+  const wakeId=caller?.participant||(cliBusy.size===1?[...cliBusy][0]:null);
+  if(wakeId)savePendingUpdateWake(wakeId,caller?.room||null,update.latest);
   fs.writeFileSync(updateLog,'업데이트 프로그램을 시작하는 중…\n');
   const powershell=path.join(process.env.SystemRoot||'C:/Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
   const worker=spawn(powershell,['-NoProfile','-NonInteractive','-Command',updaterLaunchCommand(powershell,update.latest)],{stdio:'ignore',windowsHide:true});
   updating=true;updatePending=true;updaterProcess=worker;
   const stopUpdate=message=>{
     updating=false;updatePending=false;updaterProcess=undefined;
+    try{fs.rmSync(pendingUpdateWakeFile,{force:true});}catch{}
     if(message)try{fs.appendFileSync(updateLog,'\n'+message+'\n');}catch{}
   };
   worker.once('exit',(code,signal)=>{
@@ -2123,11 +2151,20 @@ const server=http.createServer(async(req,res)=>{
       return res.writeHead(403,{'Content-Type':'text/html; charset=utf-8'}).end(lockedPage);
     }
     if(!browserAuthorized(req,isLocal))return res.writeHead(401,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}).end(lockedPage);
-    return res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}).end(fs.readFileSync(path.join(__dirname,'index.html')));
+    const viewParam=parsedUrl.searchParams.get('view');
+    const viewCookie=cookieValue(req,'agent_room_view');
+    const viewChoice=(viewParam==='mobile'||viewParam==='desktop')?viewParam:(viewCookie==='mobile'||viewCookie==='desktop')?viewCookie:null;
+    const isMobileUa=/Android|iPhone|iPad|iPod|Mobile/i.test(req.headers['user-agent']||'');
+    const mobileMode=viewChoice==='mobile'||(viewChoice!=='desktop'&&isMobileUa);
+    let html=fs.readFileSync(path.join(__dirname,'index.html'),'utf8');
+    if(mobileMode)html=html.replace('<aside>','<script>window.__agentRoomMobile=true;</script><aside>');
+    const resHeaders={'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'};
+    if(viewParam==='mobile'||viewParam==='desktop')resHeaders['Set-Cookie']='agent_room_view='+viewParam+'; Path=/; SameSite=Lax; Max-Age=31536000';
+    return res.writeHead(200,resHeaders).end(html);
   }
   if(req.method==='GET'&&parsedUrl.pathname==='/events'){
     if(!readAuthorized(req,isLocal))return res.writeHead(401).end();
-    res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','Connection':'keep-alive'});
+    res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});
     res.write(': connected\n\n');
     sseClients.add(res);
     const ping=setInterval(()=>{try{res.write(': ping\n\n');}catch{clearInterval(ping);sseClients.delete(res);}},25000);
@@ -2138,7 +2175,12 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==='GET'&&parsedUrl.pathname==='/state'){
     // Unauthenticated callers (launcher and updater health checks) only learn the version.
     const body=readAuthorized(req,isLocal)?state(parsedUrl.searchParams.get('room')):{version,authRequired:true,rooms:[],members:[],deliveries:[]};
-    return res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'}).end(JSON.stringify(body));
+    const jsonBuf=Buffer.from(JSON.stringify(body),'utf8');
+    if(jsonBuf.length>1024&&/\bgzip\b/i.test(String(req.headers['accept-encoding']||''))){
+      const gz=zlib.gzipSync(jsonBuf);
+      return res.writeHead(200,{'Content-Type':'application/json','Content-Encoding':'gzip','Vary':'Accept-Encoding','Cache-Control':'no-store'}).end(gz);
+    }
+    return res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'}).end(jsonBuf);
   }
   if(req.method==='GET'&&parsedUrl.pathname.startsWith('/uploads/')){
     if(!readAuthorized(req,isLocal))return res.writeHead(403).end();
@@ -2154,6 +2196,50 @@ const server=http.createServer(async(req,res)=>{
       'Content-Security-Policy':'sandbox',
       'Cache-Control':'no-store'
     }).end(fs.readFileSync(file));
+  }
+  if(req.method==='GET'&&parsedUrl.pathname==='/local-file'){
+    if(!readAuthorized(req,isLocal))return res.writeHead(403).end();
+    const rawPath=parsedUrl.searchParams.get('path')||'';
+    if(!rawPath)return res.writeHead(400).end();
+    let resolved;
+    try{resolved=path.resolve(rawPath);}catch{return res.writeHead(400).end();}
+    const roots=new Set([defaultProject,...all('SELECT DISTINCT project FROM rooms WHERE project IS NOT NULL').map(r=>r.project),...all('SELECT DISTINCT project FROM cli_sessions WHERE project IS NOT NULL').map(r=>r.project)].filter(Boolean).map(p=>path.resolve(p).toLowerCase()));
+    const norm=resolved.toLowerCase();
+    const allowed=[...roots].some(root=>norm===root||norm.startsWith(root+path.sep));
+    if(!allowed)return res.writeHead(403).end('Outside project folder');
+    let stat;try{stat=fs.statSync(resolved);}catch{return res.writeHead(404).end();}
+    if(!stat.isFile())return res.writeHead(404).end();
+    const baseName=path.basename(resolved);
+    const asciiName=baseName.replace(/[^\x20-\x7E]/g,'_').replace(/["\\]/g,'_');
+    return res.writeHead(200,{
+      'Content-Type':'application/octet-stream',
+      'Content-Disposition':`attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(baseName)}`,
+      'X-Content-Type-Options':'nosniff',
+      'Content-Security-Policy':'sandbox',
+      'Cache-Control':'no-store'
+    }).end(fs.readFileSync(resolved));
+  }
+  if(req.method==='POST'&&(parsedUrl.pathname==='/api/node/sync'||parsedUrl.pathname==='/api/node/reply')){
+    const cfg=readRemoteConfig();
+    const nodeKey=req.headers['x-agent-room-node-key'];
+    const nodeKeyOk=Boolean(cfg?.deviceKey&&typeof nodeKey==='string'&&nodeKey.length===cfg.deviceKey.length&&timingSafeEqual(Buffer.from(nodeKey),Buffer.from(cfg.deviceKey)));
+    if(!nodeKeyOk&&!authorized(req))return res.writeHead(403).end();
+    const chunks=[];for await(const c of req)chunks.push(c);
+    let body;try{body=JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{return res.writeHead(400).end();}
+    if(parsedUrl.pathname==='/api/node/sync'){
+      const roomId=String(body?.room||''), sinceSeq=Math.max(0,Number(body?.sinceSeq)||0);
+      if(!roomId||!one('SELECT id FROM rooms WHERE id=?',roomId))return res.writeHead(404).end();
+      const messages=all('SELECT seq,room,author,body,created,recipient,retracted FROM messages WHERE room=? AND seq>? ORDER BY seq LIMIT 200',roomId,sinceSeq);
+      const members=all('SELECT id,room,name,role,state FROM members WHERE room=?',roomId);
+      const deliveries=all("SELECT seq,member,state,priority FROM deliveries WHERE seq IN (SELECT seq FROM messages WHERE room=? AND seq>?) AND state IN ('queued','working')",roomId,Math.max(0,sinceSeq-20));
+      return res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'}).end(JSON.stringify({room:roomId,messages,members,deliveries,mesh:getMeshStatus()}));
+    }
+    const {room:roomId,member:memberId,body:replyText,recipient=null}=body||{};
+    if(!roomId||!memberId||typeof replyText!=='string'||!replyText.trim())return res.writeHead(400).end();
+    if(!one("SELECT 1 FROM members WHERE id=? AND room=? AND state='approved'",memberId,roomId))return res.writeHead(404).end();
+    const seq=storeMessage(roomId,memberId,replyText.trim(),null,recipient||null);
+    run("UPDATE deliveries SET state='answered' WHERE member=? AND state IN ('queued','working','submitting') AND seq IN (SELECT seq FROM messages WHERE room=?)",memberId,roomId);
+    return res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'}).end(JSON.stringify({ok:true,seq}));
   }
   const browser = req.url==='/control';
   if(req.method!=='POST'||(!browser&&!['/tool','/delivery','/shutdown_for_update'].includes(req.url))) return res.writeHead(404).end();
@@ -2539,7 +2625,7 @@ const server=http.createServer(async(req,res)=>{
       result??=state(typeof args.room==='string'&&args.room?args.room:null);
     } else if(req.url==='/tool'&&(args.action==='check_update'||args.action==='apply_update'||args.action==='remote_sync'||args.action==='rotate_direct_key'||args.action==='restart_hub')){
       if(args.action==='check_update')result=await checkUpdateWithSite();
-      else if(args.action==='apply_update')result=await applyUpdateRelease(args.tag);
+      else if(args.action==='apply_update')result=await applyUpdateRelease(args.tag,{participant:args.participant,room:args.room});
       else if(args.action==='remote_sync'){applyRemoteSyncConfig(args);result={remoteSync:remoteSyncState()};}
       else if(args.action==='rotate_direct_key'){const cur=readRemoteConfig();saveRemoteConfig({...cur,directKey:randomBytes(24).toString('hex')});result={remoteSync:remoteSyncState()};}
       else{restartHubProcess(res);return;}
@@ -2553,6 +2639,7 @@ server.listen(Number(process.env.ROOM_PORT||4317),directActiveOnBoot?'0.0.0.0':'
   drainOutbox();
   recoverDetachedTurns();
   dispatchQueuedTurns();
+  consumePendingUpdateWake();
   for(const r of all("SELECT room,judge_provider,judge_model,judge_effort FROM room_ranking WHERE mode='ranking' OR (mode IS NULL AND enabled=1)")){
     const proj=one("SELECT project FROM cli_sessions JOIN members ON members.id=cli_sessions.member WHERE members.room=? AND members.state='approved' LIMIT 1",r.room)?.project||resolveRoomProject(r.room);
     if(proj)prewarmJudge(r.room,proj,r.judge_provider||'codex',r.judge_model||null,r.judge_effort||'low');

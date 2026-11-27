@@ -68,7 +68,8 @@ try {
             'schema.sql',
             '0001_multiple_rooms.sql',
             '0002_remote_state.sql',
-            '0003_remote_command_id.sql'
+            '0003_remote_command_id.sql',
+            '0004_multi_node.sql'
         )
         foreach ($sql in $sqls) {
             $path = Join-Path $parent $sql

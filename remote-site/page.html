@@ -535,9 +535,10 @@ function renderEventsView(events,busy,preserveScroll=false){
    }
    flowTxt=[...stages].map(([p,items])=>(p?p+'순위 · ':'')+items.join(', ')).join(' / ');
   }
-  if(event.created||flowTxt){
+  if(event.created||flowTxt||event.commandId){
+   const remoteTag=event.commandId?'원격':'';
    const timePart=event.created?new Date(event.created).toLocaleTimeString('ko-KR'):'';
-   const t=el('small',[timePart,flowTxt].filter(Boolean).join(' · '));
+   const t=el('small',[remoteTag,timePart,flowTxt].filter(Boolean).join(' · '));
    t.className='msg-time'+(isOwn?' own':'');
    a.append(t);
   }

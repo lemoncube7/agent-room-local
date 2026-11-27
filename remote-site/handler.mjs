@@ -25,9 +25,63 @@ async function ensureStateTable(db){
   await db.prepare('CREATE TABLE IF NOT EXISTS remote_state (id INTEGER PRIMARY KEY, data TEXT NOT NULL)').run();
   stateTableReady=true;
 }
+let meshTablesReady=false;
+async function ensureMeshTables(db){
+  if(meshTablesReady)return;
+  await db.prepare('CREATE TABLE IF NOT EXISTS room_nodes (room TEXT NOT NULL, node_id TEXT NOT NULL, label TEXT NOT NULL, public_url TEXT NOT NULL DEFAULT \'\', can_host INTEGER NOT NULL DEFAULT 0, priority INTEGER NOT NULL DEFAULT 0, last_seen INTEGER NOT NULL, PRIMARY KEY (room, node_id))').run();
+  await db.prepare('CREATE TABLE IF NOT EXISTS room_hosts (room TEXT PRIMARY KEY, host_node_id TEXT, hub_url TEXT, epoch INTEGER NOT NULL DEFAULT 1, election_mode TEXT NOT NULL DEFAULT \'rule\', lease_expires_at INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL DEFAULT 0)').run();
+  meshTablesReady=true;
+}
+async function electHost(db,room,now,requestedMode){
+  await ensureMeshTables(db);
+  await db.prepare('DELETE FROM room_nodes WHERE room=? AND last_seen<?').bind(room,now-45000).run();
+  const nodes=(await db.prepare('SELECT node_id,label,public_url,can_host,priority,last_seen FROM room_nodes WHERE room=? ORDER BY priority DESC, node_id ASC').bind(room).all()).results||[];
+  const candidates=nodes.filter(n=>n.can_host&&n.public_url);
+  const current=await db.prepare('SELECT host_node_id,hub_url,epoch,election_mode,lease_expires_at FROM room_hosts WHERE room=?').bind(room).first();
+  const mode=requestedMode==='random'?'random':requestedMode==='rule'?'rule':(current?.election_mode||'rule');
+  const currentAlive=current?.host_node_id&&current.lease_expires_at>now&&candidates.some(c=>c.node_id===current.host_node_id);
+  if(currentAlive){
+    return {mode:'hub',hostNodeId:current.host_node_id,hubUrl:current.hub_url,epoch:current.epoch,electionMode:mode,leaseExpiresAt:current.lease_expires_at,nodes};
+  }
+  const nextEpoch=(current?.epoch||0)+1;
+  if(!candidates.length){
+    await db.prepare('INSERT INTO room_hosts(room,host_node_id,hub_url,epoch,election_mode,lease_expires_at,updated_at) VALUES(?,NULL,NULL,?,?,0,?) ON CONFLICT(room) DO UPDATE SET host_node_id=NULL,hub_url=NULL,epoch=excluded.epoch,election_mode=excluded.election_mode,lease_expires_at=0,updated_at=excluded.updated_at').bind(room,nextEpoch,mode,now).run();
+    return {mode:'offline_queue',hostNodeId:null,hubUrl:null,epoch:nextEpoch,electionMode:mode,leaseExpiresAt:0,nodes};
+  }
+  const picked=mode==='random'?candidates[Math.floor(Math.random()*candidates.length)]:candidates[0];
+  const lease=now+25000;
+  await db.prepare('INSERT INTO room_hosts(room,host_node_id,hub_url,epoch,election_mode,lease_expires_at,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(room) DO UPDATE SET host_node_id=excluded.host_node_id,hub_url=excluded.hub_url,epoch=excluded.epoch,election_mode=excluded.election_mode,lease_expires_at=excluded.lease_expires_at,updated_at=excluded.updated_at').bind(room,picked.node_id,picked.public_url,nextEpoch,mode,lease,now).run();
+  return {mode:'hub',hostNodeId:picked.node_id,hubUrl:picked.public_url,epoch:nextEpoch,electionMode:mode,leaseExpiresAt:lease,nodes};
+}
 export async function handleRoom(request,env){
   const route=new URL(request.url).pathname;
   const owner=request.headers.get('oai-authenticated-user-id');
+  if((route==='/api/room/rendezvous/register'||route==='/api/room/rendezvous/heartbeat')&&request.method==='POST'){
+    if(!await sameSecret(request.headers.get('x-agent-room-key'),env.REMOTE_DEVICE_KEY))return json({error:'Unauthorized'},403);
+    let payload;try{payload=await readBody(request,65536);}catch{return json({error:'Invalid payload'},400);}
+    const room=payload.room, nodeId=payload.nodeId;
+    if(!isId(room)||!isText(nodeId,80))return json({error:'Invalid node'},400);
+    const label=isText(payload.label,80)?payload.label.trim():nodeId.slice(0,24);
+    const publicUrl=typeof payload.publicUrl==='string'&&/^https?:\/\/\S{3,240}$/i.test(payload.publicUrl.trim())?payload.publicUrl.trim().replace(/\/+$/,''):'';
+    const canHost=payload.canHost&&publicUrl?1:0;
+    const priority=Number.isFinite(Number(payload.priority))?Math.max(0,Math.min(100,Math.round(Number(payload.priority)))):0;
+    const now=Date.now();
+    await ensureMeshTables(env.DB);
+    await env.DB.prepare('INSERT INTO room_nodes(room,node_id,label,public_url,can_host,priority,last_seen) VALUES(?,?,?,?,?,?,?) ON CONFLICT(room,node_id) DO UPDATE SET label=excluded.label,public_url=excluded.public_url,can_host=excluded.can_host,priority=excluded.priority,last_seen=excluded.last_seen').bind(room,nodeId,label,publicUrl,canHost,priority,now).run();
+    if(route==='/api/room/rendezvous/heartbeat'&&canHost){
+      await env.DB.prepare('UPDATE room_hosts SET lease_expires_at=?,hub_url=?,updated_at=? WHERE room=? AND host_node_id=?').bind(now+25000,publicUrl,now,room,nodeId).run();
+    }
+    const res=await electHost(env.DB,room,now,payload.electionMode);
+    return json({...res,role:res.hostNodeId===nodeId?'hub':'node'});
+  }
+  if(route==='/api/room/rendezvous/room'&&request.method==='GET'){
+    const deviceOk=await sameSecret(request.headers.get('x-agent-room-key'),env.REMOTE_DEVICE_KEY);
+    if(!deviceOk&&(!owner||owner!==env.REMOTE_OWNER_ID))return json({error:'Forbidden'},403);
+    const room=new URL(request.url).searchParams.get('room')||'';
+    if(!isId(room))return json({error:'Invalid room'},400);
+    const res=await electHost(env.DB,room,Date.now());
+    return json(res);
+  }
   if(route==='/api/room/device'&&request.method==='POST'){
     if(!await sameSecret(request.headers.get('x-agent-room-key'),env.REMOTE_DEVICE_KEY))return json({error:'Unauthorized'},403);
     let payload;try{payload=await readBody(request,25*1024*1024);}catch{return json({error:'Invalid payload'},400);}

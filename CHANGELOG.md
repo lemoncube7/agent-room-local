@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.0.25
+- **모바일 전용 UI & 사용성 개선 (`hub.cjs`, `index.html`):**
+  - 모바일 브라우저(`?view=mobile` / User-Agent 자동 감지)에서 전용 `mobile-ui` 레이아웃을 제공합니다(`⚙ 설정 → 화면 보기`에서 모바일/데스크톱 전환 가능).
+  - 상단 헤더를 `☰ · 방 제목 · 에이전트 상태 pill · 🔍 · ⋯`로 정리하고, `개발/대화 모드`, `구조 모드`, `작업 인계`, `1분 사용법 가이드`는 메뉴/설정 창으로 옮겨 기능 축소 없이 모바일 제목 깨짐을 해결했습니다.
+  - 터치 기기(`pointer: coarse`)에서 Enter 시 전송 대신 줄바꿈이 되도록 수정했고, 메시지 하단의 `· 순위 N.N초` 표시를 제거했습니다.
+- **직접 연결 파일 다운로드 & 원격 표시 (`hub.cjs`, `index.html`, `remote-site/page.html`):**
+  - 직접 연결(외부 브라우저/폰)에서 `file://` 경로 링크를 누르면 `GET /local-file?path=...`로 파일을 바로 다운로드할 수 있습니다(프로젝트/방 폴더 내부만 허용).
+  - 로컬·원격 채팅 화면과 에이전트 프롬프트에 `원격` 메시지 출처가 표시됩니다.
+- **성능 · 업데이트 · 멀티 노드 기반 (`hub.cjs`, `update.ps1`, `node-mesh.cjs`, `remote-site/`):**
+  - `GET /state`에 `gzip` 응답 압축을 적용하고 `GET /events`에 `X-Accel-Buffering: no`, 모바일 백그라운드 복귀(`visibilitychange`) 시 즉시 갱신을 추가했습니다.
+  - `apply_update`를 호출한 에이전트를 기록해 허브 재시작 후 자동 wake하도록 개선했고, `update.ps1`이 `remote-site/` 등 하위 폴더 파일도 함께 백업·설치·롤백하도록 수정했습니다.
+  - 멀티 PC 허브 선출·자동 승계 안내소 API(`0004_multi_node.sql`, `remote-site/handler.mjs`), 노드 메쉬/보안 정책(`node-mesh.cjs`), 허브 노드 동기화·응답 API(`/api/node/sync`, `/api/node/reply`) 및 `MULTI-NODE-DESIGN.md`를 추가했습니다.
+
 ## v1.0.24
 - **알림 및 한도 복구:** 한도가 0%에서 복구될 때 로컬·원격 화면에 알림을 띄웁니다. 원격 화면(`remote-site/page.html`)에서 첫 허용 요청 알림이 누락되던 버그를 수정했고, 로컬·원격 모두 한도 복구 알림을 일관되게 처리합니다.
 - **순위·조율·실시간 전달 개선 (`hub.cjs`, `index.html`, `remote-site/`):**
