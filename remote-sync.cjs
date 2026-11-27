@@ -36,7 +36,9 @@ function buildRelayBatch(messages,body){
 }
 async function main(){
   const site=new URL(siteText);
-  if(site.protocol!=='https:'||!site.hostname.endsWith('.chatgpt.site')||site.username||site.password||site.pathname!=='/'||site.search||site.hash)throw Error('Use the private https://…chatgpt.site origin.');
+  // Private ChatGPT Site or the user's own standalone Worker (e.g. *.workers.dev / custom domain). HTTPS origin only.
+  const ipHost=/^\[|^\d{1,3}(\.\d{1,3}){3}$|^localhost$/i.test(site.hostname);
+  if(site.protocol!=='https:'||ipHost||!site.hostname.includes('.')||site.username||site.password||site.pathname!=='/'||site.search||site.hash)throw Error('Use the private https:// origin of your ChatGPT Site or Cloudflare Worker.');
   if(!deviceKey||deviceKey.length<32)throw Error('AGENT_ROOM_DEVICE_KEY is required.');
   const relay=new URL('/api/room/device',site);
   const headers={'X-Agent-Room-Key':deviceKey,...(siteAccess?{'OAI-Sites-Authorization':'Bearer '+siteAccess}:{})};
@@ -45,16 +47,13 @@ async function main(){
     if(config.url!=='http://127.0.0.1:4317')throw Error('Unexpected local hub address.');
     return config;
   };
-  const hubAuth=()=>({headers:{Authorization:'Bearer '+readHub().token}});
-  const first=await request(readHub().url+'/state',hubAuth());
-  const matches=roomName?first.rooms.filter(r=>r.name===roomName||r.id===roomName):[];
-  if(roomName&&matches.length!==1)throw Error('Choose exactly one room by its name or ID.');
-  const initialRoom=matches[0]?.id;
+  let initialRoom,initialSince=0;
   const cursorPath=path.join(localDir,'remote-cursor.json');
   const cursor=fs.existsSync(cursorPath)?JSON.parse(fs.readFileSync(cursorPath,'utf8')):{};
   const key=room=>site.origin+' '+room;
   function save(){const temp=cursorPath+'.tmp';fs.writeFileSync(temp,JSON.stringify(cursor));fs.renameSync(temp,cursorPath);}
   let acknowledged=[],lastError='',lastSyncKey='',lastHeartbeat=0;
+  let consecutiveFailures=0;
   const controlResults=new Map();
   console.log('Remote relay enabled. Room selection is controlled in Agent Room.');
   while(true){
@@ -62,12 +61,18 @@ async function main(){
     try{
       const hub=readHub();
       const state=await request(hub.url+'/state',{headers:{Authorization:'Bearer '+hub.token}});
-      const selection=state.remoteConfigured?state.remoteRooms:initialRoom?[{room:initialRoom,since:Math.max(0,...first.messages.filter(m=>m.room===initialRoom).map(m=>m.seq))}]:[];
+      if(roomName&&!initialRoom){
+        const matches=state.rooms.filter(room=>room.name===roomName||room.id===roomName);
+        if(matches.length!==1){console.error('Choose exactly one room by its name or ID.');process.exitCode=1;return;}
+        initialRoom=matches[0].id;
+        initialSince=state.messages.reduce((seq,message)=>message.room===initialRoom?Math.max(seq,message.seq):seq,0);
+      }
+      const selection=state.remoteConfigured?state.remoteRooms:initialRoom?[{room:initialRoom,since:initialSince}]:[];
       const allowed=new Set(selection.map(item=>item.room));
       const rooms=state.rooms.filter(room=>allowed.has(room.id)).map(({id,name})=>({id,name}));
       const floors=new Map(selection.map(x=>[x.room,Math.max(x.since,cursor[key(x.room)]||0)]));
       const snapshot={
-        members:(state.members||[]).filter(m=>allowed.has(m.room)&&m.state!=='disconnected').map(({id,room,name,state:st,provider,model,paused,busy,progress,conflict,cliError})=>({id,room,name,state:st,provider,model,paused,busy,progress,conflict,cliError})),
+        members:(state.members||[]).filter(m=>allowed.has(m.room)&&m.state!=='disconnected').map(({id,room,name,state:st,provider,model,paused,busy,progress,conflict,cliError,effort,role})=>({id,room,name,state:st,provider,model,paused,busy,progress,conflict,cliError,effort,role})),
         approvals:(state.approvals||[]).filter(a=>allowed.has(a.room)).map(({id,room,name,tool,input,created})=>({id,room,name,tool,input:String(input||'').slice(0,800),created})),
         limits:state.limits||{},
         ranking:(state.ranking||[]).filter(r=>allowed.has(r.room)).map(({room,enabled,mode,main_member})=>({room,enabled,mode,main_member})),
@@ -103,11 +108,11 @@ async function main(){
             let ok=false;
             if(ctrl.control==='create'||allowed.has(command.room)){
               try{
-                const allowedControls=['approval_decide','retry_agent','pause_agent','room_ranking','create'];
+                const allowedControls=['approval_decide','retry_agent','pause_agent','room_ranking','create','rename_room','edit_agent'];
                 if(!allowedControls.includes(ctrl.control))throw Object.assign(Error('Unsupported control'),{status:400});
-                const {control,name,id,allow,participant,paused,enabled,mode,mainMember}=ctrl;
-                await request(hub.url+'/tool',post({Authorization:'Bearer '+hub.token},{action:'remote_control',room:command.room,control,name,id,allow,participant,paused,enabled,mode,mainMember}));
-                ok=true;
+                const {control,name,id,allow,participant,paused,enabled,mode,mainMember,model,effort,role}=ctrl;
+                const result=await request(hub.url+'/tool',post({Authorization:'Bearer '+hub.token},{action:'remote_control',room:command.room,control,name,id,allow,participant,paused,enabled,mode,mainMember,model,effort,role}));
+                ok=result.scheduled?'scheduled':true;
               }catch(error){if(error.status!==400&&error.status!==403)throw error;}
             }
             controlResults.set(command.id,{id:command.id,room:command.room,ok});
@@ -125,8 +130,11 @@ async function main(){
         acknowledged.push(command.id);
       }
       try{const alive=path.join(localDir,'remote-alive.json');fs.writeFileSync(alive+'.tmp',JSON.stringify({pid:process.pid,site:site.origin,at:Date.now(),siteVersion:response.siteVersion}));fs.renameSync(alive+'.tmp',alive);}catch{}
+      consecutiveFailures=0;
       if(lastError){console.log('Remote sync restored.');lastError='';}
     }catch(error){
+      consecutiveFailures=Math.min(consecutiveFailures+1,5);
+      waitMs=Math.min(30000,2000*2**(consecutiveFailures-1));
       if(error.message!==lastError){console.error('Remote sync paused: '+error.message);lastError=error.message;}
     }
     await wait(waitMs);

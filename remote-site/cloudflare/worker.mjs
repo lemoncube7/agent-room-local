@@ -111,7 +111,9 @@ export default {
       headers.delete('oai-authenticated-user-id');
       if(signedIn)headers.set('oai-authenticated-user-id',env.REMOTE_OWNER_ID||'owner');
       const proxied=new Request(request,{headers});
-      const res=await handleRoom(proxied,env);
+      // Tell the shared handler the Bearer token was actually verified here (ChatGPT Sites never sets this).
+      const bearerVerified=signedIn&&Boolean(request.headers.get('authorization')?.startsWith('Bearer '));
+      const res=await handleRoom(proxied,{...env,BEARER_VERIFIED:bearerVerified});
       return request.headers.get('authorization')?.startsWith('Bearer ')?withCors(request,res):res;
     }
 

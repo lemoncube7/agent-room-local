@@ -100,13 +100,14 @@ export async function handleRoom(request,env){
     }catch{}
     return json({rooms,events,snapshot});
   }
-  const hasBearer=Boolean(request.headers.get('authorization')?.startsWith('Bearer '));
+  // Only a Bearer token verified by the standalone Worker may skip the same-origin check.
+  const hasBearer=env.BEARER_VERIFIED===true&&Boolean(request.headers.get('authorization')?.startsWith('Bearer '));
   if(request.method!=='POST'||(request.headers.get('origin')!==new URL(request.url).origin&&!hasBearer))return json({error:'Forbidden'},403);
   let payload;try{payload=await readBody(request,1500000);}catch{return json({error:'Invalid payload'},400);}
   if(!isId(payload.id))return json({error:'Invalid message'},400);
   let storedText=payload.text, targetRoom=payload.room;
   if(payload.control){
-    if(!['approval_decide','retry_agent','pause_agent','room_ranking','create'].includes(payload.control))return json({error:'Unsupported control'},400);
+    if(!['approval_decide','retry_agent','pause_agent','room_ranking','create','rename_room','edit_agent'].includes(payload.control))return json({error:'Unsupported control'},400);
     if(payload.control==='create'){
       if(!isText(payload.name,70))return json({error:'Invalid room name'},400);
       targetRoom=null;
@@ -115,7 +116,9 @@ export async function handleRoom(request,env){
       if(!isId(targetRoom)||!await env.DB.prepare('SELECT id FROM remote_rooms WHERE id=?').bind(targetRoom).first())return json({error:'Room is not shared'},404);
       if(payload.control==='approval_decide'&&(!isId(payload.id_target)||typeof payload.allow!=='boolean'))return json({error:'Invalid approval decision'},400);
       if(['pause_agent','retry_agent'].includes(payload.control)&&(!isId(payload.participant)||(payload.control==='pause_agent'&&typeof payload.paused!=='boolean')))return json({error:'Invalid agent control'},400);
-      storedText=JSON.stringify({__control:true,control:payload.control,id:payload.id_target,allow:payload.allow,participant:payload.participant,paused:payload.paused,enabled:payload.enabled,mode:payload.mode,mainMember:payload.mainMember});
+      if(payload.control==='rename_room'&&!isText(payload.name,70))return json({error:'Invalid room name'},400);
+      if(payload.control==='edit_agent'&&(!isId(payload.participant)||!isText(payload.name,120)||!['model','effort','role'].every(key=>typeof payload[key]==='string'&&payload[key].length<=120)))return json({error:'Invalid agent settings'},400);
+      storedText=JSON.stringify({__control:true,name:payload.name,model:payload.model,effort:payload.effort,role:payload.role,control:payload.control,id:payload.id_target,allow:payload.allow,participant:payload.participant,paused:payload.paused,enabled:payload.enabled,mode:payload.mode,mainMember:payload.mainMember});
     }
   }else{
     const rawAttachments=Array.isArray(payload.attachments)?payload.attachments:[];

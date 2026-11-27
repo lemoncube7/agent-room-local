@@ -126,10 +126,51 @@ body:not(.agents-hidden){grid-template-columns:clamp(170px,18vw,230px) minmax(0,
  #panel-scrim:not([hidden]){display:block;position:fixed;inset:0;z-index:9;background:#0009;border:0;border-radius:0;width:100%}
  #approvals{max-height:32dvh}
 }
+.room-heading{display:grid;flex:1;min-width:0;gap:3px}
+.room-heading h2{font-size:clamp(17px,2vw,22px);letter-spacing:-.035em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.room-heading .pill{justify-self:start;padding:0;border:0;background:transparent}
+.brand h1{letter-spacing:-.04em;font-size:19px}
+#rooms button[aria-current=true]{background:var(--own-bg);color:var(--own-name);border-color:var(--own-line)}
+#history{background:radial-gradient(ellipse at 90% 0%,color-mix(in srgb,var(--accent) 6%,transparent),transparent 65%),var(--bg)}
+#history article{border-radius:4px 16px 16px 16px;box-shadow:0 2px 8px #0001}
+#history article.own{border-radius:16px 4px 16px 16px}
+#compose{align-items:end;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:5px}
+#compose:focus-within{border-color:var(--accent)}
+#compose #draft{border:0;background:transparent}
+#compose button{min-height:40px;border-radius:11px}
+#direct-form{display:grid;gap:9px;margin-top:16px;padding:16px;border:1px solid var(--line);border-radius:14px;background:var(--raised)}
+#direct-form h3,#direct-form p{margin:0}
+#direct-form p{color:var(--muted);font-size:13px}
+#direct-form input{min-width:0;width:100%;font:inherit;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:10px}
+#direct-form .actions{display:flex;gap:8px;flex-wrap:wrap}
+#direct-form button[type=submit]{background:var(--own-bg);color:var(--own-name)}
+#remote-settings-dialog{max-height:85dvh;overflow:auto;max-width:calc(100vw - 24px)}
+@media(max-width:850px){.head-actions button,#direct-form button{min-height:42px}#direct-form input{font-size:16px}}
+@media(prefers-reduced-motion:reduce){.act-dot.busy{animation:none}}
+
+#compose>button{display:grid;place-items:center;width:44px;height:44px;padding:0}
+#fab-agents{position:static;padding:4px 7px;min-height:36px;box-shadow:none}
+#fab-agents span{max-width:62px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#remote-agent-dialog{width:min(440px,92vw);max-height:85dvh;overflow:auto;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:14px;padding:18px;margin:auto}
+#remote-agent-dialog::backdrop{background:#0009}
+#remote-agent-form{display:grid;gap:10px}
+#remote-agent-form label{display:grid;gap:4px}
+#remote-agent-form input,#remote-agent-form select{width:100%;min-width:0}
+@media(max-width:720px) and (prefers-reduced-motion:no-preference){
+ body.rooms-open>aside{animation:rooms-enter 220ms cubic-bezier(.2,.75,.25,1)}
+ body:not(.agents-hidden) #agent-panel{animation:agents-enter 220ms cubic-bezier(.2,.75,.25,1)}
+ #panel-scrim:not([hidden]){animation:scrim-enter 200ms ease-out}
+ @keyframes rooms-enter{from{transform:translateX(-100%)}}
+ @keyframes agents-enter{from{transform:translateX(100%)}}
+ @keyframes scrim-enter{from{opacity:0}}
+}
+
+#history{overflow-anchor:none}
+#draft::placeholder{white-space:nowrap}
 </style>
 <aside>
  <button id="close-rooms" type="button">방 목록 닫기</button>
- <div class="brand"><h1>Agent Room <span class="remote-badge">원격</span></h1><span id="conn" class="pill"><i></i>연결 중</span></div>
+ <div class="brand"><h1>Agent Room <span class="remote-badge">원격</span></h1></div>
  <button id="install-app" type="button" hidden>앱 설치</button>
  <form id="new-room" autocomplete="off"><input name="name" placeholder="새 채팅방 이름" maxlength="70" required><button type="submit" aria-label="방 만들기">+</button></form>
  <nav id="rooms" aria-label="채팅방 목록"></nav>
@@ -140,10 +181,11 @@ body:not(.agents-hidden){grid-template-columns:clamp(170px,18vw,230px) minmax(0,
  <header>
   <div class="head-row">
    <button id="mobile-rooms" class="mob-only mob-icon" type="button" aria-pressed="false" aria-label="방 목록">☰</button>
-   <h2 id="title">채팅방을 선택하세요</h2>
+   <div class="room-heading"><h2 id="title">채팅방을 선택하세요</h2><span id="conn" class="pill" role="status"><i></i>연결 중</span></div>
    <div class="head-actions">
     <button id="remote-help-btn" type="button" title="원격 1분 사용법" aria-label="원격 1분 사용법" style="min-width:34px;padding:4px 9px">?</button>
     <button id="remote-settings-btn" type="button" title="방 설정 (구조 모드)" aria-label="방 설정" style="min-width:34px;padding:4px 9px">⚙</button>
+    <button id="fab-agents" type="button" aria-label="에이전트 패널 열기"><i class="fab-dot"></i><span>에이전트</span></button>
     <button id="toggle-act" type="button" aria-controls="agent-panel" aria-expanded="true">에이전트</button>
    </div>
   </div>
@@ -151,15 +193,15 @@ body:not(.agents-hidden){grid-template-columns:clamp(170px,18vw,230px) minmax(0,
  <section id="history" aria-label="공용 대화"></section>
  <section id="approvals" aria-label="허용 요청" aria-live="polite"></section>
  <div id="remote-work-dock" hidden aria-label="작업 중인 에이전트"></div>
- <button id="fab-agents" type="button" aria-label="에이전트 패널 열기"><i class="fab-dot"></i><span>에이전트</span></button>
  <div id="compose-wrap">
   <div id="remote-slash-menu" hidden aria-label="빠른 명령어"></div>
   <div id="remote-attach-list" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px"></div>
-  <form id="compose" autocomplete="off"><input id="remote-attach" type="file" multiple hidden><button id="remote-attach-btn" type="button" title="파일·이미지 첨부 (드래그·붙여넣기 가능)" style="flex:none;background:var(--raised);border:1px solid var(--line);color:var(--text)">+ 파일</button><textarea id="draft" rows="1" aria-label="메시지" placeholder="메시지 보내기 (/ 입력으로 빠른 명령, Shift+Enter 줄바꿈)" maxlength="8000"></textarea><button type="submit">보내기</button></form>
+  <form id="compose" autocomplete="off"><input id="remote-attach" type="file" multiple hidden><button id="remote-attach-btn" type="button" title="파일·이미지 첨부 (드래그·붙여넣기 가능)" style="flex:none;background:var(--raised);border:1px solid var(--line);color:var(--text)" aria-label="파일 첨부"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5l-8.4 8.4a5 5 0 0 1-7.1-7.1l9-9a3.5 3.5 0 0 1 5 5l-9 9a2 2 0 0 1-2.8-2.8l8.4-8.4"/></svg></button><textarea id="draft" rows="1" aria-label="메시지" placeholder="메시지 입력" title="/ 빠른 명령 · Shift+Enter 줄바꿈" maxlength="8000"></textarea><button type="submit" title="보내기" aria-label="보내기"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5m-6 6 6-6 6 6"/></svg></button></form>
   <p id="status" role="status"></p>
  </div>
- <dialog id="remote-settings-dialog"><div class="rhelp-head"><h2>방 설정</h2><button id="remote-settings-close" type="button" aria-label="닫기">✕</button></div><div class="rset-body"><label id="mode-sel-wrap">응답 방식 (구조 모드)<select id="mode-sel" aria-label="구조 모드"><option value="broadcast">자유 · 동시 응답</option><option value="ranking">자동 · 순위 판정</option><option value="hierarchy">계층형 · 메인→하위</option></select></label><label id="main-sel-wrap" hidden>메인 에이전트<select id="main-sel" aria-label="메인 에이전트"></select></label></div></dialog>
- <dialog id="remote-help-dialog"><div class="rhelp-head"><h2>원격 1분 사용법</h2><button id="remote-help-close" type="button" aria-label="닫기">✕</button></div><div class="rhelp-list"><div class="rhelp-item"><strong>1. 좌우 슬라이드 제스처</strong>채팅 화면에서 <b>오른쪽으로 밀면 방 목록</b>, <b>왼쪽으로 밀면 에이전트 패널</b>이 열립니다. 오른쪽 아래 <b>에이전트</b> 버튼으로도 열 수 있어요.</div><div class="rhelp-item"><strong>2. PC와 자동 동기화 · 오프라인 대기</strong>PC가 켜져 있으면 바로 전달되고, 꺼져 있어도 이전 대화는 캐시로 바로 보이며 보낸 메시지는 PC가 켜질 때 처리됩니다.</div><div class="rhelp-item"><strong>3. 빠른 명령어 (/)</strong>입력창에 <b>/방목록</b>, <b>/에이전트</b>, <b>/테마</b>, <b>/새로고침</b>, <b>/도움말</b>을 입력해 바로 실행할 수 있습니다.</div><div class="rhelp-item"><strong>4. 앱처럼 쓰기</strong>브라우저 메뉴에서 <b>홈 화면에 추가</b>를 누르면 모바일 앱처럼 전체 화면으로 쓸 수 있습니다.</div></div></dialog>
+ <dialog id="remote-settings-dialog"><div class="rhelp-head"><h2>방 설정</h2><button id="remote-settings-close" type="button" aria-label="닫기">✕</button></div><div class="rset-body"><form id="remote-room-name-form"><label>방 이름<input name="name" required maxlength="70"></label><button type="submit">이름 저장</button></form><label id="mode-sel-wrap">응답 방식 (구조 모드)<select id="mode-sel" aria-label="구조 모드"><option value="broadcast">자유 · 동시 응답</option><option value="ranking">자동 · 순위 판정</option><option value="hierarchy">계층형 · 메인→하위</option></select></label><label id="main-sel-wrap" hidden>메인 에이전트<select id="main-sel" aria-label="메인 에이전트"></select></label></div><form id="direct-form"><h3>PC 직접 연결</h3><p>같은 네트워크에서는 PC에 직접 연결하고, 외부에서는 Site를 경유합니다.</p><label for="direct-url">PC에서 발급한 LAN 링크</label><input id="direct-url" type="password" autocomplete="off" spellcheck="false" required placeholder="접속 키가 포함된 링크 붙여넣기"><div class="actions"><button type="submit">링크 저장</button><button type="button" id="direct-remove">연결 해제</button></div><p id="direct-feedback" role="status"></p></form></dialog>
+ <dialog id="remote-agent-dialog"><form id="remote-agent-form"><div class="rhelp-head"><h2>에이전트 설정</h2><button id="remote-agent-close" type="button" aria-label="닫기">✕</button></div><label>이름<input name="name" maxlength="120" required></label><label>모델<input name="model" maxlength="120" placeholder="비우면 제공자 기본 모델"></label><label>추론 강도<select name="effort"><option value="">기본</option><option value="low">낮음</option><option value="medium">보통</option><option value="high">높음</option><option value="xhigh">매우 높음</option><option value="max">최대</option></select></label><label>역할<input name="role" maxlength="120"></label><button type="submit">저장</button></form></dialog>
+ <dialog id="remote-help-dialog"><div class="rhelp-head"><h2>원격 1분 사용법</h2><button id="remote-help-close" type="button" aria-label="닫기">✕</button></div><div class="rhelp-list"><div class="rhelp-item"><strong>1. 좌우 슬라이드 제스처</strong>채팅 화면에서 <b>오른쪽으로 밀면 방 목록</b>, <b>왼쪽으로 밀면 에이전트 패널</b>이 열립니다. 상단 <b>에이전트</b> 버튼으로도 열 수 있어요.</div><div class="rhelp-item"><strong>2. PC와 자동 동기화 · 오프라인 대기</strong>PC가 켜져 있으면 바로 전달되고, 꺼져 있어도 이전 대화는 캐시로 바로 보이며 보낸 메시지는 PC가 켜질 때 처리됩니다.</div><div class="rhelp-item"><strong>3. 빠른 명령어 (/)</strong>입력창에 <b>/방목록</b>, <b>/에이전트</b>, <b>/테마</b>, <b>/새로고침</b>, <b>/도움말</b>을 입력해 바로 실행할 수 있습니다.</div><div class="rhelp-item"><strong>4. 앱처럼 쓰기</strong>브라우저 메뉴에서 <b>홈 화면에 추가</b>를 누르면 모바일 앱처럼 전체 화면으로 쓸 수 있습니다.</div></div></dialog>
  <nav id="mobile-nav" aria-label="화면 전환">
   <button id="mobile-chat" type="button" aria-pressed="true">채팅</button>
   <button id="mobile-agents" type="button" aria-pressed="false" hidden>에이전트</button>
@@ -187,7 +229,7 @@ function agentCls(name,provider){
  return '';
 }
 function inlineMd(target,text){
- const pattern=/`([^`\n]+)`|\*\*([^*\n]+)\*\*|\*([^*\n]+)\*|\[([^\]\n]+)\]\((<\/[A-Za-z]:\/[^>\r\n]+>|(?:https?:\/\/|file:\/\/\/?|\/[A-Za-z]:\/)[^\s)]+)\)|(?<![\w/#])(#(?:[\da-fA-F]{8}|[\da-fA-F]{6}|[\da-fA-F]{4}|[\da-fA-F]{3}))(?![\w/-])/g;
+ const pattern=/`([^`\n]+)`|\*\*([^*\n]+)\*\*|\*([^*\n]+)\*|\[([^\]\n]+)\]\((<\/[A-Za-z]:\/[^>\r\n]+>|(?:https?:\/\/|file:\/\/\/?|\/?[A-Za-z]:[\\/])[^\s)]+)\)|(?<![\w/#])(#(?:[\da-fA-F]{8}|[\da-fA-F]{6}|[\da-fA-F]{4}|[\da-fA-F]{3}))(?![\w/-])/g;
  const addSwatch=color=>{
   const swatch=el("span","");
   swatch.setAttribute("aria-hidden","true");
@@ -199,7 +241,7 @@ function inlineMd(target,text){
  for(const match of text.matchAll(pattern)){
   target.append(document.createTextNode(text.slice(start,match.index)));
   if(match[5]){
-   try{const url=new URL(match[5].startsWith('<')?'file://'+ match[5].slice(1,-1):match[5].startsWith('/')?'file://'+ match[5]:match[5]);const a=el('a',match[4]);a.href=url.href;a.title=url.href;if(url.protocol==='file:'){const lp=decodeURIComponent(url.pathname).replace(/^\/([A-Za-z]:)/,'$1').replace(/\//g,'\\');a.onclick=e=>{e.preventDefault();navigator.clipboard?.writeText(lp).catch(()=>{});statusLine.textContent='경로 복사됨: '+lp;};}else{a.target='_blank';a.rel='noopener noreferrer';}target.append(a);}
+   try{const href=match[5].startsWith('<')?match[5].slice(1,-1):match[5];const url=new URL(/^\/?[A-Za-z]:[\\/]/.test(href)?'file:///'+href.replace(/^\//,'').replace(/\\/g,'/'):href);const a=el('a',match[4]);a.href=url.href;a.title=url.href;if(url.protocol==='file:'){const lp=decodeURIComponent(url.pathname).replace(/^\/([A-Za-z]:)/,'$1').replace(/\//g,'\\');a.onclick=e=>{e.preventDefault();navigator.clipboard?.writeText(lp).catch(()=>{});statusLine.textContent='경로 복사됨: '+lp;};}else{a.target='_blank';a.rel='noopener noreferrer';}target.append(a);}
    catch{target.append(document.createTextNode(match[0]));}
   }else if(match[1]){target.append(el('code',match[1]));if(/^#(?:[\da-fA-F]{8}|[\da-fA-F]{6}|[\da-fA-F]{4}|[\da-fA-F]{3})$/.test(match[1]))addSwatch(match[1]);}
   else if(match[6]){target.append(document.createTextNode(match[6]));addSwatch(match[6]);}
@@ -334,6 +376,11 @@ function renderPanel(){
   const rawW=lim?.windows&&typeof lim.windows==='object'?lim.windows:null;
   const entries=!rawW?[]:m.provider==='agy'?((!m.model||/gemini/i.test(m.model))?['gemini-5h','gemini-weekly']:['3p-5h','3p-weekly']).filter(k=>rawW[k]&&typeof rawW[k]==='object').map(k=>[k,rawW[k]]):Object.entries(rawW).filter(([,w])=>w&&typeof w==='object');
   const head=document.createElement('div');head.className='act-head';head.append(name);
+  if(m.provider&&m.state==='approved'){
+   const settings=el('button','설정');settings.type='button';settings.className='act-retry';
+   settings.onclick=()=>openRemoteAgentSettings(m);
+   head.append(settings);
+  }
   if(m.provider&&(m.state==='approved'||m.state==='start_failed')){
    const pause=el('button',m.paused?'재개':'일시정지');pause.type='button';pause.className='act-retry';pause.style.margin='0';
    pause.disabled=[...controlRequests.values()].some(item=>item.target===m.id);
@@ -443,12 +490,29 @@ function schedulePoll(ms){
  if(document.hidden)return;
  pollTimer=setTimeout(()=>{if(!refreshInFlight&&!document.hidden)void refresh();},ms);
 }
-function renderEventsView(events,busy){
- const key=JSON.stringify([events.map(e=>e.seq),busy.map(b=>[b.id,b.progress?.updatedAt,b.progress?.step])]);
+const historyPageSize=40;
+let historyRoom=null,historyLimit=historyPageSize;
+let renderedHistory=null,historyScrollTop=0;
+historyView.addEventListener('scroll',()=>{
+ const top=historyView.scrollTop;
+ const movingUp=top<historyScrollTop;
+ historyScrollTop=top;
+ if(!movingUp||top>80||historyRoom!==selected||!renderedHistory)return;
+ const {events,busy}=renderedHistory;
+ if(events.length<=historyLimit)return;
+ historyLimit+=historyPageSize;
+ renderEventsView(events,busy,true);
+},{passive:true});
+function renderEventsView(events,busy,preserveScroll=false){
+ if(historyRoom!==selected){historyRoom=selected;historyLimit=historyPageSize;}
+ renderedHistory={events,busy};
+ const visibleEvents=events.slice(-historyLimit);
+ const hiddenCount=events.length-visibleEvents.length;
+ const key=JSON.stringify([selected,hiddenCount,visibleEvents.map(e=>e.seq),busy.map(b=>[b.id,b.progress?.updatedAt,b.progress?.step])]);
  if(key===cursor)return false;
  const nearBottom=historyView.scrollHeight-historyView.scrollTop-historyView.clientHeight<110||!cursor;
  cursor=key;
- const nodes=events.map(event=>{
+ const nodes=visibleEvents.map(event=>{
   const a=document.createElement('article'),m=lastSnap?.members?.find(x=>x.room===selected&&x.name===event.name),cls=agentCls(event.name,m?.provider);
   const isOwn=cls==='own';
   const nb=m?.provider==='agy'&&m?.model?(/claude|sonnet|opus|haiku/i.test(m.model)?'name-claude':/gpt|codex|o[134]/i.test(m.model)?'name-codex':''):'';
@@ -489,8 +553,12 @@ function renderEventsView(events,busy){
   }
   nodes.push(card);
  }
+ const previousHeight=historyView.scrollHeight;
+ const previousTop=historyView.scrollTop;
  historyView.replaceChildren(...nodes);
- if(nearBottom)historyView.scrollTop=historyView.scrollHeight;
+ if(preserveScroll)historyView.scrollTop=previousTop+historyView.scrollHeight-previousHeight;
+ else if(nearBottom)historyView.scrollTop=historyView.scrollHeight;
+ historyScrollTop=historyView.scrollTop;
  return true;
 }
 async function refresh(){
@@ -503,19 +571,22 @@ async function refresh(){
   if(selected&&!cursor&&cached.length)renderEventsView(cached,[]);
   const since=cached.length?cached[cached.length-1].seq:0;
   const qs=selected?('?room='+encodeURIComponent(selected)+(since>0?'&since='+since:'')):'';
-  const r=await fetch('/api/room/browser'+qs,{cache:'no-store',signal:AbortSignal.timeout(12000)});
+  const options={cache:'no-store',signal:AbortSignal.timeout(12000)};
+  const r=controlRequests.size?await fetch('/api/room/browser'+qs,options):await roomRequest(qs,options);
   if(turn!==request)return;
   if(r.status===404&&selected){selected='';cursor='';historyView.replaceChildren();void refresh();return;}
   if(r.status===401||r.status===403)throw Error('이 사이트를 배포한 ChatGPT 계정으로 로그인해 주세요.');
   if(!r.ok)throw Error('원격 상태를 불러오지 못했어요. 잠시 후 다시 시도합니다.');
+  const direct=directResponses.has(r);
   const {events:delta,rooms,snapshot}=await r.json();
   if(turn!==request)return;
   if(statusLine.textContent===netErrText||statusLine.textContent===timeoutErrText||statusLine.textContent==='원격 상태를 불러오지 못했어요. 잠시 후 다시 시도합니다.')statusLine.textContent='';
   const fresh=Number.isFinite(snapshot?.syncedAt)&&Date.now()-snapshot.syncedAt<20000;
-  conn.className=fresh?'pill':'pill err';conn.lastChild.textContent=fresh?'PC 연결됨':snapshot?'PC 동기화 대기':'PC 상태 없음';
+  conn.className=fresh?'pill':'pill err';conn.lastChild.textContent=fresh?'Site 경유 · PC 연결됨':snapshot?'Site 경유 · PC 동기화 대기':'Site 경유 · PC 상태 미확인';
+  if(direct){conn.className='pill';conn.lastChild.textContent='PC 직접 연결';}
   lastRooms=rooms;lastSnap=snapshot||null;
   for(const result of lastSnap?.controlResults||[]){
-   if(controlRequests.delete(result.id))statusLine.textContent=result.ok?'PC에 반영됐어요.':'PC에서 요청을 처리하지 못했어요. 현재 상태를 확인해 주세요.';
+   if(controlRequests.delete(result.id))statusLine.textContent=result.ok==='scheduled'?'현재 답변이 끝나면 설정이 자동 적용됩니다.':result.ok?'PC에 반영됐어요.':'PC에서 요청을 처리하지 못했어요. 현재 상태를 확인해 주세요.';
   }
   for(const [id,item] of controlRequests)if(item.expires<Date.now()){
    controlRequests.delete(id);statusLine.textContent='아직 PC의 처리 결과를 확인하지 못했어요.';
@@ -584,7 +655,110 @@ const remoteHelpDialog=document.querySelector('#remote-help-dialog');
 document.querySelector('#remote-help-btn')?.addEventListener('click',()=>remoteHelpDialog?.showModal());
 document.querySelector('#remote-help-close')?.addEventListener('click',()=>remoteHelpDialog?.close());
 const remoteSettingsDialog=document.querySelector('#remote-settings-dialog');
-document.querySelector('#remote-settings-btn')?.addEventListener('click',()=>{if(selected)remoteSettingsDialog?.showModal();});
+const directSettingsKey='agentRoomDirectLink';
+let directLink=null;
+const directResponses=new WeakSet();
+function parseDirectLink(value){
+ let url;try{url=new URL(value);}catch{throw Error('PC에서 발급한 LAN 링크 전체를 붙여넣어 주세요.');}
+ const host=url.hostname;
+ if(url.protocol!=='http:'||url.username||url.password||url.pathname!=='/'||! /^(?:10\.|192\.168\.|172\.(?:1[6-9]|2[0-9]|3[01])\.|100\.(?:6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.)/.test(host)||! /^\d+(?:\.\d+){3}$/.test(host)||! /^[a-f0-9]{48}$/i.test(url.searchParams.get('key')||''))throw Error('PC에서 발급한 접속 키 포함 LAN 링크를 입력해 주세요.');
+ return url;
+}
+try{directLink=parseDirectLink(localStorage.getItem(directSettingsKey)||'');}catch{}
+let directFailures=0;
+let directRetryAt=0;
+function resetDirectRetry(){
+ directFailures=0;
+ directRetryAt=0;
+}
+async function roomRequest(qs,options={}){
+ const link=directLink;
+ const signal=options.signal||AbortSignal.timeout(15000);
+ signal.throwIfAborted();
+ if(link&&Date.now()>=directRetryAt){
+  const directUrl=new URL('/api/room/direct'+qs,link.origin);
+  const probe=AbortSignal.timeout(options.method==='POST'?5000:1800);
+  try{
+   const response=await fetch(directUrl,{
+    ...options,headers:{...options.headers,Authorization:'Bearer '+link.searchParams.get('key')},
+    credentials:'omit',redirect:'error',targetAddressSpace:'local',signal:AbortSignal.any([signal,probe])
+   });
+   if(response.ok){
+    if(link===directLink)resetDirectRetry();
+    directResponses.add(response);
+    return response;
+   }
+   // A definitive room or payload rejection applies on either transport.
+   if(response.status<500&&![401,403,408,429].includes(response.status))return response;
+  }catch(error){
+   if(signal.aborted)throw signal.reason;
+  }
+  if(link===directLink){
+   directFailures=Math.min(directFailures+1,5);
+   directRetryAt=Date.now()+Math.min(30000,2000*2**(directFailures-1));
+  }
+ }
+ // Reuse the exact serialized message, including its original id.
+ return fetch('/api/room/browser'+qs,{...options,signal,redirect:'error'});
+}
+window.addEventListener('online',()=>{resetDirectRetry();if(!document.hidden)void refresh();});
+const directForm=document.querySelector('#direct-form');
+const directInput=document.querySelector('#direct-url');
+const directFeedback=document.querySelector('#direct-feedback');
+const removeDirect=document.querySelector('#direct-remove');
+function showDirectSettings(){
+ directInput.value='';
+ directFeedback.textContent=directLink?'등록된 PC · '+directLink.host:'등록된 PC가 없습니다.';
+ removeDirect.disabled=!directLink;
+}
+directForm.onsubmit=event=>{
+ event.preventDefault();
+ try{
+  const link=parseDirectLink(directInput.value.trim());
+  localStorage.setItem(directSettingsKey,link.href);
+  directLink=link;resetDirectRetry();showDirectSettings();void refresh();
+ }catch(error){directFeedback.textContent=error.message;}
+};
+removeDirect.onclick=()=>{
+ try{
+  localStorage.removeItem(directSettingsKey);
+  directLink=null;resetDirectRetry();showDirectSettings();void refresh();
+ }catch(error){directFeedback.textContent=error.message;}
+};
+const roomNameForm=document.querySelector('#remote-room-name-form');
+const remoteAgentDialog=document.querySelector('#remote-agent-dialog');
+const remoteAgentForm=document.querySelector('#remote-agent-form');
+let editingRemoteAgent=null;
+function openRemoteAgentSettings(member){
+ editingRemoteAgent=member;
+ for(const field of ['name','model','role','effort'])remoteAgentForm.elements[field].value=member[field]||'';
+ if(remoteAgentForm.elements.effort.selectedIndex<0)remoteAgentForm.elements.effort.value='';
+ remoteAgentDialog.showModal();
+}
+remoteAgentForm.onsubmit=async event=>{
+ event.preventDefault();
+ const member=editingRemoteAgent;
+ if(!member||member.room!==selected)return;
+ const button=event.submitter;
+ button.disabled=true;
+ try{
+  const fields=Object.fromEntries(new FormData(remoteAgentForm));
+  if(await sendControl({control:'edit_agent',participant:member.id,...fields}))remoteAgentDialog.close();
+ }finally{button.disabled=false;}
+};
+document.querySelector('#remote-agent-close').onclick=()=>remoteAgentDialog.close();
+roomNameForm.onsubmit=async event=>{
+ event.preventDefault();
+ if(!selected)return;
+ if(await sendControl({control:'rename_room',name:roomNameForm.elements.name.value.trim()}))remoteSettingsDialog.close();
+};
+document.querySelector('#remote-settings-btn').onclick=()=>{
+ const room=lastRooms?.find(item=>item.id===selected);
+ roomNameForm.hidden=!room;
+ roomNameForm.elements.name.value=room?.name||'';
+ showDirectSettings();remoteSettingsDialog.showModal();
+};
+remoteSettingsDialog.addEventListener('close',()=>{directInput.value='';});
 document.querySelector('#remote-settings-close')?.addEventListener('click',()=>remoteSettingsDialog?.close());
 document.querySelector('#fab-agents')?.addEventListener('click',()=>openMobilePane('agents'));
 let touchStartX=0,touchStartY=0,touchTracking=false;
@@ -593,6 +767,15 @@ document.addEventListener('touchstart',e=>{
  if(e.target instanceof Element&&e.target.closest('pre,table,input,textarea,select,dialog'))return;
  touchStartX=e.touches[0].clientX;touchStartY=e.touches[0].clientY;touchTracking=true;
 },{passive:true});
+document.addEventListener('touchcancel',()=>{touchTracking=false;},{passive:true});
+function closeSwipedPane(selector,direction){
+ const panel=document.querySelector(selector);
+ if(matchMedia('(prefers-reduced-motion: reduce)').matches||!panel?.animate){openMobilePane('chat');return;}
+ if(panel.getAnimations().some(animation=>animation.id==='swipe-close'))return;
+ const animation=panel.animate([{transform:'translateX(0)'},{transform:'translateX('+direction*100+'%)'}],{duration:180,easing:'ease-in'});
+ animation.id='swipe-close';
+ animation.onfinish=()=>openMobilePane('chat');
+}
 document.addEventListener('touchend',e=>{
  if(!touchTracking||!mobileView()||!e.changedTouches.length)return;
  touchTracking=false;
@@ -601,10 +784,10 @@ document.addEventListener('touchend',e=>{
  const roomsOpen=document.body.classList.contains('rooms-open');
  const agentsOpen=!document.body.classList.contains('agents-hidden');
  if(dx>0){
-  if(agentsOpen)openMobilePane('chat');
+  if(agentsOpen)closeSwipedPane('#agent-panel',1);
   else if(!roomsOpen)openMobilePane('rooms');
  }else{
-  if(roomsOpen)openMobilePane('chat');
+  if(roomsOpen)closeSwipedPane('body>aside',-1);
   else if(!agentsOpen)openMobilePane('agents');
  }
 },{passive:true});
@@ -672,12 +855,19 @@ form.onsubmit=async event=>{
  if(pending?.text!==draft.value||pending.room!==selected||pending.attKey!==curAttKey){
   pending={id:crypto.randomUUID(),room:selected,text:draft.value,attachments:remoteAttachments.slice(),attKey:curAttKey};
  }
- const button=event.submitter;button.disabled=true;
+ const button=form.querySelector('button[type=submit]');if(button.disabled)return;button.disabled=true;
  try{
-  const body={id:pending.id,room:pending.room,text:pending.text,attachments:pending.attachments};
-  const r=await fetch('/api/room/browser',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const sent=pending;
+  const body={id:sent.id,room:sent.room,text:sent.text,attachments:sent.attachments};
+  const r=await roomRequest('',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(!r.ok)throw Error('전송하지 못했어요. 다시 시도해 주세요.');
-  draft.value='';fitDraft();remoteAttachments=[];renderRemoteAttachments();pending=null;statusLine.textContent='PC로 보낼 메시지를 대기열에 넣었어요.';
+  if(selected===sent.room){
+   if(draft.value===sent.text){draft.value='';fitDraft();}
+   remoteAttachments=remoteAttachments.filter(file=>!sent.attachments.includes(file));
+   renderRemoteAttachments();
+  }
+  if(pending===sent)pending=null;
+  statusLine.textContent=directResponses.has(r)?'PC에 직접 전달했어요.':'Site에 저장했어요. PC가 가져가면 처리됩니다.';
   void refresh();
  }catch(e){statusLine.textContent=formatNetError(e);}
  finally{button.disabled=false;}
@@ -687,7 +877,7 @@ draft.oninput=fitDraft;
 draft.onkeydown=event=>{
  if(event.key!=='Enter'||event.shiftKey||event.isComposing||event.keyCode===229||matchMedia('(pointer:coarse)').matches)return;
  event.preventDefault();
- const button=form.querySelector('button');
+ const button=form.querySelector('button[type=submit]');
  if(draft.value.trim()&&!button.disabled)form.requestSubmit(button);
 };
 document.addEventListener('visibilitychange',()=>{if(document.hidden)clearTimeout(pollTimer);else{idleStreak=0;void refresh();}});

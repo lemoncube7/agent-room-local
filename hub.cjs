@@ -241,7 +241,7 @@ async function coordinateTurn(plan,turn){
     if(error.cliCode==='usage_limit')cliCooldown.set(turn.member,recordQuotaLimit(agent.provider,agent.model,error));
     run("UPDATE coordination_turns SET state='blocked' WHERE seq=? AND member=? AND state='working'",plan.seq,turn.member);
     run("UPDATE deliveries SET state='coordination_blocked' WHERE seq=? AND member=? AND state='coordination_speaking'",plan.seq,turn.member);
-  }finally{cliBusy.delete(turn.member);applyPendingProjectSwitch(turn.member);}
+  }finally{cliBusy.delete(turn.member);applyPendingProjectSwitch(turn.member);applyPendingAgentEdit(turn.member);}
 }
 function dispatchCoordination(){
   if(draining||updatePending)return;
@@ -252,6 +252,33 @@ function dispatchCoordination(){
 }
 const usageCooldownMs=15*60*1000;
 const cliCooldown=new Map(), limitNotified=new Set(), judgeCooldown=new Map(), cliRepeatErrors=new Map(), pendingProjectSwitch=new Map();
+const pendingAgentEdits=new Map();
+function editAgent(args){
+  const agent=one("SELECT provider,model,effort,permission_profile,members.name FROM cli_sessions JOIN members ON members.id=cli_sessions.member WHERE member=? AND room=? AND state='approved'",args.participant,args.room);
+  if(!agent)throw Error('Connected CLI agent not found.');
+  if(cliBusy.has(args.participant)){
+    const changes=Object.fromEntries(Object.entries(args).filter(([,value])=>value!==undefined));
+    pendingAgentEdits.set(args.participant,{...pendingAgentEdits.get(args.participant),...changes});
+    return {scheduled:true};
+  }
+  const model=args.model===undefined?agent.model:args.model?.trim()?str(args.model,120):null;
+  const name=args.name===undefined?agent.name:args.name?.trim()?str(args.name,120):model||providerNames[agent.provider];
+  const role=args.role===undefined?undefined:args.role?.trim()?str(args.role,120):'';
+  run('UPDATE cli_sessions SET model=?,effort=?,permission_profile=? WHERE member=?',model,args.effort===undefined?agent.effort:normalizeEffort(args.effort),args.permission===undefined?agent.permission_profile:normalizePermission(args.permission),args.participant);
+  cliCooldown.delete(args.participant);limitNotified.delete(args.participant);cliRepeatErrors.delete(args.participant);
+  if(args.clearRules===true)run('DELETE FROM approval_rules WHERE member=?',args.participant);
+  if(role!==undefined)run('UPDATE members SET name=?, role=? WHERE id=?',name,role,args.participant);
+  else run('UPDATE members SET name=? WHERE id=?',name,args.participant);
+  invalidateWarm(args.participant);
+  requeueRecentFailedTurn(args.participant);
+}
+
+function applyPendingAgentEdit(memberId){
+  const edit=pendingAgentEdits.get(memberId);
+  if(!edit)return;
+  pendingAgentEdits.delete(memberId);
+  try{editAgent(edit);}catch(error){console.error('Queued agent settings:',error.message);}
+}
 function applyPendingProjectSwitch(memberId){
   const next=pendingProjectSwitch.get(memberId);
   if(!next||cliBusy.has(memberId))return;
@@ -1278,6 +1305,7 @@ async function cliTurn(participant, prompt, inputSeq){
     cliBusy.delete(participant);
     try{wakePeerWaiters(participant,row?.room);}catch(error){console.error('Peer wake failed:',error.message);}
     applyPendingProjectSwitch(participant);
+    applyPendingAgentEdit(participant);
     if(inputSeq&&row)try{maybeWrapUp(row.room,inputSeq);}catch(error){console.error('Wrap-up check failed:',error.message);}
     liveTurns.delete(participant);
     liveProgress.delete(participant);
@@ -1451,6 +1479,8 @@ function task({action,room,participant,name,text,request,replyTo,after=0,...extr
   if(action==='remote_user_message'){
     if(remoteConfigured()&&!one('SELECT room FROM remote_rooms WHERE room=?',room))throw Error('Remote access is disabled for this room.');
     if(!/^[a-f0-9-]{36}$/i.test(request||''))throw Error('Invalid remote message identifier.');
+    const existing=one('SELECT seq FROM messages WHERE author=? AND request=?','human:'+room,'remote:'+request);
+    if(existing)return {seq:existing.seq};
     const seq=recordUserMessage(room,text,'remote:'+request,Array.isArray(extra.attachments)?extra.attachments:[]);
     dispatchQueuedTurns();
     return {seq};
@@ -1486,6 +1516,15 @@ function task({action,room,participant,name,text,request,replyTo,after=0,...extr
         run('UPDATE members SET paused=? WHERE id=?',paused,target.id);
         if(paused){invalidateWarm(target.id);run("UPDATE deliveries SET state='context_only',priority=0 WHERE member=? AND state IN ('queued','ranking')",target.id);}
       }else throw Error('Agent cannot be controlled.');
+      return {ok:true};
+    }
+    if(extra.control==='edit_agent'){
+      if(!participant||!['name','model','effort','role'].every(key=>extra[key]===undefined||typeof extra[key]==='string'))throw Error('Invalid agent settings.');
+      return {ok:true,...editAgent({room,participant,name,model:extra.model,effort:extra.effort,role:extra.role})};
+    }
+    if(extra.control==='rename_room'){
+      if(!one('SELECT id FROM rooms WHERE id=?',room))throw Error('Room not found.');
+      run('UPDATE rooms SET name=? WHERE id=?',str(name,70),room);
       return {ok:true};
     }
     if(extra.control==='room_ranking'){
@@ -1947,6 +1986,42 @@ const server=http.createServer(async(req,res)=>{
   const proto=req.headers['x-forwarded-proto']==='https'?'https':'http';
   const origin=proto+'://'+(isLocal?localHost:reqHost);
   const parsedUrl=new URL(req.url,origin);
+  if(parsedUrl.pathname==='/api/room/direct'){
+    const siteOrigin=String(cfg.site||'').replace(/\/$/,'');
+    if(!directActiveOnBoot||cfg.remoteMode!=='both'||!siteOrigin.startsWith('https://')||req.headers.origin!==siteOrigin){
+      return res.writeHead(403).end();
+    }
+    const headers={'Access-Control-Allow-Origin':siteOrigin,'Vary':'Origin','Cache-Control':'no-store','Content-Type':'application/json; charset=utf-8'};
+    const respond=(status,data)=>res.writeHead(status,headers).end(JSON.stringify(data));
+    if(req.method==='OPTIONS')return res.writeHead(204,{...headers,'Access-Control-Allow-Methods':'GET, POST','Access-Control-Allow-Headers':'Authorization, Content-Type'}).end();
+    if(!cfg.directKey||!sameSecret(req.headers.authorization,'Bearer '+cfg.directKey))return respond(401,{error:'Invalid direct link'});
+    try{
+      const room=parsedUrl.searchParams.get('room');
+      const shares=new Map(selectedRemoteRooms().map(item=>[item.room,item.since]));
+      if(req.method==='POST'){
+        const chunks=[];let size=0;
+        for await(const chunk of req){size+=chunk.length;if(size>1500000)return respond(413,{error:'Payload too large'});chunks.push(chunk);}
+        const payload=JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        if(!shares.has(payload.room))return respond(404,{error:'Room is not shared'});
+        return respond(200,task({action:'remote_user_message',room:payload.room,text:payload.text,request:payload.id,attachments:payload.attachments}));
+      }
+      if(req.method!=='GET')return respond(405,{error:'Unsupported method'});
+      if(room&&!shares.has(room))return respond(404,{error:'Room is not shared'});
+      const current=state(room);
+      const since=Number(parsedUrl.searchParams.get('since'))||0;
+      const events=room?current.messages.filter(m=>!m.recipient&&m.seq>Math.max(since,shares.get(room))).slice(since?0:-100,since?100:undefined).map(m=>({
+        seq:m.seq,name:m.name,text:m.body.slice(0,30000),created:m.created,
+        commandId:m.request?.startsWith('remote:')?m.request.slice(7):undefined
+      })):[];
+      const snapshot={
+        syncedAt:Date.now(),limits:current.limits,
+        members:current.members.filter(m=>shares.has(m.room)&&m.state!=='disconnected').map(({id,room,name,state,provider,model,paused,busy,progress,conflict,cliError,effort,role})=>({id,room,name,state,provider,model,paused,busy,progress,conflict,cliError,effort,role})),
+        approvals:current.approvals.filter(a=>shares.has(a.room)).map(({id,room,name,tool,input,created})=>({id,room,name,tool,input:String(input||'').slice(0,800),created})),
+        ranking:current.ranking.filter(r=>shares.has(r.room)).map(({room,enabled,mode,main_member})=>({room,enabled,mode,main_member}))
+      };
+      return respond(200,{rooms:current.rooms.filter(r=>shares.has(r.id)).map(({id,name})=>({id,name})),events,snapshot});
+    }catch{return respond(400,{error:'Invalid direct request'});}
+  }
   if(req.method==='GET'&&parsedUrl.pathname==='/manifest.webmanifest'){
     return res.writeHead(200,{'Content-Type':'application/manifest+json','Cache-Control':'no-store'}).end(JSON.stringify({
       name:'Agent Room',short_name:'Agent Room',start_url:'/',display:'standalone',
@@ -2326,19 +2401,7 @@ const server=http.createServer(async(req,res)=>{
         run('DELETE FROM approval_rules WHERE member=? AND rule=?',str(args.member,120),str(args.rule,120));
       }
       else if(args.action==='edit_agent'){
-        if(cliBusy.has(args.participant))throw Error('답변이 끝난 뒤 에이전트 설정을 변경하세요.');
-        const agent=one("SELECT provider FROM cli_sessions JOIN members ON members.id=cli_sessions.member WHERE member=? AND room=? AND state='approved'",args.participant,args.room);
-        if(!agent)throw Error('Connected CLI agent not found.');
-        const model=args.model?.trim()?str(args.model,120):null;
-        const name=args.name?.trim()?str(args.name,120):model||providerNames[agent.provider];
-        const role=args.role===undefined?undefined:args.role?.trim()?str(args.role,120):'';
-        run('UPDATE cli_sessions SET model=?,effort=?,permission_profile=? WHERE member=?',model,normalizeEffort(args.effort),normalizePermission(args.permission),args.participant);
-        cliCooldown.delete(args.participant);limitNotified.delete(args.participant);cliRepeatErrors.delete(args.participant);
-        if(args.clearRules===true)run('DELETE FROM approval_rules WHERE member=?',args.participant);
-        if(role!==undefined)run('UPDATE members SET name=?, role=? WHERE id=?',name,role,args.participant);
-        else run('UPDATE members SET name=? WHERE id=?',name,args.participant);
-        invalidateWarm(args.participant);
-        requeueRecentFailedTurn(args.participant);
+        if(editAgent(args)?.scheduled)result={...state(args.room),agentEditScheduled:true};
       }
       else if(args.action==='open_cli'){
         invalidateWarm(args.participant);
