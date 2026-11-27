@@ -395,11 +395,14 @@ function createStreamHost(provider,file,prefix,args,project,session,persistent=f
       }
       if(provider==='agy'&&(event.type==='step_update'||event.event==='step_update')){
         const su=(event.event==='step_update'&&event.step_update&&typeof event.step_update==='object')?event.step_update:event;
+        const stepIdx=su.step_index??event.step_index??null;
+        if(stepIdx!==null&&turn.agyStepIndex!==null&&stepIdx!==turn.agyStepIndex)turn.flushInterim();
+        if(stepIdx!==null)turn.agyStepIndex=stepIdx;
         const st=String(su.step_type||'').toLowerCase();
         if(su.tool_info?.name||su.tool_name||st.includes('tool')||st.includes('command')||st.includes('think')||st.includes('reason'))turn.flushInterim();
         else if(info?.text){
           if(info.delta)turn.pendingInterim+=info.text;
-          else{if(turn.pendingInterim&&info.text!==turn.pendingInterim)turn.flushInterim();turn.pendingInterim=info.text;}
+          else{if(turn.pendingInterim&&info.text!==turn.pendingInterim&&!info.text.startsWith(turn.pendingInterim))turn.flushInterim();turn.pendingInterim=info.text;}
         }
       }
       if(kind==='result')turn.pendingInterim='';
@@ -411,7 +414,14 @@ function createStreamHost(provider,file,prefix,args,project,session,persistent=f
         sumUsage(turn.usage,res.usage||res.token_usage||{total_cost_usd:res.total_cost_usd},provider==='agy'?(res.num_turns||turn.done):1);
         if(res.total_cost_usd&&!res.usage?.total_cost_usd)turn.usage.costUsd+=Number(res.total_cost_usd)||0;
         const ok=res.status?(res.status==='SUCCESS'||res.status==='success'):!res.is_error;
-        const reply=res.response??res.result;
+        let reply=res.response??res.result;
+        if(provider==='agy'&&ok&&typeof reply==='string'&&turn.flushedInterims.length){
+          let trimmed=reply.trim();
+          for(const sent of turn.flushedInterims){
+            if(trimmed.startsWith(sent))trimmed=trimmed.slice(sent.length).trim();
+          }
+          if(trimmed)reply=trimmed;
+        }
         if(ok&&typeof reply==='string')turn.parts.push(reply);
         else turn.failure+='\n'+(Array.isArray(res.errors)?res.errors.join('; '):'')+' '+(res.error||res.message||res.result||res.response||res.status||res.subtype||'');
         turn.poll();
@@ -449,12 +459,13 @@ function createStreamHost(provider,file,prefix,args,project,session,persistent=f
           traceId:provider==='claude'&&options.progressFile?child.pid+':'+(++attempts):null,
           tracePhases:new Set(),startedAt:performance.now(),resumeSession:Boolean(id),
           sent:0,done:0,offset:0,parts:[],usage:{turns:0,inputTokens:0,outputTokens:0,costUsd:0},
-          failure:'',pendingInterim:'',lastEvent:Date.now(),timedOut:false,closing:false,
+          failure:'',pendingInterim:'',agyStepIndex:null,flushedInterims:[],lastEvent:Date.now(),timedOut:false,closing:false,
           inboxFile,closingFile,liveFile,writeProgress,resolve,reject,
           flushInterim(){
             const text=cleanInterim(turn.pendingInterim);
             turn.pendingInterim='';
             if(!text)return;
+            turn.flushedInterims.push(text);
             if(options.onInterim)try{options.onInterim(text);}catch{}
             if(options.interimFile)try{fs.appendFileSync(options.interimFile,JSON.stringify(text)+'\n');writeProgress.reset?.();}catch{}
           },

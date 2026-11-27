@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.0.20
+- **Antigravity (`agy`) 중간 출력 분리 (`managed-codex.cjs`):** `step_update`에서 `step_index`가 바뀔 때 이전 스텝의 중간 출력을 자동으로 별도 말풍선으로 내보내고, 최종 `result`에 중복 포함된 앞부분을 제거해 중간 안내와 최종 답변이 합쳐지지 않도록 수정했습니다.
+
 ## v1.0.19
 - **실시간 서버 푸시 (SSE):** `hub.cjs`에 `GET /events` SSE 엔드포인트(`readAuthorized` 인증, 25초 keep-alive, 80ms 디바운스 푸시)를 추가하고, `index.html`을 `EventSource('/events')` 기반으로 전환해 메시지·상태 변경 시 즉시 반영되도록 개선했습니다(연결 중 백업 폴링 8초, 끊김 시 1.5초 폴링 자동 복귀).
 
