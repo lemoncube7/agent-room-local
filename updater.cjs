@@ -20,6 +20,20 @@ function readUpdateLog(file) {
   return lines.join('\n');
 }
 
+function readUpdateStatus(file, version, pending, target) {
+  const at = fs.statSync(file, {throwIfNoEntry: false})?.mtimeMs;
+  const lines = readUpdateLog(file).trim().split(/\r?\n/);
+  const detail = lines.at(-1) || '';
+  const failure = lines.findLast(line => /^(?:업데이트 실패|Update failed)/i.test(line));
+  const completed = detail.match(/^Agent Room (v\d+\.\d+\.\d+) 실행 중입니다\.$/);
+  if (failure) return {phase:'failed', detail, error:failure, at, target};
+  if (completed?.[1] === 'v' + version) return {phase:'done', detail, at, target:completed[1]};
+  if (pending || (at && Date.now() - at < 60000 && detail === '업데이트된 Agent Room 허브를 시작하고 확인하는 중...')) {
+    return {phase:'running', detail, at, target};
+  }
+  return {detail};
+}
+
 function updaterLaunchCommand(rootDir, updateLog, powershell, tag) {
   const quote = value => "'" + String(value).replace(/'/g, "''") + "'";
   const args = [
@@ -92,4 +106,4 @@ async function checkSiteUpdate(tag, current, relayVersion) {
     instructions:'https://github.com/lemoncube7/agent-room-local/blob/'+tag+'/REMOTE-SETUP.md#기존-site-업데이트'};
 }
 
-module.exports = { updaterLaunchCommand, checkUpdate, readUpdateLog, checkSiteUpdate };
+module.exports = { updaterLaunchCommand, checkUpdate, readUpdateLog, readUpdateStatus, checkSiteUpdate };
