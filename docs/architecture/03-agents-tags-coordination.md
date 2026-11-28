@@ -32,12 +32,19 @@
 - `cliTurn`에서 `error.cliCode === 'usage_limit'` 발생 시 `recordQuotaLimit()`으로 쿨다운 시각을 기록하고 `last_cli_error`를 갱신합니다.
 - 기존 경고가 없을 때(`!limitNotified.has(participant)` 및 직전 `last_cli_error`가 `usage_limit`이 아닐 때)만 채팅방에 경고 메시지를 1회 남기고, 정상 턴 완료 시 `limitNotified`를 초기화합니다.
 
+## 3.4b 조율 종료 · 중단 · [AGREED]
+- `/조율중단`(`/회의중단`, 멈춰·그만)은 방의 의견·조율 단계를 모두 `stopped`로 끝내고, 진행 중이던 발언이 늦게 와도 `coordinateTurn`이 버린다(다음 라운드·실행 없음).
+- 종료는 `endCoordination(plan, kind)`가 `⏹ 조율 종료 · 합의 완료 / 사용자 중단 / N라운드 소진`으로 표시한다. 중단·소진이면 마지막 발언자에게 `[조율 정리 요청]`을 보내 합의된 점·남은 이견·실행 여부를 한 번 정리시킨다(작업 시작 금지). 회의 합의는 마지막 발언자의 합의 요약, 작업 합의는 작업 보고로 대신한다.
+- 변경 없는 동의는 note를 정확히 `[AGREED]`로만 쓰게 하고, 이때 앞 라운드에서 정한 files·work를 유지한다.
+
 ## 3.5 아키텍처 문서 자동 관리 (`archDocs`)
 - 앱 설정(`local/app-settings.json`의 `archDocs`, 기본 켜짐, 앱 설정 > 실행 · 연결에서 토글, `set_app_setting` 액션)으로 켜고 끈다.
 - 켜져 있으면 DEV 모드 턴마다 `ensureArchitectureDocs(project)`가 작업 폴더에 `ARCHITECTURE.md`가 없을 때 목차 틀을 만든다(첫 줄 `<!-- agent-room:architecture-skeleton -->`). 정책 문구에 "목차와 영역 문서를 읽고, 바꾸면 같은 변경에서 영역 문서를 갱신하고, 틀 표시가 남아 있으면 코드를 읽고 채운 뒤 표시를 지우라"는 지시가 들어간다.
 - 꺼져 있거나 CHAT 모드면 파일을 만들지 않고 정책에서도 문서 지시를 뺀다.
 
 ## 설계 의도 (왜 이렇게 했나)
+
+- **조율 중단과 종료 표시 (오퍼스, 솔 요청):** 사용자가 멈출 방법이 없었고, 끝난 이유(합의/중단/소진)가 채팅에 드러나지 않았다. 동의만 할 때 긴 문장을 반복해 라운드가 길어지던 문제로 `[AGREED]` 단독 규칙을 넣었다.
 
 - **Codex 턴마다 샌드박스를 명시 (오퍼스):** 이어 쓴 Codex 스레드는 마지막 턴의 샌드박스 모드를 기억한다. 읽기 전용 조율 턴 뒤에 솔·테라가 계속 읽기 전용으로 갇힌 사고(v1.0.38) 때문에, 앱 서버의 `thread/resume`과 `exec resume` 모두 권한에 맞는 `sandbox`(대화=read-only, 개발=workspace-write, 전체=danger-full-access)를 매번 지정한다.
 

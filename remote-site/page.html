@@ -649,7 +649,7 @@ function renderEventsView(events,busy,preserveScroll=false){
    const primary=dels.filter(step=>step.priority===1);
    const current=primary[0];
    const count=current&&primary.length>1&&primary.every(step=>step.state===current.state)?' 외 '+(primary.length-1)+'명':'';
-   const currentText=current?current.name+count+' · '+(delStatus[current.state]||current.state):'PC에 저장됨';
+   const currentText=current?current.name+count+' · '+(delStatus[current.state]||current.state):'PC 저장됨';
    history.append(el('summary',remoteLabel+' · '+currentText));
    const log=el('div');log.className='remote-delivery-log';
    const stamp=value=>new Date(value).toLocaleTimeString('ko-KR');
@@ -678,6 +678,15 @@ function renderEventsView(events,busy,preserveScroll=false){
   }
   return a;
  });
+ for(const [cmdId,w] of sentWatch){
+  if(w.room!==selected||visibleEvents.some(e=>e.commandId===cmdId))continue;
+  const a=document.createElement('article');a.className='own';a.style.opacity='.82';
+  a.append(renderMd(w.fullText||w.text||''));
+  const st=el('small',new Date(w.at).toLocaleTimeString('ko-KR')+' · Site 접수 · PC 저장 대기');
+  st.className='msg-time own';
+  a.append(st);
+  nodes.push(a);
+ }
  for(const b of busy){
   const a=document.createElement('article'),cls=agentCls(b.name,b.provider);
   a.className=(cls?cls+' ':'')+'typing';
@@ -1088,6 +1097,7 @@ const remoteSlashCommands=[
  {cmd:'/에이전트',desc:'에이전트 패널 열기',run:()=>{if(mobileView())openMobilePane('agents');else showAgentPanel(true);}},
  {cmd:'/테마',desc:'다크/블랙/라이트 전환',run:()=>document.querySelector('#remote-theme-toggle')?.click()},
  {cmd:'/조율',desc:'각자 의견 → 조율 → 동시 작업',run:()=>{draft.value='/조율 ';draft.focus();}},
+ {cmd:'/조율중단',desc:'진행 중인 조율 멈추기',run:()=>{draft.value='/조율중단';draft.focus();}},
  {cmd:'/회의',desc:'각자 의견 → 합의안만',run:()=>{draft.value='/회의 ';draft.focus();}},
  {cmd:'/새로고침',desc:'지금 동기화',run:()=>{void refresh();}},
  {cmd:'/도움말',desc:'원격 1분 사용법',run:()=>remoteHelpDialog?.showModal()}
@@ -1108,13 +1118,28 @@ draft.addEventListener('input',renderRemoteSlashMenu);
 let remoteAttachments=[];
 const attachInput=document.querySelector('#remote-attach'),attachList=document.querySelector('#remote-attach-list');
 function renderRemoteAttachments(){
- attachList.replaceChildren(...remoteAttachments.map((item,idx)=>{
-  const chip=el('span',item.name+' ');
+ const chips=remoteAttachments.map((item,idx)=>{
+  const kb=Math.max(1,Math.round(item.data.length*0.75/1024));
+  const chip=el('span',item.name+' ('+kb+'KB) ');
   chip.style.cssText='display:inline-flex;align-items:center;gap:4px;background:var(--raised);border:1px solid var(--line);border-radius:8px;padding:2px 8px;font-size:12px';
   const rm=el('button','✕');rm.type='button';rm.style.cssText='border:0;background:transparent;color:var(--muted);padding:0 2px;font-size:12px';
   rm.onclick=()=>{remoteAttachments.splice(idx,1);renderRemoteAttachments();};
   chip.append(rm);return chip;
- }));
+ });
+ if(remoteAttachments.length){
+  const totalB64=remoteAttachments.reduce((s,a)=>s+a.data.length,0);
+  const totalKb=Math.max(1,Math.round(totalB64*0.75/1024));
+  const onDirect=conn.lastChild.textContent.startsWith('PC 직접 연결');
+  const overDirect=totalB64>11*1024*1024;
+  const overSite=!onDirect&&totalB64>950*1024;
+  const hint=el('small',overDirect
+   ?'⚠ 첨부가 8MB(Base64 포함 12MB)를 초과해 전송할 수 없어요.'
+   :overSite?'⚠ Site 경유는 D1 제한(~700KB)으로 실패할 수 있어요. PC 직접 연결을 권장합니다. ('+totalKb+'KB)'
+   :(onDirect?'직결 첨부 가능 · 최대 8MB':'Site 경유 권장 ~700KB · 직결 시 최대 8MB')+' ('+totalKb+'KB)');
+  hint.style.cssText='font-size:11px;color:'+(overDirect||overSite?'#ffb9ad':'var(--muted)');
+  chips.push(hint);
+ }
+ attachList.replaceChildren(...chips);
 }
 async function addRemoteFiles(files){
  for(const file of files){
@@ -1165,7 +1190,7 @@ form.onsubmit=async event=>{
    const why={400:'메시지 형식이나 첨부를 받을 수 없어요',403:'로그인이 만료됐어요. 새로고침해서 다시 로그인해 주세요',404:'이 방이 원격에 공유돼 있지 않아요',409:'같은 요청 ID가 이미 다른 내용으로 쓰였어요',413:'첨부가 너무 커요'}[r.status]||'서버 오류';
    throw Error('전송 실패 ('+r.status+'): '+why+(detail?' — '+detail:''));
   }
-  if(!directResponses.has(r))sentWatch.set(sent.id,{at:Date.now(),text:sent.text.slice(0,24)});
+  if(!directResponses.has(r))sentWatch.set(sent.id,{at:Date.now(),room:sent.room,text:sent.text.slice(0,24),fullText:sent.text||(sent.attachments.length?'[첨부 '+sent.attachments.length+'개]':'')});
   if(selected===sent.room){
    if(draft.value===sent.text){draft.value='';fitDraft();}
    remoteAttachments=remoteAttachments.filter(file=>!sent.attachments.includes(file));

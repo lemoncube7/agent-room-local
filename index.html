@@ -2065,6 +2065,7 @@ const slashCommands=[
  {cmd:'/개발모드',desc:'파일 수정·실행 개발 모드',run:()=>{if(selected)void control({action:'set_work_mode',room:selected,workMode:'dev'});}},
  {cmd:'/폴더',desc:'작업 폴더 변경',run:()=>byId('project-btn').click()},
  {cmd:'/조율',desc:'각자 의견 → 조율 → 동시 작업 (뒤에 요청 입력)',run:()=>{const d=byId('draft');d.value='/조율 ';d.focus();}},
+ {cmd:'/조율중단',desc:'진행 중인 조율·회의 멈추기',run:()=>{if(selected)void control({action:'user_message',room:selected,text:'/조율중단'});}},
  {cmd:'/회의',desc:'각자 의견 → 조율해 합의안만 (뒤에 요청 입력)',run:()=>{const d=byId('draft');d.value='/회의 ';d.focus();}},
  {cmd:'/검색',desc:'방 전체 검색',run:()=>{if(selected)openChatSearch();}},
  {cmd:'/설정',desc:'앱 설정 열기',run:()=>byId('app-settings-dialog').showModal()},

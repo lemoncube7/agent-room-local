@@ -372,14 +372,43 @@ function finishCoordinationRoundIfReady(plan,lastMember){
     return true;
   }
   if(hasObjection&&round>=maxRounds){
-    if(lastMember)storeCoordinationMessage(plan.room,lastMember,modeTag+' · 최대 조율 라운드('+maxRounds+'회)까지 합의되지 않아 작업을 시작하지 않고 대기합니다. 진행 방향을 정해 주세요.',plan.seq);
-    run("UPDATE deliveries SET state='context_seen',priority=0 WHERE seq=? AND state IN ('coordination_done','coordination_wait')",plan.seq);
+    run("UPDATE deliveries SET state='context_only',priority=0 WHERE seq=? AND state IN ('coordination_done','coordination_wait')",plan.seq);
     run("UPDATE reply_plans SET state='coordinated' WHERE seq=? AND state='coordinating'",plan.seq);
+    endCoordination(plan,'exhausted',lastMember,maxRounds);
     return true;
   }
   releaseCoordinatedWork(plan.seq,plan.coordinate_mode||'work');
+  endCoordination(plan,'agreed',lastMember,maxRounds);
   setImmediate(dispatchQueuedTurns);
   return true;
+}
+// Marks how a coordination ended (agreed / stopped by the user / rounds exhausted) and, when no consensus
+// summary exists yet, asks one participant to summarise agreed points, open disagreements and whether work starts.
+function endCoordination(plan,kind,lastMember=null,maxRounds=COORD_MAX_ROUNDS){
+  const discussOnly=plan.coordinate_mode==='discuss';
+  const label={agreed:discussOnly?'합의 완료 (회의만, 작업 없음)':'합의 완료 · 맡은 작업 시작',stopped:'사용자 중단 · 작업을 시작하지 않음',exhausted:'최대 '+maxRounds+'라운드까지 합의하지 못함 · 작업을 시작하지 않음'}[kind];
+  const author=lastMember||one("SELECT member FROM coordination_turns WHERE seq=? AND note IS NOT NULL ORDER BY position LIMIT 1",plan.seq)?.member;
+  storeMessage(plan.room,'system:coord:'+plan.room,'⏹ 조율 종료 · '+label,plan.seq);
+  // Meetings end with the last speaker's consensus note and agreed work is reported by the workers, so only
+  // a stop or a deadlock needs an extra summary turn.
+  if(kind==='agreed'||!author||!one("SELECT 1 FROM cli_sessions WHERE member=?",author))return;
+  const body='[조율 정리 요청] 방금 조율이 '+(kind==='stopped'?'사용자 요청으로 중단':'합의 없이 끝')+'됐습니다. 지금까지의 발언을 바탕으로 합의된 점 · 남은 이견 · 실행 여부(이번에는 작업을 시작하지 않음)를 한 번만 짧게 정리해 방에 올려 주세요. 파일을 수정하거나 작업을 시작하지 마세요.';
+  const seq=Number(run('INSERT INTO messages(room,author,request,body,created,relay_root,recipient) VALUES(?,?,?,?,?,?,?)',plan.room,'system:coord:'+plan.room,'coord-summary:'+plan.seq,body,new Date().toISOString(),plan.seq,author).lastInsertRowid);
+  run("INSERT OR IGNORE INTO deliveries(seq,member,state,priority) VALUES(?,?,'queued',1)",seq,author);
+  notifyStateChange();
+  setImmediate(dispatchQueuedTurns);
+}
+// User stop (/조율중단): ends every running opinion/coordination phase in the room; late answers are dropped.
+function stopCoordination(room){
+  let stopped=0;
+  for(const plan of all("SELECT seq,room,coordinate_mode FROM reply_plans WHERE room=? AND state IN ('coordinating','opinions')",room)){
+    run("UPDATE reply_plans SET state='stopped' WHERE seq=?",plan.seq);
+    run("UPDATE coordination_turns SET state='skipped' WHERE seq=? AND state NOT IN ('done','skipped')",plan.seq);
+    run("UPDATE deliveries SET state='context_only',priority=0 WHERE seq=? AND state IN ('queued','ranking','coordination_wait','coordination_speaking','coordination_done','coordination_blocked')",plan.seq);
+    endCoordination(plan,'stopped');
+    stopped++;
+  }
+  return stopped;
 }
 async function coordinateTurn(plan,turn){
   const input=one('SELECT body FROM messages WHERE seq=? AND retracted=0',plan.seq);
@@ -413,7 +442,7 @@ async function coordinateTurn(plan,turn){
     const isFirstProposer=round===1&&prior.length===0;
     const tagRule=isFirstProposer
       ?'You are the FIRST speaker in Round 1. Propose a concrete initial plan (goal, per-participant tasks, files, order) without deferring planning to peers.'
-      :'Start "note" with [AGREED] if you agree with the current plan, [CHANGE: reason] if you propose a modification, or [BLOCKED: reason] if blocked.';
+      :'If you agree with the current plan without any change, set "note" to exactly "[AGREED]" and nothing else (your earlier tasks and files stay as they were). Otherwise start "note" with [CHANGE: reason] for a modification or [BLOCKED: reason] if blocked.';
     const opinions=all("SELECT m.body,mem.name FROM messages m JOIN members mem ON mem.id=m.author WHERE m.relay_root=? AND m.retracted=0 AND m.recipient IS NULL AND EXISTS(SELECT 1 FROM coordination_turns t WHERE t.seq=? AND t.member=m.author) ORDER BY m.seq LIMIT 30",plan.seq,plan.seq)
       .filter(item=>!/^조율\((?:회의|작업)\)/.test(item.body));
     const recentRoom=all("SELECT m.body,COALESCE(mem.name,CASE WHEN m.author LIKE 'human:%' THEN 'user (나)' ELSE m.author END) AS name FROM messages m LEFT JOIN members mem ON mem.id=m.author WHERE m.room=? AND m.seq<? AND m.retracted=0 AND m.recipient IS NULL AND m.request NOT LIKE 'interim:%' AND m.request NOT LIKE 'receipt:%' ORDER BY m.seq DESC LIMIT 12",plan.room,plan.seq).reverse()
@@ -434,10 +463,17 @@ async function coordinateTurn(plan,turn){
     let proposal;
     try{proposal=JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0]||raw);}catch{}
     const note=(typeof proposal?.note==='string'?proposal.note:raw).trim().slice(0,1400);
-    const files=discussOnly?[]:(Array.isArray(proposal?.files)?proposal.files.filter(file=>typeof file==='string'&&file.trim()&&file.length<=500).slice(0,40):[]);
-    const work=discussOnly?false:proposal?.work!==false;
+    let files=discussOnly?[]:(Array.isArray(proposal?.files)?proposal.files.filter(file=>typeof file==='string'&&file.trim()&&file.length<=500).slice(0,40):[]);
+    let work=discussOnly?false:proposal?.work!==false;
+    // A bare [AGREED] keeps the tasks/files this agent settled on in an earlier round.
+    if(/^\[AGREED\]\s*$/i.test(note)&&!discussOnly){
+      let prev=null;try{prev=JSON.parse(one('SELECT note FROM coordination_turns WHERE seq=? AND member=?',plan.seq,turn.member)?.note||'null');}catch{}
+      if(prev){if(Array.isArray(prev.files))files=prev.files;work=prev.work!==false;}
+    }
     if(result.issue||!note||note==='[[AGENT_ROOM_NO_REPLY]]')throw Error('No coordination response.');
     if(one('SELECT retracted FROM messages WHERE seq=?',plan.seq)?.retracted!==0)return;
+    // Stopped by the user while this agent was thinking: drop the late answer so it cannot start a round or work.
+    if(one('SELECT state FROM reply_plans WHERE seq=?',plan.seq)?.state!=='coordinating')return;
     const modeTag=discussOnly?'조율(회의)':'조율(작업)';
     const roundTag=round>1?' '+round+'라운드':'';
     db.exec('BEGIN');
@@ -1956,6 +1992,15 @@ function parseFlowCommand(text){
   return m?{flow:m[1]==='조율'?'work':'discuss',text:m[2].trim()}:null;
 }
 function recordUserMessage(room,text,request=randomUUID(),attachments=[],remoteSource=null){
+  // "/조율중단" (also /회의중단, 멈춰, 그만) stops running coordination in this room from any client.
+  if(/^\s*\/(조율|회의)\s*(중단|멈춰|그만|stop)\s*$/i.test(String(text||''))){
+    const seq=recordUserMessageInner(room,'⏹ 조율 중단 요청',request,attachments,remoteSource);
+    run("UPDATE deliveries SET state='context_only',priority=0 WHERE seq=?",seq);
+    run("DELETE FROM reply_plans WHERE seq=?",seq);
+    if(!stopCoordination(room))storeMessage(room,'system:coord:'+room,'진행 중인 조율이 없어요.',seq);
+    notifyStateChange();
+    return seq;
+  }
   const flowCmd=parseFlowCommand(text);
   if(flowCmd){
     if(!flowCmd.text)throw Error('/'+(flowCmd.flow==='work'?'조율':'회의')+' 뒤에 요청 내용을 적어 주세요.');
