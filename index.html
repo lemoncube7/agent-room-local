@@ -1419,6 +1419,7 @@ function renderHistory(view,messages,roomChanged){
   const remoteLabel=m.remote_source==='direct'?'PC 직접 연결':m.remote_source==='site'?'Site 경유':String(m.request||'').startsWith('remote:')?'원격':'';
   const isRemote=Boolean(remoteLabel);
   const remoteHistory=isRemote&&!m.retracted?(snapshot.deliveryHistory||[]).filter(step=>step.seq===m.seq):null;
+  const isOwn=m.author==='human:'+selected;
   const authorQuota=(()=>{
    if(!author?.provider||isOwn)return null;
    const lim=snapshot.limits?.[author.provider];
@@ -1434,7 +1435,6 @@ function renderHistory(view,messages,roomChanged){
   const sig=JSON.stringify([remoteHistory,m.retracted?1:0,delivery,target?.name||'',author?.provider||'',nameBrand,authorQuota?.text||'',m.relay_root||0,coordLabel,progressMsg?1:0,remoteLabel,replies.map(reply=>[reply.seq,reply.retracted]),handoffs.map(({source,target})=>[source.seq,target.member,target.name,target.state])]);
   const key='message:'+m.seq, prev=existing.get(key);
   if(prev&&prev.dataset.sig===sig)return prev;
-  const isOwn=m.author==='human:'+selected;
   const card=agentCard(m.name,isOwn,author?.provider,author?.model);
   // Time, delivery state and request flow sit under the bubble so the bubble stays compact.
   const row=el('div');row.className='msg-row'+(isOwn?' own':'');row.dataset.key=key;row.dataset.sig=sig;
