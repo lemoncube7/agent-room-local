@@ -1297,6 +1297,8 @@ function runDetached(id,data,onInterim){
   });
 }
 const interruptedTurns=new Set();
+// Turns cut off by the last restart (update or crash) and re-queued; shown in the update banner with live status.
+const restartRecovery={at:0,items:[]};
 const autoNudged=new Set();
 // Wrap-up: when several agents answered one user request in parallel, the last one to finish
 // receives the others' answers and decides whether the request is done or who must act next.
@@ -1361,7 +1363,7 @@ function recoverWarmTurns(){
     const message=one('SELECT retracted FROM messages WHERE seq=?',seq);
     if(!message)continue;
     if(message.retracted){run("UPDATE deliveries SET state='retracted' WHERE seq=? AND member=? AND state='uncertain'",seq,member);continue;}
-    if(run("UPDATE deliveries SET state='queued' WHERE seq=? AND member=? AND state='uncertain'",seq,member).changes)interruptedTurns.add(id);
+    if(run("UPDATE deliveries SET state='queued' WHERE seq=? AND member=? AND state='uncertain'",seq,member).changes){interruptedTurns.add(id);restartRecovery.at=Date.now();restartRecovery.items.push({seq,member});}
   }
 }
 function recoverDetachedTurns(){
@@ -2360,7 +2362,7 @@ function state(roomId=null,options={}){
   const recentPublic=messages.filter(m=>!m.recipient&&!m.retracted&&(m.remote_source||m.request?.startsWith('remote:'))).slice(-40);
   const deliveryHistory=recentPublic.length?all('SELECT h.seq,m.name,h.state,h.at FROM delivery_history h JOIN members m ON m.id=h.member WHERE h.seq IN ('+recentPublic.map(()=>'?').join(',')+') ORDER BY h.id DESC LIMIT 320',...recentPublic.map(m=>m.seq)).reverse():[];
   const updateProgress=readUpdateStatus(updateLog,version,updatePending,updateTarget);
-  return {deliveryHistory,version,uiStamp:readUiStamp(),openMode:readLauncherMode(),project:readActiveProject(),recentProjects:readRecentProjects(),approvals:[...approvals.values()].filter(item=>item.state==='pending').map(({id,room,name,tool,input,rule,created})=>({id,room,name,tool,input,rule,created})),approvalRules:all('SELECT member,rule FROM approval_rules'),approvalLogs:includeLogs?(scoped?all('SELECT * FROM approval_logs WHERE room=? ORDER BY created DESC LIMIT 100',scoped):all('SELECT * FROM approval_logs ORDER BY created DESC LIMIT 100')):[],limits:readLimits(),quotaNotices:quotaNotices.filter(n=>(!scoped||n.room===scoped)&&Date.now()-n.at<3600000),ranking:all('SELECT room,enabled,mode,main_member,judge_provider,judge_model,judge_effort,judge_prompt FROM room_ranking'),replyPlans,remoteConfigured:remoteConfigured(),directSeenAt,appSettings:readAppSettings(),remoteShareAll:Boolean(one('SELECT share_all FROM remote_options LIMIT 1')?.share_all),remoteRooms:selectedRemoteRooms(),remoteSync:remoteSyncState(),mesh:getMeshStatus(),taskCopies:handoff.copies(scoped),tasks:handoff.list(scoped),updateStatus:updateProgress.detail||null,updateProgress,rooms:all('SELECT rooms.*,m.latest_incoming_seq FROM rooms LEFT JOIN (SELECT room,MAX(seq) AS last_seq,MAX(CASE WHEN author<>\'human:\'||room AND retracted=0 AND request NOT LIKE \'receipt:%\' THEN seq END) AS latest_incoming_seq FROM messages GROUP BY room) m ON m.room=rooms.id ORDER BY COALESCE(m.last_seq,0) DESC, rooms.rowid DESC'),
+  return {deliveryHistory,version,uiStamp:readUiStamp(),openMode:readLauncherMode(),project:readActiveProject(),recentProjects:readRecentProjects(),approvals:[...approvals.values()].filter(item=>item.state==='pending').map(({id,room,name,tool,input,rule,created})=>({id,room,name,tool,input,rule,created})),approvalRules:all('SELECT member,rule FROM approval_rules'),approvalLogs:includeLogs?(scoped?all('SELECT * FROM approval_logs WHERE room=? ORDER BY created DESC LIMIT 100',scoped):all('SELECT * FROM approval_logs ORDER BY created DESC LIMIT 100')):[],limits:readLimits(),quotaNotices:quotaNotices.filter(n=>(!scoped||n.room===scoped)&&Date.now()-n.at<3600000),ranking:all('SELECT room,enabled,mode,main_member,judge_provider,judge_model,judge_effort,judge_prompt FROM room_ranking'),replyPlans,remoteConfigured:remoteConfigured(),directSeenAt,appSettings:readAppSettings(),restartRecovery:restartRecovery.at?{at:restartRecovery.at,items:restartRecovery.items.map(({seq,member})=>{const d=one('SELECT state FROM deliveries WHERE seq=? AND member=?',seq,member)?.state||'';return {seq,name:one('SELECT name FROM members WHERE id=?',member)?.name||'에이전트',status:d==='answered'?'done':['failed','start_failed','retracted'].includes(d)?'failed':['queued','working','submitting','accepted','uncertain'].includes(d)?'running':'done'};})}:null,remoteShareAll:Boolean(one('SELECT share_all FROM remote_options LIMIT 1')?.share_all),remoteRooms:selectedRemoteRooms(),remoteSync:remoteSyncState(),mesh:getMeshStatus(),taskCopies:handoff.copies(scoped),tasks:handoff.list(scoped),updateStatus:updateProgress.detail||null,updateProgress,rooms:all('SELECT rooms.*,m.latest_incoming_seq FROM rooms LEFT JOIN (SELECT room,MAX(seq) AS last_seq,MAX(CASE WHEN author<>\'human:\'||room AND retracted=0 AND request NOT LIKE \'receipt:%\' THEN seq END) AS latest_incoming_seq FROM messages GROUP BY room) m ON m.room=rooms.id ORDER BY COALESCE(m.last_seq,0) DESC, rooms.rowid DESC'),
     members,
     messages,
     hasMoreMessages,
@@ -2729,7 +2731,7 @@ const server=http.createServer(async(req,res)=>{
       const shares=new Map(selectedRemoteRooms().map(item=>[item.room,item.since]));
       if(req.method==='POST'){
         const chunks=[];let size=0;
-        for await(const chunk of req){size+=chunk.length;if(size>1500000)return respond(413,{error:'Payload too large'});chunks.push(chunk);}
+        for await(const chunk of req){size+=chunk.length;if(size>12*1024*1024)return respond(413,{error:'Payload too large'});chunks.push(chunk);}
         const payload=JSON.parse(Buffer.concat(chunks).toString('utf8'));
         if(!shares.has(payload.room))return respond(404,{error:'Room is not shared'});
         return respond(200,task({action:'remote_user_message',room:payload.room,text:payload.text,request:payload.id,attachments:payload.attachments},'direct'));
@@ -2889,7 +2891,7 @@ const server=http.createServer(async(req,res)=>{
   if(req.method!=='POST'||(!browser&&!['/tool','/delivery','/shutdown_for_update'].includes(req.url))) return res.writeHead(404).end();
   if(browser?(req.headers.origin!==origin||!browserAuthorized(req,isLocal)):!authorized(req)) return res.writeHead(403).end();
   try{
-    const chunks=[]; let size=0; const limit=browser?12*1024*1024:65536;
+    const chunks=[]; let size=0; const limit=(browser||(req.url==='/tool'&&req.headers['x-agent-room-remote-message']==='1'))?12*1024*1024:65536;
     for await(const chunk of req){size+=chunk.length;if(size>limit)return res.writeHead(413).end();chunks.push(chunk);}
     const args=JSON.parse(Buffer.concat(chunks).toString('utf8'));
     if(req.url==='/shutdown_for_update'){

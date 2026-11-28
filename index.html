@@ -606,6 +606,13 @@ function rememberUpdate(request){
   else sessionStorage.removeItem(updateRequestKey);
  }catch{}
 }
+// After a restart, say which interrupted turns were re-run and how they ended.
+function recoverySummary(){
+ const r=typeof snapshot!=='undefined'?snapshot?.restartRecovery:null;
+ if(!r?.items?.length||Date.now()-r.at>60*60*1000)return '';
+ const label={done:'복구 완료',running:'다시 실행 중',failed:'복구 실패'};
+ return ' 업데이트로 끊긴 작업 '+r.items.length+'개: '+r.items.map(i=>i.name+'('+(label[i.status]||i.status)+')').join(', ')+'.';
+}
 function renderUpdateNotice(progress,disconnected=false){
  const banner=byId('update-banner'), close=byId('update-banner-close');
  const request=requestedUpdate;
@@ -615,7 +622,7 @@ function renderUpdateNotice(progress,disconnected=false){
  if(terminal){
   phase=progress.phase;
   title=phase==='done'?'업데이트 완료 · '+progress.target:'업데이트 실패';
-  detail=phase==='done'?'새 버전으로 앱에 다시 연결됐어요.':progress.error||progress.detail;
+  detail=phase==='done'?'새 버전으로 앱에 다시 연결됐어요.'+recoverySummary():progress.error||progress.detail;
   noticeKey=phase+':'+progress.at;
   if(request)rememberUpdate(null);
  }else if(progress?.phase==='running'||request){
@@ -2172,6 +2179,9 @@ byId('update').onclick=async()=>{
    const link=el('a','Windows ZIP 받기');link.href=info.download;link.target='_blank';link.rel='noopener';
    const install=el('button','업데이트 설치');
    install.onclick=async()=>{
+    // Show what an immediate install interrupts; the default stays "install now" (turns are re-run after restart).
+    const busy=(typeof snapshot!=='undefined'?snapshot?.members||[]:[]).filter(m=>m.busy&&m.state!=='disconnected');
+    if(busy.length&&!confirm(['에이전트 '+busy.length+'명이 작업 중이에요 ('+busy.map(m=>m.name).join(', ')+').','지금 설치하면 진행 중인 답변이 끊기고, 재시작 뒤 처음부터 다시 실행돼요.','설치할까요?'].join(String.fromCharCode(10))))return;
     install.disabled=true;
     try{
      const result=await fetch('/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'apply_update',tag:info.latest})});
