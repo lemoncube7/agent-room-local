@@ -8,4 +8,9 @@
 - **업데이트 흐름:** `shutdown_for_update`는 에이전트가 일하는 중이어도 바로 허브를 재시작한다(이미 재시작 중일 때만 409). 진행 중이던 턴은 재시작 뒤 `recoverWarmTurns`·`recoverDetachedTurns`가 다시 대기열에 넣고, 대기 중이던 순위 판정은 다시 돌며, 새 메시지는 outbox에서 기다린다. `update.ps1`은 SHA-256 검증 → 임시 폴더(`agent-room-update-*`)에 백업 → 파일 교체 → 새 허브 응답 확인 순으로 가고, 실패하면 백업으로 롤백한다.
 - **업데이트 도중 전원 꺼짐 복구:** 파일을 바꾸기 직전 `update.ps1`이 `local/update-in-progress.json`(백업 위치·파일 목록·업데이터 PID)을 만들고, 성공 또는 롤백이 끝나면 지운다. 허브가 시작할 때 이 파일이 남아 있고 업데이터가 죽어 있으면 `recoverInterruptedUpdate()`가 백업에서 파일을 복원하고 허브를 다시 띄운다(`AGENT_ROOM_NO_UPDATE_RECOVERY`가 있으면 건너뜀). 백업이 이미 지워졌으면 표시 파일만 지운다.
 
+## 설계 의도
+
+- **업데이트는 에이전트를 기다리지 않는다 (오퍼스):** 사용자가 "먼저 받는 애가 있으니 안전하다"며 요청했다. 끊긴 턴은 복구 기능이 다시 대기열에 넣는다.
+- **답변 추천 버튼 제거 (오퍼스):** 사용자 요청.
+
 > 상위 목차: [ARCHITECTURE.md](../../ARCHITECTURE.md)

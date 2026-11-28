@@ -19,9 +19,17 @@
 - `npx wrangler@4`로 OAuth 로그인 후 Cloudflare API(`/client/v4`)를 통해 계정 선택 → `workers.dev` 서브도메인 확인 또는 `agent-room-<12hex>` 자동 등록 → D1 DB(`agent-room-db`) 생성 및 `schema.sql`~`0007_web_push_payload.sql` 적용 → Worker 업로드(`worker.mjs`, `handler.mjs`, `page.html`, `pwa.mjs`, `icons.mjs`, `push.mjs`, `push-payload.mjs`) → 실제 인증·DB 응답 확인 후 `remote-config.json` 전환.
 
 ## 5.3 백그라운드 Web Push (`remote-site/cloudflare/push.mjs`, `push-payload.mjs`)
+- **설계 의도:** 사용자가 앱을 열어 두지 않아도 새 답변을 알 수 있고, 알림에서 누가 답했는지와 답변 앞부분을 확인할 수 있어야 한다. 이를 위해 Worker가 브라우저의 푸시 구독으로 제목과 미리보기를 보내며, 내용은 구독별 키로 암호화한다. 암호화는 푸시 전달 경로에 평문 답변을 싣지 않기 위한 것이며, 사용자 기기의 알림 화면에는 미리보기가 표시된다.
 - `0005_web_push.sql`, `0007_web_push_payload.sql`로 브라우저 구독(`endpoint`, `p256dh`, `auth`)을 D1에 저장합니다.
 - **발송 대상:** 새로 저장된 에이전트 답변만. 중간 출력·시스템 메시지·중복 수신은 제외한다. VAPID 서명 키는 구독과 별개로 D1 `remote_push_key`에 저장된다.
 - **검증 범위:** 암호화·복호화 왕복과 배포된 서비스 워커 코드는 확인했다. **앱을 닫은 실제 휴대폰에서의 수신은 아직 미검증.**
 - Worker가 PC에서 올라온 새 에이전트 답변 이벤트를 받으면 `encryptPushPayload(payload, p256dh, auth)`(RFC 8291 `aes128gcm`)로 에이전트 이름과 미리보기를 암호화해 VAPID 서명과 함께 푸시를 발송합니다.
+
+## 설계 의도
+
+- **직결 링크 자동 등록 (오퍼스):** 사이트 주소가 바뀌면 휴대폰 브라우저에 저장된 직결 링크가 사라져 계속 "Site 경유"가 됐다. 사용자가 직접 붙여넣지 않게, 직결 주소와 키를 비밀번호로 보호된 본인 Worker를 거쳐 전달하는 것을 감수했다.
+- **Bearer 우회는 Worker가 검증했을 때만 (오퍼스):** ChatGPT Sites 경로에서는 인증 헤더가 검증되지 않으므로 출처 검사 우회를 막았다.
+- **휴대폰이 직결 중이면 중계는 조용히 (오퍼스):** Site는 예비 경로라 상태만 바뀐 업로드를 줄인다. 새 메시지는 바로 올린다.
+- **Worker가 PWA 파일을 직접 제공 (오퍼스):** ChatGPT Site에서 Worker로 옮기며 manifest·sw·아이콘이 빠져 "설치할 수 없음"이 됐던 사고 때문.
 
 > 상위 목차: [ARCHITECTURE.md](../../ARCHITECTURE.md)
