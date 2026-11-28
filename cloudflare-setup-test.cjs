@@ -43,7 +43,7 @@ async function main(){
    env.DB={prepare:q=>({first:async()=>db.prepare(q).get()})};
    const script=(await data.get('worker.mjs').text()).replace("import pageHtml from './page.html';",'const pageHtml='+JSON.stringify(await data.get('page.html').text())+';');
    fs.writeFileSync(path.join(local,'handler.mjs'),await data.get('handler.mjs').text());
-   for(const name of ['pwa.mjs','icons.mjs'])fs.writeFileSync(path.join(local,name),await data.get(name).text());
+   for(const [name,part] of data.entries())if(name.endsWith('.mjs')&&name!=='worker.mjs'&&name!=='handler.mjs')fs.writeFileSync(path.join(local,name),await part.text());
    fs.writeFileSync(path.join(local,'worker.mjs'),script);
    worker=(await import(pathToFileURL(path.join(local,'worker.mjs')).href)).default;
    return success({});
