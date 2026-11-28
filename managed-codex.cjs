@@ -404,6 +404,7 @@ function createStreamHost(provider,file,prefix,args,project,session,persistent=f
           if(info.delta)turn.pendingInterim+=info.text;
           else{if(turn.pendingInterim&&info.text!==turn.pendingInterim&&!info.text.startsWith(turn.pendingInterim))turn.flushInterim();turn.pendingInterim=info.text;}
         }
+        if(String(su.status||event.status||'').toUpperCase()==='DONE'&&turn.pendingInterim)turn.flushInterim();
       }
       if(kind==='result')turn.pendingInterim='';
       if(kind==='error'||event.error)turn.failure+='\n'+(event.error?.message||event.error||event.message||'');

@@ -587,7 +587,25 @@ function remoteSyncState(){
 }
 const sseClients=new Set();
 const wsClients=new Set();
+const quotaNotices=[];
 let sseTimer=null;
+function addQuotaNotice(room,provider,names,message){
+  quotaNotices.push({id:randomUUID(),room,provider,names,message,at:Date.now()});
+  while(quotaNotices.length>30)quotaNotices.shift();
+  notifyStateChange();
+}
+function resumeOpenHandoffTask(memberId,reasonLabel){
+  if(!memberId||cliBusy.has(memberId)||quotaExhausted(memberId))return false;
+  const m=one("SELECT m.id,m.room,m.paused FROM members m JOIN cli_sessions c ON c.member=m.id WHERE m.id=? AND m.state='approved'",memberId);
+  if(!m||m.paused)return false;
+  const task=one("SELECT id,title,summary,next,done_when,files FROM handoff_tasks WHERE room=? AND owner=? AND status='open' ORDER BY id LIMIT 1",m.room,m.id);
+  if(!task)return false;
+  const prompt='[Agent Room 작업 '+reasonLabel+' 알림] 맡아 둔 미완료 작업(#'+task.id+')을 이어받습니다.\n제목: '+task.title
+    +(task.summary?'\n내용: '+task.summary:'')+'\n다음 행동: '+task.next
+    +(task.done_when?'\n완료 기준: '+task.done_when:'')+(task.files?'\n담당 파일: '+task.files:'');
+  setImmediate(()=>{if(!draining&&!cliBusy.has(m.id))void cliTurn(m.id,prompt,null);});
+  return true;
+}
 function wsSendFrame(socket,text){
   const payload=Buffer.from(String(text),'utf8');
   const len=payload.length;
@@ -785,6 +803,7 @@ function storeInterim(jobId,author,room,sender,text,index){
   for(const {id} of all("SELECT id FROM members WHERE room=? AND state='approved' AND id<>?",room,author)){
     run('INSERT OR IGNORE INTO deliveries(seq,member,state,priority) VALUES(?,?,?,0)',seq,id,'context_only');
   }
+  notifyStateChange();
 }
 function notifyApprovalDenied(item,reason){
   if(!item?.room||!item?.member)return;
@@ -1178,7 +1197,7 @@ async function cliTurn(participant, prompt, inputSeq){
     fullPrompt=(compact&&!policyOutdated?shortContext:'')+audience+policyBlock+structurePolicy+multiP1Policy+handoffPolicy+discussPolicy+(interruptedTurns.delete(jobId)?' Your previous turn on this message was interrupted by an app restart. Check what was already done (files, git status) before continuing, and do not repeat completed work.':'')+statusBlock+memoBlock+tasksBlock+lockBlock+historyBlock+retractBlock+receivedBlock+coordinationBlock+'\n\n'+prompt;
     const result=await invokeCli(session.project,fullPrompt,session.thread,session.provider,session.model,session.effort,turnOptions);
     const nextPolicyVersion=result.issue?Number(session.policy_version||0):policyHash;
-    // Only a clean turn proves the limit is over; otherwise the "한도에 걸려" notice repeats on every retry.
+    // Clear retry throttling and network notices only after a clean turn.
     if(!result.issue){cliCooldown.delete(participant);limitNotified.delete(participant);cliRepeatErrors.delete(participant);}
     for(const item of retractedNotices)run("UPDATE deliveries SET state='retracted' WHERE seq=? AND member=? AND state='retract_notice'",item.seq,participant);
     if(inputSeq&&one('SELECT retracted FROM messages WHERE seq=?',inputSeq)?.retracted){
@@ -1359,10 +1378,11 @@ async function cliTurn(participant, prompt, inputSeq){
       cliCooldown.set(participant,until);
       if(session.provider==='claude'&&session.thread)for(const seq of sentContext)run("UPDATE deliveries SET state='context_seen' WHERE seq=? AND member=? AND state='context_only'",seq,participant);
       run("UPDATE deliveries SET state='queued' WHERE seq=? AND member=?",inputSeq,participant);
-      if(!limitNotified.has(participant)){
-        limitNotified.add(participant);
-        storeMessage(row.room,participant,'사용량 한도에 걸려 '+new Date(until).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})+'까지 쉽니다. 받은 메시지는 보관했다가 이후 다시 시도해요. 설정에서 모델을 바꾸면 바로 재개합니다.');
-      }
+      const reset=new Date(until).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+      run('UPDATE cli_sessions SET last_cli_error=? WHERE member=?',JSON.stringify({
+        code:'usage_limit',message:'사용량 한도 · '+reset+' 이후 재시도'
+      }),participant);
+      notifyStateChange();
       return;
     }
     if(error.cliCode==='network'&&inputSeq&&row.state==='approved'){
@@ -1376,6 +1396,7 @@ async function cliTurn(participant, prompt, inputSeq){
     }
     if(row.state==='starting')run("UPDATE members SET state='start_failed' WHERE id=? AND state='starting'",participant);
     if(inputSeq)run("UPDATE deliveries SET state='failed' WHERE seq=? AND member=?",inputSeq,participant);
+    if(error.cliCode==='usage_limit'){notifyStateChange();return;}
     const errKey=(error.cliCode||'unknown')+':'+String(error.message||'').slice(0,120);
     const prevErr=cliRepeatErrors.get(participant);
     const errCount=prevErr?.key===errKey?prevErr.count+1:1;
@@ -1565,7 +1586,12 @@ function recordUserMessage(room,text,request=randomUUID(),attachments=[]){
     return seq;
   }catch(error){db.exec('ROLLBACK');throw error;}
 }
-const handoff=createHandoff({db,all,one,run,member,nodesForRoom(room){const mesh=getMeshStatus();return mesh.enabled&&mesh.room===room?mesh.nodes:[];},notify(room,target,id,title,next,revision){
+function assertMeshEditor(room,action){
+  const m=getMeshStatus();
+  if(!m.enabled||m.room!==room||['handoff_list','handoff_history'].includes(action))return;
+  if(m.role!=='hub'||!m.updatedAt||Date.now()>=m.leaseExpiresAt||!m.leaseExpiresAt)throw Error('작업 원장 변경은 현재 선출된 허브에서만 가능합니다.');
+}
+const handoff=createHandoff({db,all,one,run,member,checkEditor:assertMeshEditor,nodesForRoom(room){const mesh=getMeshStatus();return mesh.enabled&&mesh.room===room?mesh.nodes:[];},notify(room,target,id,title,next,revision){
   const system='system:'+room;
   run("INSERT OR IGNORE INTO members(id,room,name,state) VALUES(?,?,?,'human')",system,room,'작업 인계');
   const seq=storeMessage(room,system,'작업 #'+id+' 인계 요청: '+title+'\n다음 행동: '+next+'\n작업 인계 메뉴 또는 handoff_accept 도구에서 수락할 수 있어요.',null,target);
@@ -1615,6 +1641,7 @@ function task({action,room,participant,name,text,request,replyTo,after=0,...extr
         const paused=extra.paused?1:0;
         run('UPDATE members SET paused=? WHERE id=?',paused,target.id);
         if(paused){invalidateWarm(target.id);run("UPDATE deliveries SET state='context_only',priority=0 WHERE member=? AND state IN ('queued','ranking')",target.id);}
+        else{requeueRecentFailedTurn(target.id);resumeOpenHandoffTask(target.id,'재개');}
       }else throw Error('Agent cannot be controlled.');
       return {ok:true};
     }
@@ -1904,7 +1931,7 @@ function state(roomId=null,options={}){
     :(minSeq?all('SELECT deliveries.seq,deliveries.member,members.name,deliveries.state,deliveries.priority FROM deliveries JOIN members ON deliveries.member=members.id WHERE deliveries.seq>=?',minSeq):all('SELECT deliveries.seq,deliveries.member,members.name,deliveries.state,deliveries.priority FROM deliveries JOIN members ON deliveries.member=members.id'));
   const recentPublic=messages.filter(m=>!m.recipient&&!m.retracted&&m.request?.startsWith('remote:')).slice(-40);
   const deliveryHistory=recentPublic.length?all('SELECT h.seq,m.name,h.state,h.at FROM delivery_history h JOIN members m ON m.id=h.member WHERE h.seq IN ('+recentPublic.map(()=>'?').join(',')+') ORDER BY h.id DESC LIMIT 320',...recentPublic.map(m=>m.seq)).reverse():[];
-  return {deliveryHistory,version,uiStamp:readUiStamp(),openMode:readLauncherMode(),project:readActiveProject(),recentProjects:readRecentProjects(),approvals:[...approvals.values()].filter(item=>item.state==='pending').map(({id,room,name,tool,input,rule,created})=>({id,room,name,tool,input,rule,created})),approvalRules:all('SELECT member,rule FROM approval_rules'),approvalLogs:includeLogs?(scoped?all('SELECT * FROM approval_logs WHERE room=? ORDER BY created DESC LIMIT 100',scoped):all('SELECT * FROM approval_logs ORDER BY created DESC LIMIT 100')):[],limits:readLimits(),ranking:all('SELECT room,enabled,mode,main_member,judge_provider,judge_model,judge_effort,judge_prompt FROM room_ranking'),replyPlans,remoteConfigured:remoteConfigured(),directSeenAt,remoteShareAll:Boolean(one('SELECT share_all FROM remote_options LIMIT 1')?.share_all),remoteRooms:selectedRemoteRooms(),remoteSync:remoteSyncState(),mesh:getMeshStatus(),taskCopies:handoff.copies(scoped),tasks:handoff.list(scoped),updateStatus:readUpdateLog(updateLog).trim().split(/\r?\n/).at(-1)||null,rooms:all('SELECT rooms.*,m.latest_incoming_seq FROM rooms LEFT JOIN (SELECT room,MAX(seq) AS last_seq,MAX(CASE WHEN author<>\'human:\'||room AND retracted=0 AND request NOT LIKE \'receipt:%\' THEN seq END) AS latest_incoming_seq FROM messages GROUP BY room) m ON m.room=rooms.id ORDER BY COALESCE(m.last_seq,0) DESC, rooms.rowid DESC'),
+  return {deliveryHistory,version,uiStamp:readUiStamp(),openMode:readLauncherMode(),project:readActiveProject(),recentProjects:readRecentProjects(),approvals:[...approvals.values()].filter(item=>item.state==='pending').map(({id,room,name,tool,input,rule,created})=>({id,room,name,tool,input,rule,created})),approvalRules:all('SELECT member,rule FROM approval_rules'),approvalLogs:includeLogs?(scoped?all('SELECT * FROM approval_logs WHERE room=? ORDER BY created DESC LIMIT 100',scoped):all('SELECT * FROM approval_logs ORDER BY created DESC LIMIT 100')):[],limits:readLimits(),quotaNotices:quotaNotices.filter(n=>(!scoped||n.room===scoped)&&Date.now()-n.at<3600000),ranking:all('SELECT room,enabled,mode,main_member,judge_provider,judge_model,judge_effort,judge_prompt FROM room_ranking'),replyPlans,remoteConfigured:remoteConfigured(),directSeenAt,remoteShareAll:Boolean(one('SELECT share_all FROM remote_options LIMIT 1')?.share_all),remoteRooms:selectedRemoteRooms(),remoteSync:remoteSyncState(),mesh:getMeshStatus(),taskCopies:handoff.copies(scoped),tasks:handoff.list(scoped),updateStatus:readUpdateLog(updateLog).trim().split(/\r?\n/).at(-1)||null,rooms:all('SELECT rooms.*,m.latest_incoming_seq FROM rooms LEFT JOIN (SELECT room,MAX(seq) AS last_seq,MAX(CASE WHEN author<>\'human:\'||room AND retracted=0 AND request NOT LIKE \'receipt:%\' THEN seq END) AS latest_incoming_seq FROM messages GROUP BY room) m ON m.room=rooms.id ORDER BY COALESCE(m.last_seq,0) DESC, rooms.rowid DESC'),
     members,
     messages,
     hasMoreMessages,
@@ -2105,6 +2132,9 @@ function configureMesh(){
     const site=new URL(cfg.site);
     if(site.protocol!=='https:'||site.username||site.password||!cfg.deviceKey)throw Error('A configured HTTPS relay is required.');
     if(!/^[a-f0-9-]{36}$/i.test(mesh.room))throw Error('A rendezvous room UUID is required.');
+    if(!one('SELECT id FROM rooms WHERE id=?',mesh.room)){
+      run('INSERT INTO rooms(id,name,work_mode) VALUES(?,?,?)',mesh.room,String(mesh.roomLabel||'다중 PC 작업').slice(0,70),'chat');
+    }
     const cursor=source=>one('SELECT MAX(seq) AS seq FROM mesh_message_copy WHERE room=? AND source=?',mesh.room,source||'')?.seq||0;
     function mirror(source,messages,tasks=[]){
       if(!Array.isArray(messages)||messages.length>200)throw Error('Invalid mirror batch');
@@ -2132,11 +2162,55 @@ function configureMesh(){
         agent.cli=path.isAbsolute(binary)?(fs.existsSync(binary)?'present':'missing'):'unverified';
       }
       const copies=all('SELECT source,MAX(seq) AS seq FROM mesh_message_copy WHERE room=? GROUP BY source ORDER BY MAX(rowid) DESC LIMIT 12',mesh.room);
-      return {platform:process.platform,version,agents,copies,repositories,policy:require('./node-mesh.cjs').loadNodePolicy().mode};
+      const runs=all('SELECT r.run,d.state FROM mesh_local_runs r JOIN deliveries d ON d.seq=r.seq WHERE r.room=? ORDER BY r.rowid DESC LIMIT 20',mesh.room);
+      return {platform:process.platform,version,agents,copies,repositories,runs,policy:require('./node-mesh.cjs').loadNodePolicy().mode};
     }
-    startMesh({cursor,taskCursor:source=>handoff.copyCursor(mesh.room,source),mirror,report,trustedHubs:Array.isArray(mesh.trustedHubs)?mesh.trustedHubs:[],site:site.origin,deviceKey:cfg.deviceKey,siteAccess:cfg.siteAccess,room:mesh.room,
+    db.exec('CREATE TABLE IF NOT EXISTS mesh_local_runs(run TEXT PRIMARY KEY,room TEXT,seq INTEGER NOT NULL)');
+    db.exec('CREATE TABLE IF NOT EXISTS mesh_run_tickets(run TEXT PRIMARY KEY,ticket TEXT NOT NULL)');
+    function ticket(runId){
+      run('INSERT OR IGNORE INTO mesh_run_tickets VALUES(?,?)',runId,randomBytes(32).toString('hex'));
+      return one('SELECT ticket FROM mesh_run_tickets WHERE run=?',runId).ticket;
+    }
+    function localExecutor(task){
+      const id=mesh.executors?.[task.owner];
+      if(typeof id!=='string')return null;
+      return one("SELECT m.id FROM members m JOIN cli_sessions c ON c.member=m.id WHERE m.id=? AND m.room=? AND m.state='approved' AND m.paused=0",id,mesh.executionRoom||mesh.room)?.id;
+    }
+    function pendingRuns(){
+      if(!mesh.executors||typeof mesh.executors!=='object')return [];
+      const m=getMeshStatus();
+      const candidates=m.role==='hub'?handoff.list(mesh.room):handoff.copies(mesh.room).filter(t=>t.source===m.hostNodeId);
+      return candidates.filter(t=>t.mesh_run&&t.owner_node===m.nodeId&&t.status==='open'&&Object.hasOwn(mesh.executors,t.owner)&&localExecutor(t)&&
+        !one('SELECT 1 FROM mesh_local_runs WHERE run=?',t.mesh_run));
+    }
+    function enqueueRun(t){
+      const target=localExecutor(t);
+      const localRoom=mesh.executionRoom||mesh.room;
+      if(!target)return;
+      db.exec('BEGIN IMMEDIATE');
+      try{
+        if(!one('SELECT 1 FROM mesh_local_runs WHERE run=?',t.mesh_run)){
+          const sender='system:'+localRoom;
+          run("INSERT OR IGNORE INTO members(id,room,name,state) VALUES(?,?,?,'human')",sender,localRoom,'작업 인계');
+          const seq=storeMessage(localRoom,sender,'작업 #'+t.id+' · '+t.title+'\n다음 행동: '+t.next+'\n완료 기준: '+(t.done_when||'미지정'),null,target);
+          run('INSERT INTO mesh_local_runs(run,room,seq) VALUES(?,?,?)',t.mesh_run,mesh.room,seq);
+          queueForRoom(localRoom,sender,seq,target);
+        }
+        db.exec('COMMIT');
+      }catch(error){db.exec('ROLLBACK');throw error;}
+    }
+    startMesh({ticket,pendingRuns,enqueueRun,cursor,taskCursor:source=>handoff.copyCursor(mesh.room,source),mirror,report,trustedHubs:Array.isArray(mesh.trustedHubs)?mesh.trustedHubs:[],site:site.origin,deviceKey:cfg.deviceKey,siteAccess:cfg.siteAccess,room:mesh.room,
       label:mesh.label,publicUrl:mesh.publicUrl,canHost:mesh.canHost===true,priority:mesh.priority,electionMode:mesh.electionMode});
   }catch(error){console.error('Multi-desktop configuration: '+error.message);}
+}
+let cloudflareSetup;
+function localCloudflareSetup(){
+  return cloudflareSetup??=require('./cloudflare-setup.cjs').createSetup({root:__dirname,local,connect(site,deviceKey){
+    const cfg=readRemoteConfig();
+    const mode=directModeEnabled(cfg)?'both':'hosted';
+    applyRemoteSyncConfig({site,deviceKey,clearAccessToken:true,remoteMode:mode,autoSiteUpdate:false});
+    return mode;
+  }});
 }
 function applyRemoteSyncConfig(args){
   const cur=readRemoteConfig();
@@ -2339,7 +2413,7 @@ const server=http.createServer(async(req,res)=>{
         const mesh=getMeshStatus();
         if(!mesh.enabled||mesh.room!==roomId||mesh.role!=='hub')return res.writeHead(409).end();
         const messages=all("SELECT seq,room,author,body,created FROM messages WHERE room=? AND seq>? AND recipient IS NULL AND retracted=0 AND request NOT LIKE 'receipt:%' ORDER BY seq LIMIT 200",roomId,sinceSeq);
-        return res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'}).end(JSON.stringify({room:roomId,messages,tasks:handoff.changes(roomId,Number.isSafeInteger(body.taskSince)?body.taskSince:0),mesh:{nodeId:mesh.nodeId,epoch:mesh.epoch,role:mesh.role}}));
+        return res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'}).end(JSON.stringify({room:roomId,messages,runs:handoff.list(roomId).filter(t=>t.mesh_run&&t.owner_node===body.nodeId&&t.status==='open').map(t=>({run:t.mesh_run,revision:t.revision})),tasks:handoff.changes(roomId,Number.isSafeInteger(body.taskSince)?body.taskSince:0),mesh:{nodeId:mesh.nodeId,epoch:mesh.epoch,role:mesh.role}}));
       }
       const messages=all('SELECT seq,room,author,body,created,recipient,retracted FROM messages WHERE room=? AND seq>? ORDER BY seq LIMIT 200',roomId,sinceSeq);
       const members=all('SELECT id,room,name,role,state FROM members WHERE room=?',roomId);
@@ -2374,7 +2448,13 @@ const server=http.createServer(async(req,res)=>{
     }
     let result;
     if(browser){
-      if(typeof args.action==='string'&&args.action.startsWith('handoff_')){
+      if(['cloudflare_setup_start','cloudflare_setup_status','cloudflare_setup_link'].includes(args.action)){
+        if(!isLocal||!sameSecret(cookieValue(req,'agent_room'),browserKey))return res.writeHead(403).end();
+        const setup=localCloudflareSetup();
+        if(args.action==='cloudflare_setup_link')result={link:setup.link()};
+        else result=args.action==='cloudflare_setup_start'?setup.start(args.account):setup.status();
+      }
+      else if(typeof args.action==='string'&&args.action.startsWith('handoff_')){
         const update=handoff.change(args,'human:'+args.room,args.room);
         if(args.action==='handoff_history')result=update;
       }
@@ -2637,7 +2717,7 @@ const server=http.createServer(async(req,res)=>{
           // A paused agent no longer blocks the parallel wrap-up of requests it was waiting on.
           for(const seq of waiting)try{maybeWrapUp(args.room,seq);}catch{}
         }
-        else requeueRecentFailedTurn(target.id);
+        else{requeueRecentFailedTurn(target.id);resumeOpenHandoffTask(target.id,'재개');}
       }
       else if(args.action==='reorder_members'){
         if(!one('SELECT id FROM rooms WHERE id=?',args.room))throw Error('Room not found.');
@@ -2793,17 +2873,16 @@ server.listen(Number(process.env.ROOM_PORT||4317),directActiveOnBoot?'0.0.0.0':'
   setInterval(()=>{
     try{
       const recovered=new Map();
-      for(const m of all("SELECT m.id,m.room,m.name,c.provider FROM members m JOIN cli_sessions c ON c.member=m.id WHERE m.state='approved'")){
+      for(const m of all("SELECT m.id,m.room,m.name,m.paused,c.provider FROM members m JOIN cli_sessions c ON c.member=m.id WHERE m.state='approved'")){
         if(quotaExhausted(m.id)){exhaustedMembers.add(m.id);continue;}
         if(!exhaustedMembers.delete(m.id))continue;
         const key=m.room+'\n'+m.provider;
         if(!recovered.has(key))recovered.set(key,{room:m.room,provider:m.provider,names:[]});
         recovered.get(key).names.push(m.name);
+        if(!m.paused)resumeOpenHandoffTask(m.id,'복구');
       }
       for(const {room,provider,names} of recovered.values()){
-        const system='system:quota:'+room;
-        run("INSERT OR IGNORE INTO members(id,room,name,state) VALUES(?,?,?,'human')",system,room,'한도 알림');
-        storeMessage(room,system,'🔔 '+(providerNames[provider]||provider)+' 사용량 한도가 돌아왔어요. '+names.join(', ')+' 다시 응답할 수 있어요.');
+        addQuotaNotice(room,provider,names,(providerNames[provider]||provider)+' 사용량 한도가 돌아왔어요. '+names.join(', ')+' 다시 응답할 수 있어요.');
       }
     }catch(error){console.error('quota recovery check failed: '+error.message);}
   },60*1000).unref();

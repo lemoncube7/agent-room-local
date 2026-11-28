@@ -66,6 +66,19 @@ async function electHost(db,room,now,requestedMode){
 export async function handleRoom(request,env){
   const route=new URL(request.url).pathname;
   const owner=request.headers.get('oai-authenticated-user-id');
+  if(route==='/api/room/rendezvous/claim'&&request.method==='POST'){
+    if(!await sameSecret(request.headers.get('x-agent-room-key'),env.REMOTE_DEVICE_KEY))return json({error:'Unauthorized'},403);
+    let p;try{p=await readBody(request,4096);}catch{return json({error:'Invalid claim'},400);}
+    if(!isId(p?.room)||!isId(p.run)||!/^[0-9a-f]{64}$/.test(p.ticket)||!isText(p.nodeId,80)||!isText(p.host,80)||!Number.isSafeInteger(p.epoch))return json({error:'Invalid claim'},400);
+    await ensureMeshTables(env.DB);
+    await env.DB.prepare('CREATE TABLE IF NOT EXISTS mesh_claims(room TEXT,run TEXT,node TEXT,ticket TEXT NOT NULL,PRIMARY KEY(room,run))').run();
+    const now=Date.now();
+    const lease='SELECT 1 FROM room_hosts h JOIN room_nodes n ON n.room=h.room WHERE h.room=? AND h.host_node_id=? AND h.epoch=? AND h.lease_expires_at>? AND n.node_id=? AND n.last_seen>?';
+    const args=[p.room,p.host,p.epoch,now,p.nodeId,now-25000];
+    await env.DB.prepare('INSERT OR IGNORE INTO mesh_claims(room,run,node,ticket) SELECT ?,?,?,? WHERE EXISTS('+lease+')').bind(p.room,p.run,p.nodeId,p.ticket,...args).run();
+    const claimed=await env.DB.prepare('SELECT node FROM mesh_claims WHERE room=? AND run=? AND ticket=? AND EXISTS('+lease+')').bind(p.room,p.run,p.ticket,...args).first();
+    return claimed?.node===p.nodeId?json({claimed:true}):json({error:'Execution claim unavailable'},409);
+  }
   if((route==='/api/room/rendezvous/register'||route==='/api/room/rendezvous/heartbeat')&&request.method==='POST'){
     if(!await sameSecret(request.headers.get('x-agent-room-key'),env.REMOTE_DEVICE_KEY))return json({error:'Unauthorized'},403);
     let payload;try{payload=await readBody(request,65536);}catch{return json({error:'Invalid payload'},400);}
@@ -85,6 +98,7 @@ export async function handleRoom(request,env){
       const raw=payload.report;
       const short=v=>typeof v==='string'?v.slice(0,80):'';
       const report={platform:short(raw.platform),version:short(raw.version),policy:short(raw.policy),
+        runs:(Array.isArray(raw.runs)?raw.runs:[]).filter(r=>isId(r?.run)).slice(0,20).map(r=>({run:r.run,state:short(r.state)})),
         repositories:(Array.isArray(raw.repositories)?raw.repositories:[]).slice(0,8).map(p=>({name:short(p?.name),exists:p?.exists===true,commit:/^[0-9a-f]{40,64}$/.test(p?.commit)?p.commit:''})),
         agents:(Array.isArray(raw.agents)?raw.agents:[]).slice(0,24).map(a=>({provider:short(a?.provider),model:short(a?.model),permission_profile:short(a?.permission_profile),cli:['present','missing'].includes(a?.cli)?a.cli:'unverified'})),
         copies:(Array.isArray(raw.copies)?raw.copies:[]).filter(c=>c&&Number.isSafeInteger(c.seq)&&c.seq>0).slice(0,12).map(c=>({source:short(c.source),seq:c.seq}))};

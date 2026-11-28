@@ -12,6 +12,16 @@ Agent Room은 **직접 서버 (PC 허브 · PWA)**와 **Cloudflare Workers + D1 
 ## 2. Cloudflare Workers + D1 원격 호스팅 (PC 꺼짐 대비)
 PC가 꺼져 있을 때도 폰에서 이전 대화를 보고 메시지를 예약 전송하려면 개인 Cloudflare 무료 계정으로 Worker + D1을 배포합니다.
 
+### 앱에서 자동 설정
+
+1. 설치한 PC에서 **설정 → 원격 연결 → Cloudflare 자동 설정**을 누릅니다. Node.js와 함께 설치한 npm을 이용해 Wrangler를 준비합니다.
+2. 브라우저가 열리면 Cloudflare에 로그인하고 권한을 승인합니다. 계정이 여러 개면 앱에서 사용할 계정을 선택합니다. 이미 등록된 workers.dev 이름은 그대로 사용합니다. 이메일 확인이나 대시보드 등록이 필요한 계정은 화면의 안내를 완료한 뒤 **설정 이어서 하기**를 누릅니다.
+3. 앱이 이 설치 전용 Worker와 D1을 만들고 인증과 DB 응답을 확인하면 기존 원격 설정을 새 주소로 전환합니다. **비밀번호 포함 원격 접속 링크 복사**를 눌러 본인 폰에서 엽니다. 링크를 가진 사람은 원격 소유자로 로그인할 수 있습니다. 공유할 방은 기존 원격 방 설정에서 고릅니다.
+
+설정 진행 정보와 생성한 키는 PC 데이터 폴더의 `local/cloudflare-setup.json`에 저장합니다. 중단 뒤 같은 계정에서 다시 시작하면 기존 리소스와 키를 재사용합니다.
+
+### PowerShell로 수동 배포
+
 1. Windows ZIP을 푼 폴더에서 PowerShell을 열고 아래 명령을 실행합니다:
    ```powershell
    cd "설치폴더\app\remote-site\cloudflare"

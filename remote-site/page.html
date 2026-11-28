@@ -61,6 +61,7 @@ article.name-claude>strong{color:var(--brand-claude)}article.name-codex>strong{c
 .msg-time{display:block;margin-top:4px;font-size:11px;color:var(--muted)}.msg-time.own{text-align:right}
 article.typing small{display:block;margin-top:4px;color:#ffcf90;font-size:11px}
 .md{color:var(--text);overflow-wrap:anywhere}.md>*{margin:0 0 6px}.md>*:last-child{margin-bottom:0}
+.md h3{font-size:1.25em;margin:10px 0 6px}.md h4{font-size:1.12em;margin:9px 0 5px}.md h5{font-size:1.04em;margin:8px 0 4px}.md h6{font-size:1em;margin:6px 0 4px}.md hr{border:0;border-top:1px solid var(--line);margin:10px 0}.md mark.md-hi{background:#665218;color:#fff2b2;border-radius:4px;padding:0 4px}.diff-add{color:#6ee7b7}.diff-del{color:#fda4af}.diff-hunk{color:#93c5fd}
 .md p{white-space:pre-wrap;overflow-wrap:anywhere}
 .md .code-wrap{position:relative}
 .md pre{overflow:auto;max-width:100%;padding:30px 10px 10px;margin:0;background:var(--bg);border:1px solid var(--line);border-radius:8px}
@@ -244,7 +245,7 @@ function agentCls(name,provider){
  return '';
 }
 function inlineMd(target,text){
- const pattern=/`([^`\n]+)`|\*\*([^*\n]+)\*\*|\*([^*\n]+)\*|\[([^\]\n]+)\]\((<\/[A-Za-z]:\/[^>\r\n]+>|(?:https?:\/\/|file:\/\/\/?|\/?[A-Za-z]:[\\/])[^\s)]+)\)|(?<![\w/#])(#(?:[\da-fA-F]{8}|[\da-fA-F]{6}|[\da-fA-F]{4}|[\da-fA-F]{3}))(?![\w/-])/g;
+ const pattern=/`([^`\n]+)`|\*\*([^*\n]+)\*\*|\*([^*\n]+)\*|\[([^\]\n]+)\]\((<\/[A-Za-z]:\/[^>\r\n]+>|(?:https?:\/\/|file:\/\/\/?|\/?[A-Za-z]:[\\/])[^\s)]+)\)|(?<![\w/#])(#(?:[\da-fA-F]{8}|[\da-fA-F]{6}|[\da-fA-F]{4}|[\da-fA-F]{3}))(?![\w/-])|==([^=\n]+)==/g;
  const addSwatch=color=>{
   const swatch=el("span","");
   swatch.setAttribute("aria-hidden","true");
@@ -260,22 +261,44 @@ function inlineMd(target,text){
    catch{target.append(document.createTextNode(match[0]));}
   }else if(match[1]){target.append(el('code',match[1]));if(/^#(?:[\da-fA-F]{8}|[\da-fA-F]{6}|[\da-fA-F]{4}|[\da-fA-F]{3})$/.test(match[1]))addSwatch(match[1]);}
   else if(match[6]){target.append(document.createTextNode(match[6]));addSwatch(match[6]);}
+  else if(match[7]){const m=el('mark','');m.className='md-hi';inlineMd(m,match[7]);target.append(m);}
   else{const span=el(match[2]?'strong':'em','');inlineMd(span,match[2]||match[3]);target.append(span);}
   start=match.index+match[0].length;
  }
  target.append(document.createTextNode(text.slice(start)));
 }
+function appendCodeLine(codeEl,line,lang){
+ if(lang==='diff'){
+  const cls=(line.startsWith('+')&&!line.startsWith('+++'))?'diff-add':(line.startsWith('-')&&!line.startsWith('---'))?'diff-del':line.startsWith('@@')?'diff-hunk':'';
+  if(cls){const s=el('span',line+'\n');s.className=cls;codeEl.append(s);return;}
+ }else if(lang==='ansi'){
+  const ansiMap={30:'#6b7280',31:'#fda4af',32:'#6ee7b7',33:'#fde68a',34:'#93c5fd',35:'#d8b4fe',36:'#67e8f9',37:'#f3f4f6',90:'#9ca3af',91:'#fb7185',92:'#34d399',93:'#fbbf24',94:'#60a5fa',95:'#c084fc',96:'#22d3ee',97:'#ffffff'};
+  let color='',bold=false,idx=0;
+  const re=/\x1b\[([0-9;]*)m/g;let m;
+  while((m=re.exec(line))!==null){
+   if(m.index>idx){const seg=line.slice(idx,m.index);if(color||bold){const s=el('span',seg);if(color)s.style.color=color;if(bold)s.style.fontWeight='600';codeEl.append(s);}else codeEl.append(document.createTextNode(seg));}
+   for(const n of (m[1]||'0').split(';').map(Number)){if(n===0){color='';bold=false;}else if(n===1)bold=true;else if(n===39)color='';else if(ansiMap[n])color=ansiMap[n];}
+   idx=m.index+m[0].length;
+  }
+  const tail=line.slice(idx)+'\n';
+  if(color||bold){const s=el('span',tail);if(color)s.style.color=color;if(bold)s.style.fontWeight='600';codeEl.append(s);}else codeEl.append(document.createTextNode(tail));
+  return;
+ }
+ codeEl.append(document.createTextNode(line+'\n'));
+}
 function renderMd(text){
  const root=el('div','');root.className='md';
- let p,list,code,table,tbody;
+ let p,list,code,table,tbody,codeLang='';
  const lines=String(text||'').split(/\r?\n/);
  for(let idx=0;idx<lines.length;idx++){
   let line=lines[idx];
-  if(code){const end=line.match(/^\s*```+(.*)$/);if(end){code=null;if(!end[1].trim())continue;line=end[1];}else{code.append(document.createTextNode(line+'\n'));continue;}}
+  if(code){const end=line.match(/^\s*```+(.*)$/);if(end){code=null;codeLang='';if(!end[1].trim())continue;line=end[1];}else{appendCodeLine(code,line,codeLang);continue;}}
   const item=line.match(/^\s*([-+*]|\d+\.)\s+(.+)$/), heading=line.match(/^(#{1,6})\s+(.+)$/);
   if(!item)list=null;
   if(!/^\s*\|.*\|\s*$/.test(line)){table=null;tbody=null;}
-  if(/^\s*```/.test(line)){
+  const fence=line.match(/^\s*```([^\s`]*)/);
+  if(fence){
+   codeLang=(fence[1]||'').toLowerCase();
    const wrap=el('div','');wrap.className='code-wrap';
    const pre=el('pre',''), copy=el('button','복사'), codeEl=el('code','');
    code=codeEl;
@@ -506,7 +529,7 @@ function mergeEvents(cached,fresh){
  for(const e of fresh)bySeq.set(e.seq,e);
  return [...bySeq.values()].sort((a,b)=>a.seq-b.seq).slice(-200);
 }
-let remoteNotify=false,seenApprovals=new Set(),approvalsInitialized=false,seenMaxSeq=new Map(),pollTimer=null,idleStreak=0;
+let remoteNotify=false,seenApprovals=new Set(),approvalsInitialized=false,seenQuotaNotices=new Set(),quotaNoticesInit=false,seenMaxSeq=new Map(),pollTimer=null,idleStreak=0;
 try{remoteNotify=localStorage.getItem('agentRoomRemoteNotify')==='1';}catch{}
 function syncRemoteNotifyBtn(){
  const btn=document.querySelector('#remote-notify-toggle');
@@ -697,6 +720,11 @@ async function refresh(){
   }
   approvalsInitialized=true;
   seenApprovals=new Set(allApprovals.map(a=>a.id));
+  const quotaList=lastSnap?.quotaNotices||[];
+  const newQuota=quotaList.filter(n=>!seenQuotaNotices.has(n.id));
+  if(quotaNoticesInit&&newQuota.length)notifyRemote('Agent Room · 한도 복구',newQuota[newQuota.length-1].message);
+  quotaNoticesInit=true;
+  seenQuotaNotices=new Set(quotaList.map(n=>n.id));
   const busy=(lastSnap?.members||[]).filter(m=>m.room===selected&&m.busy);
   renderEventsView(events,busy);
   if(busy.length||curApprovals.length||controlRequests.size||delta.length){idleStreak=0;nextDelay=2000;}

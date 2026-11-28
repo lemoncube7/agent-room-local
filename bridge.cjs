@@ -142,7 +142,7 @@ const optional=(name,description,properties,required)=>({name,description,inputS
 const tools=[
   setup('handoff_list','List tasks in your approved Agent Room.',{}),
   setup('handoff_history','Read the handoff history of a task in your room.',{id:pos}),
-  optional('handoff_create','Create and own a task in the room.',{title:str,summary:{type:'string'},next:str},['title','next']),
+  optional('handoff_create','Create a task in the room (optionally assigning target participant ID or name as owner).',{title:str,summary:{type:'string'},next:str,target:str,verifier:str,doneWhen:str,files:str},['title','next']),
   optional('handoff_update','Update a task you own.',{id:pos,revision:pos,title:str,summary:{type:'string'},next:str,note:{type:'string'}},['id','revision']),
   optional('handoff_offer','Offer your task to an approved participant ID. The recipient must accept it.',{id:pos,revision:pos,target:str,next:str,note:{type:'string'}},['id','revision','target']),
   setup('handoff_accept','Accept a pending handoff addressed to you.',{id:pos,revision:pos}),

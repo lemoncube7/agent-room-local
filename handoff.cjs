@@ -1,5 +1,5 @@
 'use strict';
-function createHandoff({db,all,one,run,member,notify,nodesForRoom=()=>[]}){
+function createHandoff({db,all,one,run,member,notify,checkEditor=()=>{},nodesForRoom=()=>[]}){
   db.exec(`
     CREATE TABLE IF NOT EXISTS handoff_tasks (
       id INTEGER PRIMARY KEY, room TEXT NOT NULL, title TEXT NOT NULL, summary TEXT NOT NULL,
@@ -20,6 +20,11 @@ function createHandoff({db,all,one,run,member,notify,nodesForRoom=()=>[]}){
   if(!hasCol('owner_node'))db.exec('ALTER TABLE handoff_tasks ADD COLUMN owner_node TEXT');
   db.exec(`CREATE INDEX IF NOT EXISTS handoff_changes ON handoff_history(task,id);
     CREATE TABLE IF NOT EXISTS mesh_task_copy(room TEXT,source TEXT,task INTEGER,change_id INTEGER NOT NULL,data TEXT NOT NULL,PRIMARY KEY(room,source,task));`);
+  if(!hasCol('mesh_uid'))db.exec('ALTER TABLE handoff_tasks ADD COLUMN mesh_uid TEXT');
+  if(!hasCol('mesh_run'))db.exec('ALTER TABLE handoff_tasks ADD COLUMN mesh_run TEXT');
+  db.exec("UPDATE handoff_tasks SET mesh_uid=lower(hex(randomblob(16))) WHERE mesh_uid IS NULL; CREATE UNIQUE INDEX IF NOT EXISTS handoff_uid ON handoff_tasks(mesh_uid)");
+  if(!hasCol('run_on_accept'))db.exec('ALTER TABLE handoff_tasks ADD COLUMN run_on_accept INTEGER NOT NULL DEFAULT 0');
+  const runKey=uid=>uid.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/,'$1-$2-$3-$4-$5');
   const now=()=>new Date().toISOString();
   const fail=text=>{throw Error(text);};
   function field(value,max,required=false){
@@ -35,6 +40,7 @@ function createHandoff({db,all,one,run,member,notify,nodesForRoom=()=>[]}){
   }
   function change(input,actor,room){
     const {action}=input;
+    checkEditor(room,action);
     const human=actor==='human:'+room;
     if(!one('SELECT id FROM rooms WHERE id=?',room))fail('Room not found.');
     if(!human)member(actor,room);
@@ -47,9 +53,21 @@ function createHandoff({db,all,one,run,member,notify,nodesForRoom=()=>[]}){
     try{
       let id=input.id;
       let overrodeInactiveOwner=false;
-      if(action==='handoff_create'){
-        const owner=human?(input.target?member(input.target,room).id:null):actor;
-        const verifier=input.verifier?member(input.verifier,room).id:null;
+      if(action==='handoff_restore'){
+        if(!human)fail('Only a room owner can restore a task copy.');
+        const copy=one('SELECT data FROM mesh_task_copy WHERE room=? AND source=? AND task=?',room,field(input.source,80,true),id);
+        if(!copy)fail('Task copy not found.');
+        const t=JSON.parse(copy.data);
+        if(t.revision!==input.revision||!t.mesh_uid)fail('Refresh the task copy before restoring.');
+        if(copies(room).some(other=>other.mesh_uid===t.mesh_uid&&other.revision>t.revision))fail('A newer synchronized copy is available.');
+        const existing=one('SELECT id,revision FROM handoff_tasks WHERE mesh_uid=? AND room=?',t.mesh_uid,room);
+        if(existing)fail('This task already exists here as #'+existing.id+'.');
+        id=Number(run("INSERT INTO handoff_tasks(room,title,summary,next,done_when,files,status,revision,updated,mesh_uid) VALUES(?,?,?,?,?,?,?,?,?,?)",room,t.title,t.summary,t.next,t.done_when||'',t.files||'',t.status==='done'?'done':'open',t.revision+1,now(),t.mesh_uid).lastInsertRowid);
+        note='복구 원본 '+input.source+' #'+t.id+' · 개정 '+t.revision+' · 이전 상태 '+t.status+' · 이전 담당 '+(t.owner_name||'미배정');
+      }else if(action==='handoff_create'){
+        const resolveMemberId=ref=>{try{return member(ref,room).id;}catch{const byName=one("SELECT id FROM members WHERE room=? AND name=? AND state='approved'",room,String(ref||'').trim());if(!byName)throw Error('Target participant is not in this room.');return byName.id;}};
+        const owner=input.target?resolveMemberId(input.target):(human?null:actor);
+        const verifier=input.verifier?resolveMemberId(input.verifier):null;
         const doneWhen=field(input.doneWhen??'',1000);
         const files=field(input.files??'',1000);
         id=Number(run("INSERT INTO handoff_tasks(room,title,summary,next,owner,verifier,done_when,files,status,revision,updated) VALUES(?,?,?,?,?,?,?,?,'open',1,?)",room,
@@ -71,12 +89,15 @@ function createHandoff({db,all,one,run,member,notify,nodesForRoom=()=>[]}){
           if(!human&&row.owner!==actor&&ownerActive&&!(action==='handoff_complete'&&isVerifier))fail('Only the task owner can make this change.');
           overrodeInactiveOwner=!human&&row.owner!==actor&&!ownerActive;
           if(overrodeInactiveOwner&&action==='handoff_update')run('UPDATE handoff_tasks SET owner=? WHERE id=?',actor,id);
-          if(action==='handoff_offer'){
+          if(action==='handoff_schedule'){
+            if(!human||row.status!=='open'||!row.owner_node||!row.owner||row.mesh_run)fail('Assign an owner and PC to an open, unscheduled task first.');
+            run('UPDATE handoff_tasks SET mesh_run=? WHERE id=?',runKey(row.mesh_uid),id);
+          }else if(action==='handoff_offer'){
             if(row.status!=='open')fail('This task already has a pending handoff.');
             const target=member(input.target,room);
             if(target.id===row.owner)fail('Choose another participant.');
             const next=field(input.next??row.next,2000,true);
-            run("UPDATE handoff_tasks SET offered_to=?,offered_node=?,status='offered',next=? WHERE id=?",target.id,node??row.owner_node,next,id);
+            run("UPDATE handoff_tasks SET offered_to=?,offered_node=?,run_on_accept=?,status='offered',next=? WHERE id=?",target.id,node??row.owner_node,human&&input.runOnAccept===true?1:0,next,id);
             notify(room,target.id,id,row.title,next,row.revision+1);
           }else if(action==='handoff_update'){
             const verifier=input.verifier===undefined?row.verifier:(input.verifier?member(input.verifier,room).id:null);
@@ -92,8 +113,10 @@ function createHandoff({db,all,one,run,member,notify,nodesForRoom=()=>[]}){
             }
           }else fail('Unknown handoff action.');
         }
+        if(action!=='handoff_schedule')run('UPDATE handoff_tasks SET mesh_run=? WHERE id=?',action==='handoff_accept'&&row.run_on_accept&&(row.offered_node||row.owner_node)?runKey(row.mesh_uid):null,id);
         run('UPDATE handoff_tasks SET revision=revision+1,updated=? WHERE id=?',now(),id);
       }
+      run('UPDATE handoff_tasks SET mesh_uid=lower(hex(randomblob(16))) WHERE id=? AND mesh_uid IS NULL',id);
       if(node!==undefined&&['handoff_create','handoff_update'].includes(action)){
         run('UPDATE handoff_tasks SET owner_node=? WHERE id=?',node,id);
         note=[note,'담당 PC: '+(node||'미지정')].filter(Boolean).join(' · ');

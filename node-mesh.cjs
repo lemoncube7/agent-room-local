@@ -94,7 +94,7 @@ async function postRendezvous(site, deviceKey, endpoint, body, siteAccess) {
     signal: AbortSignal.timeout(8000),
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error('Rendezvous HTTP ' + res.status);
+  if (!res.ok) throw Object.assign(new Error('Rendezvous HTTP ' + res.status),{status:res.status});
   return res.json();
 }
 
@@ -135,17 +135,24 @@ function startMesh(opts = {}) {
         mode: data.mode || 'hub',
         hostNodeId: data.hostNodeId || null,
         hubUrl: data.hubUrl || null,
-        epoch: data.epoch || 0,
+        epoch: data.epoch || 0,leaseExpiresAt:data.leaseExpiresAt||0,
         nodes: Array.isArray(data.nodes) ? data.nodes : [],
         lastError: null,
         updatedAt: Date.now(),
       };
+      let currentRuns=data.role==='hub'?null:[];
       if(data.role==='node' && opts.mirror && data.hubUrl && (opts.trustedHubs||[]).includes(data.hubUrl)){
         const origin=new URL(data.hubUrl);
         if(origin.protocol!=='https:'||origin.origin!==data.hubUrl)throw Error('Trusted hub must be an HTTPS origin');
         const source=data.hostNodeId;
         const page=await syncFromHub({hubUrl:origin.origin,nodeKey:deviceKey,room,nodeId:id.nodeId,sinceSeq:opts.cursor(source),taskSince:opts.taskCursor(source)});
-        if(active===generation && page.room===room && page.mesh?.nodeId===source && page.mesh?.epoch===data.epoch && page.mesh?.role==='hub')opts.mirror(source,page.messages,page.tasks);
+        if(active===generation && page.room===room && page.mesh?.nodeId===source && page.mesh?.epoch===data.epoch && page.mesh?.role==='hub'){opts.mirror(source,page.messages,page.tasks);currentRuns=Array.isArray(page.runs)?page.runs:[];}
+      }
+      for(const task of opts.pendingRuns?.()||[]){
+        if(active!==generation||Date.now()>=data.leaseExpiresAt)break;
+        if(currentRuns&&!currentRuns.some(r=>r.run===task.mesh_run&&r.revision===task.revision))continue;
+        const claim=await postRendezvous(site,deviceKey,'claim',{room,host:data.hostNodeId,epoch:data.epoch,nodeId:id.nodeId,run:task.mesh_run,ticket:opts.ticket(task.mesh_run)},opts.siteAccess).catch(error=>{if(error.status===409)return {claimed:false};throw error;});
+        if(claim.claimed&&active===generation&&Date.now()<data.leaseExpiresAt)opts.enqueueRun(task);
       }
       if ((prevRole !== meshState.role || prevEpoch !== meshState.epoch) && typeof onRoleChange === 'function') {
         try { onRoleChange({ ...meshState }); } catch {}

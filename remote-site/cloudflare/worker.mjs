@@ -72,6 +72,15 @@ export default {
       return handleRoom(request,env);
     }
 
+    if(route==='/api/room/setup-check'&&request.method==='GET'){
+      if(!env.REMOTE_DEVICE_KEY||!await sameToken(request.headers.get('x-agent-room-key'),env.REMOTE_DEVICE_KEY)||!await isOwnerSignedIn(request,env))return new Response(null,{status:403});
+      await env.DB.prepare('SELECT id FROM remote_rooms LIMIT 1').first();
+      return Response.json({ready:true},{headers:{'Cache-Control':'no-store'}});
+    }
+    if(route==='/_connect'&&request.method==='GET'){
+      const html='<!doctype html><html lang="ko"><meta charset="utf-8"><title>Agent Room 연결</title><form method="post" action="/_login"><label>접속 비밀번호 <input name="password" type="password" required></label><button>연결</button></form><script>const pw=location.hash.slice(1);history.replaceState(null,"","/_connect");if(pw){const f=document.forms[0];f.elements.password.value=pw;f.submit();}</script></html>';
+      return new Response(html,{headers:{'Content-Type':'text/html;charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer'}});
+    }
     if(route==='/_login'&&request.method==='POST'){
       const expected=await expectedCookieValue(env);
       if(!expected)return loginPage('서버에 REMOTE_ACCESS_PASSWORD(16자 이상) 시크릿이 설정되지 않았습니다.');

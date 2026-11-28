@@ -82,6 +82,7 @@ async function main(){
         deliveryHistory:(state.deliveryHistory||[]).filter(h=>state.messages.some(m=>m.seq===h.seq&&allowed.has(m.room)&&!m.recipient&&!m.retracted&&m.seq>selection.find(x=>x.room===m.room).since)),
         desktops:state.mesh?.enabled&&allowed.has(state.mesh.room)?{room:state.mesh.room,host:state.mesh.hostNodeId,tasks:(state.tasks||[]).filter(t=>t.room===state.mesh.room&&t.status!=='done').slice(0,40).map(({id,title,next,owner_node,status,revision})=>({id,title,next,owner_node,status,revision})),nodes:state.mesh.nodes.map(({node_id,label,last_seen,report})=>({node_id,label,last_seen,report}))}:null,
         limits:state.limits||{},
+        quotaNotices:(state.quotaNotices||[]).filter(n=>allowed.has(n.room)),
         ranking:(state.ranking||[]).filter(r=>allowed.has(r.room)).map(({room,enabled,mode,main_member})=>({room,enabled,mode,main_member})),
         controlResults:[...controlResults.values()].filter(item=>item.room===null||allowed.has(item.room))
       };

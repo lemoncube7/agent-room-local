@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.28
+- PC 앱의 원격 연결 설정에서 Cloudflare 로그인, workers.dev 주소 등록, D1·Worker 배포와 인증 검사를 진행할 수 있습니다. 사용 중인 이름이면 새 무작위 후보로 재시도합니다.
+- 다중 PC 작업 원장의 실행권 확인과 허브 승계 후 사본 복구를 추가했습니다.
+
 ## v1.0.27
 - **로컬 캐시 & 연결 상태 진단 (`index.html`, `remote-site/page.html`):**
   - 브라우저 `localStorage` 캐시(`agentRoomSnapCache`, `agentRoomSelected`)를 추가해 페이지 접속·새로고침 시 마지막 방과 최근 60개 메시지를 즉시 표시한 뒤 백그라운드로 동기화합니다.

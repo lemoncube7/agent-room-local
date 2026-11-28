@@ -116,6 +116,14 @@ assert.equal(elected.nodes[0].report.repositories[0].name,'app');
 assert.equal(elected.nodes[0].report.credential,undefined);
 assert.equal(elected.hostNodeId,'alpha');
 assert.equal((await register(beta)).hostNodeId,'alpha');
+const taskRun=crypto.randomUUID();
+const claim=(nodeId,epoch,headers=device)=>call('rendezvous/claim',headers,{room:meshRoom,host:'alpha',epoch,nodeId,run:taskRun,ticket:'a'.repeat(64)});
+assert.equal((await claim('beta',elected.epoch,{})).status,403);
+assert.equal((await claim('beta',elected.epoch+1)).status,409);
+assert.equal((await claim('beta',elected.epoch)).status,200);
+assert.equal((await claim('beta',elected.epoch)).status,200);
+assert.equal((await claim('alpha',elected.epoch)).status,409);
+assert.equal((await call('rendezvous/claim',device,{room:meshRoom,host:'alpha',epoch:elected.epoch,nodeId:'beta',run:taskRun,ticket:'b'.repeat(64)})).status,409);
 // Simulate a lost host. It remains on the roster during the 45-second grace period.
 db.prepare('UPDATE room_nodes SET last_seen=? WHERE room=? AND node_id=?').run(Date.now()-30000,meshRoom,'alpha');
 db.prepare('UPDATE room_hosts SET lease_expires_at=0 WHERE room=?').run(meshRoom);
