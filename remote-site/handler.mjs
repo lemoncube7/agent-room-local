@@ -163,7 +163,7 @@ export async function handleRoom(request,env){
     });
     if(newestReply)env.onNewReply(newestReply);
     const pending=await env.DB.prepare("SELECT id,text,room FROM remote_commands WHERE delivered=0 AND (room IN (SELECT id FROM remote_rooms) OR text LIKE '{\"__control\":true,\"control\":\"create\"%') ORDER BY created,id LIMIT 20").all();
-    return json({commands:pending.results,siteVersion:'1.0.8'});
+    return json({commands:pending.results,siteVersion:'1.0.9'});
   }
   if(route==='/api/room/whoami'&&request.method==='GET')return owner?json({id:owner}):json({error:'Sign-in required'},403);
   if(!owner||(env.REMOTE_OWNER_ID&&owner!==env.REMOTE_OWNER_ID))return json({error:'Owner sign-in required'},403);

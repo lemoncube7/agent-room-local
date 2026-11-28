@@ -969,6 +969,18 @@ async function runDedicatedSiteUpdate(targetTag,reason='manual'){
   });
   return siteUpdateJob;
 }
+let bundledSiteVersion=null;
+try{bundledSiteVersion=JSON.parse(fs.readFileSync(path.join(__dirname,'remote-site','release.json'),'utf8')).siteVersion||null;}catch{}
+function siteHeartbeat(site){
+  try{
+    const alive=JSON.parse(fs.readFileSync(path.join(local,'remote-alive.json'),'utf8'));
+    if(alive.site===new URL(site).origin&&Number.isFinite(alive.at)&&alive.at>0){
+      const siteVersion=typeof alive.siteVersion==='string'&&/^\d+\.\d+\.\d+$/.test(alive.siteVersion)?alive.siteVersion:null;
+      return {lastSyncAt:alive.at,siteVersion};
+    }
+  }catch{}
+  return {lastSyncAt:null,siteVersion:null};
+}
 function remoteSyncState(){
   const cfg=readRemoteConfig();
   const managed=Boolean(remoteProc&&remoteProc.exitCode===null);
@@ -985,7 +997,8 @@ function remoteSyncState(){
   const mode=normalizeRemoteMode(cfg);
   const directOn=directModeEnabled(cfg);
   const port=server.address()?.port||Number(process.env.ROOM_PORT||4317);
-  return {configured:Boolean(cfg.site&&cfg.deviceKey),remoteMode:mode,directEnabled:directOn,directActive:directActiveOnBoot,directNeedsRestart:directOn!==directActiveOnBoot,directUrls:directOn?listDirectUrls(port,cfg):[],site:cfg.site||external?.site||'',enabled:hostedModeEnabled(cfg),running:managed||Boolean(external),external:Boolean(external),hasAccessToken:Boolean(cfg.siteAccess),autoSiteUpdate:Boolean(cfg.autoSiteUpdate),siteUpdaterProvider:cfg.siteUpdaterProvider||'codex',siteUpdateJob,lastError:remoteLastError};
+  const site=cfg.site||external?.site||'';
+  return {configured:Boolean(cfg.site&&cfg.deviceKey),remoteMode:mode,directEnabled:directOn,directActive:directActiveOnBoot,directNeedsRestart:directOn!==directActiveOnBoot,directUrls:directOn?listDirectUrls(port,cfg):[],site,...siteHeartbeat(site),bundledSiteVersion,enabled:hostedModeEnabled(cfg),running:managed||Boolean(external),external:Boolean(external),hasAccessToken:Boolean(cfg.siteAccess),autoSiteUpdate:Boolean(cfg.autoSiteUpdate),siteUpdaterProvider:cfg.siteUpdaterProvider||'codex',siteUpdateJob,lastError:remoteLastError};
 }
 const sseClients=new Set();
 const wsClients=new Set();
@@ -1654,7 +1667,8 @@ async function cliTurn(participant, prompt, inputSeq){
     const receivedSeqs=new Set(received.map(item=>item.seq));
     const contextHistory=session.thread?[]:all("SELECT messages.seq,messages.created,messages.remote_source,members.name,messages.body FROM messages JOIN members ON members.id=messages.author WHERE messages.room=? AND (messages.recipient IS NULL OR messages.recipient=? OR messages.author=?) AND messages.retracted=0 AND messages.request NOT LIKE 'receipt:%' AND messages.seq<>? ORDER BY messages.seq DESC LIMIT 12",row.room,participant,participant,inputSeq??0).reverse().filter(item=>!receivedSeqs.has(item.seq));
     const alert=inputSeq?one('SELECT task,revision FROM handoff_alerts WHERE seq=?',inputSeq):null;
-    const handoffPolicy=alert?' This turn is a task handoff notification. Before doing work, reply exactly [[HANDOFF_ACCEPT]] to accept, or [[HANDOFF_DECLINE]] to decline. Use only that control line.':'';
+    const verificationAlert=alert&&input?.body.startsWith('작업 #'+alert.task+' 인계 요청: [검증 요청] ');
+    const handoffPolicy=verificationAlert?' This is a verification request for a task you already have permission to verify. Verify the result. If it meets the criteria, put [[HANDOFF_COMPLETE:'+alert.task+']] at the start of your reply and report what you verified.':alert?' This turn is a task handoff notification. Before doing work, reply exactly [[HANDOFF_ACCEPT]] to accept, or [[HANDOFF_DECLINE]] to decline. Use only that control line.':'';
     const ago=created=>{const m=Math.max(0,Math.round((Date.now()-Date.parse(created))/60000));return !Number.isFinite(m)?undefined:m<1?'just now':m<60?m+'m ago':m<1440?Math.floor(m/60)+'h ago':Math.floor(m/1440)+'d ago';};
     const msgText=(list)=>list.map((m,index)=>'['+['seq '+m.seq,ago(m.created),m.name,remoteSourceLabel(m.remote_source)].filter(Boolean).join(' · ')+']\n'+clipContext(m.body,index>=list.length-3,session.provider)).join('\n\n');
     const historyBlock=contextHistory.length?'\n\nRecent shared room messages (reference only):\n'+msgText(contextHistory):'';
@@ -1713,7 +1727,7 @@ async function cliTurn(participant, prompt, inputSeq){
       if(skipBefore)run("UPDATE deliveries SET state='context_seen' WHERE member=? AND state='context_only' AND seq<? AND seq IN (SELECT seq FROM messages WHERE room=?)",participant,skipBefore,row.room);
     }
     const decision=result.reply.trim().match(/^\[\[HANDOFF_(ACCEPT|DECLINE)\]\]$/);
-    if(alert&&decision){
+    if(alert&&decision&&!verificationAlert){
       const action=decision[1]==='ACCEPT'?'handoff_accept':'handoff_decline';
       try{handoff.change({action,id:alert.task,revision:alert.revision},participant,row.room);}
       catch(error){storeMessage(row.room,participant,'작업 #'+alert.task+' 인계 상태를 변경하지 못했어요: '+error.message);}
@@ -2631,11 +2645,8 @@ async function checkUpdateWithSite(){
   const res=await checkUpdate();
   const cfg=readRemoteConfig();
   if(cfg.site){
-    let current=null;
-    try{
-      const alive=JSON.parse(fs.readFileSync(path.join(local,'remote-alive.json'),'utf8'));
-      if(alive.site===new URL(cfg.site).origin&&Date.now()-alive.at<15000&&typeof alive.siteVersion==='string'&&/^\d+\.\d+\.\d+$/.test(alive.siteVersion))current=alive.siteVersion;
-    }catch{}
+    const {lastSyncAt,siteVersion}=siteHeartbeat(cfg.site);
+    const current=lastSyncAt&&Date.now()-lastSyncAt<15000?siteVersion:null;
     try{
       res.siteUpdate=await checkSiteUpdate(res.latest,current,version);
       if(res.siteUpdate?.available&&cfg.autoSiteUpdate&&res.latest){

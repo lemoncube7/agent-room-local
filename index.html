@@ -696,6 +696,7 @@ function update(next){
   remoteBtn.textContent=rm==='off'?'꺼짐':rm==='direct'?(rs.directActive?'직접 서버':'직접 서버 (재시작 필요)'):rm==='both'?'둘 다'+(hostedTxt?' · '+hostedTxt:''):hostedTxt||'꺼짐';
   remoteBtn.classList.toggle('pill-on',rm!=='off'&&(rm==='direct'?Boolean(rs.directActive):Boolean(rs.running)));
   remoteBtn.title=rs.lastError||'원격 연결 설정 (안함 · 직접 서버 · 원격 호스팅 · 둘 다)'+(rs.site?' ('+rs.site+')':'');
+  if(byId('remote-dialog').open)renderSiteSyncDetails(rs);
  }
  const finished=[];
  for(const m of next.members||[]){
@@ -2367,6 +2368,22 @@ byId('cf-start').onclick=async()=>{
 byId('cf-copy').onclick=async()=>{
  try{const {link}=await cfAction('link');await navigator.clipboard.writeText(link);byId('cf-status').textContent='접속 권한이 포함된 링크를 복사했습니다.';}catch{byId('cf-status').textContent='링크 복사에 실패했습니다. 클립보드 권한을 확인하세요.';}
 };
+function renderSiteSyncDetails(rs){
+ const status=byId('site-update-job-status');
+ let detail=byId('site-sync-details');
+ if(!detail){
+  detail=el('p');detail.id='site-sync-details';
+  status.before(detail);
+ }
+ detail.hidden=!rs.enabled||!rs.site;
+ if(detail.hidden)return;
+ const observed=rs.siteVersion, bundled=rs.bundledSiteVersion;
+ const older=observed&&bundled&&observed.split('.').map((part,i)=>Number(part)-Number(bundled.split('.')[i])).find(Boolean)<0;
+ detail.textContent='PC 앱 '+(snapshot?.version||'확인 중')+' · 운영 Site '+(observed||'확인 전')
+  +(bundled?' · 포함된 Site '+bundled:'')
+  +' · 마지막 동기화 '+(rs.lastSyncAt?new Date(rs.lastSyncAt).toLocaleString():'확인 전')
+  +(older?' · 운영 Site 업데이트 가능':'');
+}
 byId('remote-btn').onclick=()=>{
  const rs=snapshot?.remoteSync||{};
  remoteForm.reset();
@@ -2380,6 +2397,7 @@ byId('remote-btn').onclick=()=>{
  const fbPw=byId('fallback-pw');
  if(fbPw)fbPw.value=readFallbackCfg().pw||'';
  byId('site-update-job-status').textContent=rs.siteUpdateJob?.message||'';
+ renderSiteSyncDetails(rs);
  renderRemoteShareAll();
  byId('remote-error').textContent=rs.lastError||'';
  byId('remote-dialog').showModal();

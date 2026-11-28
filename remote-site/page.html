@@ -240,6 +240,29 @@ const historyView=document.querySelector('#history'),statusLine=document.querySe
 const conn=document.querySelector('#conn'),roomsNav=document.querySelector('#rooms'),actBox=document.querySelector('#activity'),appBox=document.querySelector('#approvals');
 const modeSel=document.querySelector('#mode-sel'),mainSel=document.querySelector('#main-sel'),toggleAct=document.querySelector('#toggle-act'),titleEl=document.querySelector('#title');
 let cursor='',pending,selected='',request=0,lastSnap=null,lastRooms=[],showAct=!matchMedia('(max-width:850px)').matches;
+const remoteDraftPrefix='agentRoomRemoteDraft:';
+const remoteDraftRoomKey='agentRoomRemoteDraftRoom';
+const remoteDrafts=new Map();
+function readRemoteDraft(room){
+ if(!room)return '';
+ if(remoteDrafts.has(room))return remoteDrafts.get(room);
+ try{return localStorage.getItem(remoteDraftPrefix+room)||'';}catch{return '';}
+}
+function saveRemoteDraft(room,value){
+ if(!room)return;
+ remoteDrafts.set(room,value);
+ try{if(value)localStorage.setItem(remoteDraftPrefix+room,value);else localStorage.removeItem(remoteDraftPrefix+room);}catch{}
+}
+function setRemoteDraft(value){draft.value=value;saveRemoteDraft(selected,value);fitDraft();renderRemoteSlashMenu();}
+function selectDraftRoom(room){
+ if(selected===room)return;
+ saveRemoteDraft(selected,draft.value);
+ selected=room;
+ try{if(room)localStorage.setItem(remoteDraftRoomKey,room);else localStorage.removeItem(remoteDraftRoomKey);}catch{}
+ draft.value=readRemoteDraft(room);
+ fitDraft();
+ renderRemoteSlashMenu();
+}
 let refreshInFlight=0;
 const controlRequests=new Map();
 const sentWatch=new Map(); // message id → {at,text} until the PC's reply event (commandId) shows up
@@ -357,7 +380,7 @@ function renderRooms(rooms){
   const approvals=(lastSnap?.approvals||[]).filter(item=>item.room===r.id).length;
   if(approvals)b.append(el('small','승인 '+approvals));
   if(lastSnap?.members?.some(m=>m.room===r.id&&m.busy)){const d=document.createElement('i');d.className='dot';d.title='작업 중';b.append(d);}
-  b.onclick=()=>{selected=r.id;cursor='';pending=null;historyView.replaceChildren();if(mobileView())openMobilePane('chat');void refresh();};
+  b.onclick=()=>{selectDraftRoom(r.id);cursor='';pending=null;historyView.replaceChildren();if(mobileView())openMobilePane('chat');void refresh();};
   return b;
  }));
 }
@@ -736,7 +759,7 @@ async function refresh(){
   const siteForControl=controlRequests.size>0;
   const r=siteForControl?await fetch('/api/room/browser'+qs,options):await roomRequest(qs,options);
   if(turn!==request)return;
-  if(r.status===404&&selected){selected='';cursor='';historyView.replaceChildren();void refresh();return;}
+  if(r.status===404&&selected){selectDraftRoom('');cursor='';historyView.replaceChildren();void refresh();return;}
   if(r.status===401||r.status===403)throw Error('이 사이트를 배포한 ChatGPT 계정으로 로그인해 주세요.');
   if(!r.ok)throw Error('원격 상태를 불러오지 못했어요. 잠시 후 다시 시도합니다.');
   const direct=directResponses.has(r);
@@ -765,7 +788,12 @@ async function refresh(){
   for(const [id,item] of controlRequests)if(item.expires<Date.now()){
    controlRequests.delete(id);statusLine.textContent='아직 PC의 처리 결과를 확인하지 못했어요.';
   }
-  if(!selected&&rooms.length){selected=rooms[0].id;void refresh();return;}
+  if(!selected&&rooms.length){
+   let savedRoom;
+   try{savedRoom=localStorage.getItem(remoteDraftRoomKey);}catch{}
+   selectDraftRoom(rooms.find(room=>room.id===savedRoom)?.id||rooms[0].id);
+   void refresh();return;
+  }
   draft.disabled=!selected;
   renderRooms(rooms);renderPanel();
   const events=selected?mergeEvents(cached,delta):[];
@@ -1096,9 +1124,9 @@ const remoteSlashCommands=[
  {cmd:'/방목록',desc:'방 목록 열기',run:()=>{if(mobileView())openMobilePane('rooms');}},
  {cmd:'/에이전트',desc:'에이전트 패널 열기',run:()=>{if(mobileView())openMobilePane('agents');else showAgentPanel(true);}},
  {cmd:'/테마',desc:'다크/블랙/라이트 전환',run:()=>document.querySelector('#remote-theme-toggle')?.click()},
- {cmd:'/조율',desc:'각자 의견 → 조율 → 동시 작업',run:()=>{draft.value='/조율 ';draft.focus();}},
- {cmd:'/조율중단',desc:'진행 중인 조율 멈추기',run:()=>{draft.value='/조율중단';draft.focus();}},
- {cmd:'/회의',desc:'각자 의견 → 합의안만',run:()=>{draft.value='/회의 ';draft.focus();}},
+ {cmd:'/조율',desc:'각자 의견 → 조율 → 동시 작업',run:()=>{setRemoteDraft('/조율 ');draft.focus();}},
+ {cmd:'/조율중단',desc:'진행 중인 조율 멈추기',run:()=>{setRemoteDraft('/조율중단');draft.focus();}},
+ {cmd:'/회의',desc:'각자 의견 → 합의안만',run:()=>{setRemoteDraft('/회의 ');draft.focus();}},
  {cmd:'/새로고침',desc:'지금 동기화',run:()=>{void refresh();}},
  {cmd:'/도움말',desc:'원격 1분 사용법',run:()=>remoteHelpDialog?.showModal()}
 ];
@@ -1109,12 +1137,11 @@ function renderRemoteSlashMenu(){
  if(!hits.length){menu.hidden=true;return;}
  menu.replaceChildren(...hits.map(it=>{
   const b=el('button',it.cmd+' · '+it.desc);b.type='button';
-  b.onclick=()=>{draft.value='';fitDraft();menu.hidden=true;it.run();};
+  b.onclick=()=>{setRemoteDraft('');it.run();};
   return b;
  }));
  menu.hidden=false;
 }
-draft.addEventListener('input',renderRemoteSlashMenu);
 let remoteAttachments=[];
 const attachInput=document.querySelector('#remote-attach'),attachList=document.querySelector('#remote-attach-list');
 function renderRemoteAttachments(){
@@ -1172,7 +1199,7 @@ form.onsubmit=async event=>{
  const trimmed=draft.value.trim();
  if(trimmed.startsWith('/')){
   const exact=remoteSlashCommands.find(it=>it.cmd===trimmed);
-  if(exact){draft.value='';fitDraft();const m=document.querySelector('#remote-slash-menu');if(m)m.hidden=true;exact.run();return;}
+  if(exact){setRemoteDraft('');exact.run();return;}
  }
  if(!selected||(!trimmed&&!remoteAttachments.length))return;
  const curAttKey=remoteAttachments.map(a=>a.name+':'+a.data.length).join(',');
@@ -1192,10 +1219,11 @@ form.onsubmit=async event=>{
   }
   if(!directResponses.has(r))sentWatch.set(sent.id,{at:Date.now(),room:sent.room,text:sent.text.slice(0,24),fullText:sent.text||(sent.attachments.length?'[첨부 '+sent.attachments.length+'개]':'')});
   if(selected===sent.room){
-   if(draft.value===sent.text){draft.value='';fitDraft();}
+   if(draft.value===sent.text)setRemoteDraft('');
    remoteAttachments=remoteAttachments.filter(file=>!sent.attachments.includes(file));
    renderRemoteAttachments();
   }
+  else if(readRemoteDraft(sent.room)===sent.text)saveRemoteDraft(sent.room,'');
   if(pending===sent)pending=null;
   statusLine.textContent=directResponses.has(r)?'PC에 직접 전달했어요.':'Site에 저장했어요. PC가 가져가면 처리됩니다.';
   void refresh();
@@ -1225,7 +1253,7 @@ function renderReplySuggestions(body){
     button.type='button';button.textContent=text;
     button.onclick=()=>{
      if(composer.value.trim()||composer.disabled)return;
-     composer.value=text;fitDraft();composer.focus();
+     setRemoteDraft(text);composer.focus();
     };
     return button;
    }));
@@ -1234,7 +1262,7 @@ function renderReplySuggestions(body){
  box.hidden=!suggestedReplies.length||composer.disabled||Boolean(composer.value.trim());
 }
 function fitDraft(){draft.style.height='auto';draft.style.height=Math.min(draft.scrollHeight+2,180)+'px';renderReplySuggestions();}
-draft.oninput=fitDraft;
+draft.oninput=()=>{saveRemoteDraft(selected,draft.value);fitDraft();renderRemoteSlashMenu();};
 draft.onkeydown=event=>{
  if(event.key!=='Enter'||event.shiftKey||event.isComposing||event.keyCode===229||matchMedia('(pointer:coarse)').matches)return;
  event.preventDefault();

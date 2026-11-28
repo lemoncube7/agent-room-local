@@ -1,5 +1,8 @@
 # 원격 접속, 직결 터널, Cloudflare 자동 설정, Web Push
 
+- **운영 Site 확인:** PC 원격 설정에서 앱에 포함된 Site 버전, 중계가 확인한 운영 Site 버전, 마지막 동기화 시각을 표시한다. 운영 버전이 낮으면 기존 Site 업데이트 기능을 사용할 수 있다.
+- **웹 초안:** 원격 화면은 방별 텍스트를 브라우저 저장소에 보관한다. 전송 접수에 성공하면 보낸 내용과 동일한 초안만 지우고, 실패하면 남긴다. 첨부 선택 상태는 저장하지 않는다.
+
 ## 5.1 두 가지 원격 경로 (`remote-sync.cjs`, `hub.cjs`, `remote-site/`)
 1. **Site 경유 (`remote-sync.cjs` ↔ Worker `/api/room/device` ↔ 브라우저 `/api/room/browser`):**
    - `remote-sync.cjs`가 `local/hub.json`(url·token)으로 로컬 허브 `/state`를 읽어 Site `/api/room/device`에 `{rooms, acknowledged, snapshot, events}`를 POST하고, 응답의 `commands`를 `http://127.0.0.1:4317/tool`(`remote_user_message`, `remote_control`)로 전달합니다. 전달이 끝난 명령 ID는 다음 요청의 `acknowledged`로 알립니다. 허브 쪽은 요청 ID(`remote:<id>`)로 중복을 걸러 재시도해도 두 번 저장되지 않습니다.
