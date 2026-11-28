@@ -682,6 +682,7 @@ async function refresh(){
   const fresh=Number.isFinite(snapshot?.syncedAt)&&Date.now()-snapshot.syncedAt<75000; // relay heartbeats every 60s while a phone is on the direct path
   conn.className=fresh?'pill':'pill err';conn.lastChild.textContent=fresh?'Site 경유 · PC 연결됨':snapshot?'Site 경유 · PC 오프라인/동기화 대기':'Site 경유 · PC 미연결';
   if(direct){conn.className='pill';conn.lastChild.textContent='PC 직접 연결';}
+  if(snapshot&&Array.isArray(snapshot.directLinks))adoptAutoLinks(snapshot.directLinks);
   lastRooms=rooms;lastSnap=snapshot||null;
   // Messages stored on the Site but never picked up by the PC are surfaced instead of waiting silently.
   for(const e of delta||[])if(e.commandId)sentWatch.delete(e.commandId);
@@ -787,6 +788,13 @@ function parseDirectLink(value){
  return url;
 }
 try{directLink=parseDirectLink(localStorage.getItem(directSettingsKey)||'');}catch{}
+// Links the PC publishes through the relay (signed-in snapshot). Used only when no link was saved by hand.
+let autoLinks=[],autoIdx=0;
+function adoptAutoLinks(list){
+ const next=[];for(const item of Array.isArray(list)?list:[]){try{next.push(parseDirectLink(item.url));}catch{}}
+ if(next.map(String).join()!==autoLinks.map(String).join()){autoLinks=next;autoIdx=0;resetDirectRetry();}
+}
+const currentDirect=()=>directLink||autoLinks[autoIdx%Math.max(1,autoLinks.length)]||null;
 let directFailures=0;
 let directRetryAt=0;
 function resetDirectRetry(){
@@ -794,7 +802,7 @@ function resetDirectRetry(){
  directRetryAt=0;
 }
 async function roomRequest(qs,options={}){
- const link=directLink;
+ const link=currentDirect();
  const signal=options.signal||AbortSignal.timeout(15000);
  signal.throwIfAborted();
  if(link&&Date.now()>=directRetryAt){
@@ -806,7 +814,7 @@ async function roomRequest(qs,options={}){
     credentials:'omit',redirect:'error',targetAddressSpace:'local',signal:AbortSignal.any([signal,probe])
    });
    if(response.ok){
-    if(link===directLink)resetDirectRetry();
+    if(link===currentDirect())resetDirectRetry();
     directResponses.add(response);
     return response;
    }
@@ -815,7 +823,8 @@ async function roomRequest(qs,options={}){
   }catch(error){
    if(signal.aborted)throw signal.reason;
   }
-  if(link===directLink){
+  if(!directLink&&autoLinks.length>1&&link===currentDirect()){autoIdx++;if(autoIdx%autoLinks.length!==0)return roomRequest(qs,options);}
+  if(link===currentDirect()||(!directLink&&autoLinks.includes(link))){
    directFailures=Math.min(directFailures+1,5);
    directRetryAt=Date.now()+Math.min(30000,2000*2**(directFailures-1));
   }

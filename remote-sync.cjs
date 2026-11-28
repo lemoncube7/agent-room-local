@@ -86,6 +86,8 @@ async function main(){
         limits:state.limits||{},
         quotaNotices:(state.quotaNotices||[]).filter(n=>allowed.has(n.room)),
         ranking:(state.ranking||[]).filter(r=>allowed.has(r.room)).map(({room,enabled,mode,main_member})=>({room,enabled,mode,main_member})),
+        // Direct (LAN/Tailscale) links so the signed-in phone page can switch to the PC path without manual pasting.
+        directLinks:(state.remoteSync?.directUrls||[]).map(({label,url})=>({label,url})).slice(0,6),
         controlResults:[...controlResults.values()].filter(item=>item.room===null||allowed.has(item.room))
       };
       const messages=state.messages.filter(m=>allowed.has(m.room)&&m.seq>floors.get(m.room));
