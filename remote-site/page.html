@@ -613,7 +613,6 @@ function hideSavedDoneTag(text){
  return String(text??'').replace(/^[ \t]*\[\[DONE\]\][ \t]*(?:\r?\n|$)[ \t]*(?:\r?\n[ \t]*)*/i,'');
 }
 function renderEventsView(events,busy,preserveScroll=false){
- const newMessage=!document.hidden&&historyRoom===selected&&Boolean(renderedHistory?.events.length)&&events.at(-1)?.seq>renderedHistory.events.at(-1).seq;
  const expandedDeliveries=new Set(historyRoom===selected?Array.from(historyView.querySelectorAll('.remote-delivery[open]'),item=>item.dataset.command):[]);
  if(historyRoom!==selected){historyRoom=selected;historyLimit=historyPageSize;}
  renderedHistory={events,busy};
@@ -654,14 +653,11 @@ function renderEventsView(events,busy,preserveScroll=false){
   a.append(renderMd(!isOwn&&m?hideSavedDoneTag(event.text):event.text));
   const dels=(delMap.get(event.seq)||[]).slice().sort((x,y)=>(x.priority??999)-(y.priority??999));
   let flowTxt='';
+  // Same rule as the PC app: answered agents are already visible as replies, so only list who is still
+  // working, waiting or stuck. No priority numbers — they mean nothing to the reader.
   if(dels.length){
-   const stages=new Map();
-   for(const d of dels){
-    const p=d.priority==null?'':String(d.priority);
-    if(!stages.has(p))stages.set(p,[]);
-    stages.get(p).push(d.name+'('+(delStatus[d.state]||d.state)+')');
-   }
-   flowTxt=[...stages].map(([p,items])=>(p?p+'순위 · ':'')+items.join(', ')).join(' / ');
+   flowTxt=dels.filter(d=>d.priority>0&&!['answered','context_only'].includes(d.state))
+    .map(d=>d.name+' '+(delStatus[d.state]||d.state)).join(' · ');
   }
   const remoteLabel=event.remoteSource==='direct'?'PC 직접 연결':event.remoteSource==='site'?'Site 경유':event.commandId?'원격':'';
   if(remoteLabel){
@@ -710,15 +706,6 @@ function renderEventsView(events,busy,preserveScroll=false){
   a.append(st);
   nodes.push(a);
  }
- for(const b of busy){
-  const a=document.createElement('article'),cls=agentCls(b.name,b.provider);
-  a.className=(cls?cls+' ':'')+'typing';
-  a.append(el('strong',b.name));
-  if(b.progress?.preview)a.append(renderMd(b.progress.preview));
-  const elapsed=b.progress?.updatedAt?Math.max(0,Math.floor((Date.now()-b.progress.updatedAt)/1000)):0;
-  a.append(el('small',(b.progress?.task||b.progress?.step||'작업 진행 중…')+(elapsed>=2?' ('+elapsed+'초)':'')));
-  nodes.push(a);
- }
  if(!nodes.length){
   const card=document.createElement('div');card.className='onboard-card';
   const pcOk=Boolean(lastSnap?.syncedAt&&(Date.now()-lastSnap.syncedAt)<45000);
@@ -741,7 +728,8 @@ function renderEventsView(events,busy,preserveScroll=false){
  const previousTop=historyView.scrollTop;
  historyView.replaceChildren(...nodes);
  if(preserveScroll)historyView.scrollTop=previousTop+historyView.scrollHeight-previousHeight;
- else if(nearBottom||newMessage)historyView.scrollTop=historyView.scrollHeight;
+ else if(nearBottom)historyView.scrollTop=historyView.scrollHeight;
+ else historyView.scrollTop=previousTop;
  historyScrollTop=historyView.scrollTop;
  return true;
 }
@@ -1225,7 +1213,9 @@ form.onsubmit=async event=>{
   }
   else if(readRemoteDraft(sent.room)===sent.text)saveRemoteDraft(sent.room,'');
   if(pending===sent)pending=null;
-  statusLine.textContent=directResponses.has(r)?'PC에 직접 전달했어요.':'Site에 저장했어요. PC가 가져가면 처리됩니다.';
+  const sentNotice=directResponses.has(r)?'PC에 직접 전달했어요.':'Site에 저장했어요. PC가 가져가면 처리됩니다.';
+  statusLine.textContent=sentNotice;
+  setTimeout(()=>{if(statusLine.textContent===sentNotice)statusLine.textContent='';},4000);
   void refresh();
  }catch(e){statusLine.textContent=formatNetError(e);}
  finally{button.disabled=false;}

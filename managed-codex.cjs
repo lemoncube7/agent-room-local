@@ -290,8 +290,10 @@ function describeStreamProgress(event){
     const step=t==='command_execution'?'명령 실행 중…':t==='file_change'?'파일 수정 중…':t==='reasoning'?'생각 중…':t==='agent_message'?'답변 작성 중…':'';
     return step||text?{step,text}:null;
   }
-  // Claude also emits mid-turn system events (status, hooks, compaction); only the real init means "connecting".
-  if(event.type==='init'||event.event==='init'||(event.type==='system'&&(!event.subtype||event.subtype==='init')))return {step:'세션 연결 중…',text:''};
+  // Claude re-emits system/init at the start of EVERY turn, even on a reused warm process (timing log: init ~40ms
+  // after the request, then a median 3s / p90 9s of model thinking before the first tool or text). Labelling that
+  // gap "세션 연결 중" made it look like a reconnect on every turn, so it is shown as thinking instead.
+  if(event.type==='init'||event.event==='init'||(event.type==='system'&&(!event.subtype||event.subtype==='init')))return {step:'생각 중…',text:''};
   if(event.type==='system')return null;
   return null;
 }

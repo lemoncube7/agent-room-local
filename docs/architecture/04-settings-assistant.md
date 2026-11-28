@@ -1,6 +1,6 @@
-# 설정 도우미 방 (`index.html`, `hub.cjs`)
+# 사용 길잡이 방 (`index.html`, `hub.cjs`)
 
-- 우측 하단 `💬` 버튼 또는 `Alt+클릭`(터치 길게 누르기)은 `assistant_room` 액션을 호출해 대화 모드(`work_mode='chat'`)의 **"설정 도우미"** 방을 엽니다.
+- 도움말(`?`)의 **사용 길잡이 열기**, 우측 하단 `💬`, `Alt+클릭`(터치 길게 누르기)은 `assistant_room` 액션으로 같은 대화 모드 방을 엽니다. 기존 기본 이름은 처음 다시 열 때 **사용 길잡이**로 바꾸고, 사용자가 정한 이름은 유지합니다.
 - 방 공통 지침(`memo`)은 💬를 누를 때마다 `ensureAssistantRoom()`이 새로 만든다(앱 사용법 + 허용 동작 목록 + 상태 요약 1300자, 전체 3990자 이내). 방 설정 창에서 지침을 저장하면 맨 앞 표시가 지워져 카드가 안 뜰 수 있으니, 그땐 💬를 다시 누르면 복구된다. 상태 요약은 방을 열 때 찍은 것이라 오래 대화했다면 💬로 갱신한다.
 - 방 공통 지침(`memo`) 맨 앞의 `ASSISTANT_ROOM_MARK` (`'[설정 도우미 방]'`)로 식별합니다. (`index.html`에서 `ASSISTANT_ROOM_MARK`와 `isAssistantRoom`은 초기화 순서 오류(TDZ) 방지를 위해 `<script>` 상단에 선언합니다.)
 - 도우미 에이전트 응답의 ```` ```agent-room-action {...}``` ```` 블록은 `splitAssistantActions()`가 허용 목록(`create`, `rename_room`, `set_work_mode`, `new_agent`, `apply_update`, `cloudflare_setup_start`, `report_issue` 등)만 파싱해 `[실행]`/`[취소]` 카드로 렌더링합니다.

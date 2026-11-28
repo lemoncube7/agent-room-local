@@ -6,10 +6,10 @@ Windows PC에서 **Codex CLI**, **Claude Code**, **Antigravity (`agy`)** 에이�
 
 ## Windows에서 첫 대화 시작하기
 
-1. [GitHub Releases](https://github.com/lemoncube7/agent-room-local/releases)에서 `Agent-Room-v…-Windows.zip`을 받아 쓰기 가능한 폴더에 압축을 풉니다.
+1. [GitHub Releases](https://github.com/lemoncube7/agent-room-local/releases)에서 `Agent-Room-v…-Windows.zip`을 받아 압축을 풉니다. **푸는 위치를 잘 정하세요.** 방마다 작업 폴더를 따로 정하지 않으면 그 아래 `workspaces\날짜_방이름` 폴더가 자동으로 생겨 에이전트의 작업 파일이 쌓입니다. 공간이 넉넉하고 쓰기 가능한 곳(예: `D:\Agent-Room`)을 권장하며, `Program Files`나 OneDrive 동기화 폴더는 피하세요.
 2. **`Agent Room.exe`**(또는 `Start Agent Room.cmd`)를 실행합니다. 시작 화면에서 **Node.js 24 이상**과 사용할 CLI의 감지 상태를 확인합니다. `Agent Room.exe`는 작업 표시줄·시작 메뉴·바탕화면에 바로 고정할 수 있습니다. 사용할 에이전트의 CLI 하나만 설치하고 해당 CLI에서 로그인하면 됩니다.
    - *참고:* `Agent Room.exe`에는 별도 코드 서명이 없어 Windows SmartScreen 경고가 뜰 수 있습니다(**추가 정보 → 실행**). 원하시면 포함된 `launcher.cs`와 `build-exe.ps1`로 직접 빌드하거나, `Start Agent Room.cmd` / `start.ps1`로 바로 실행해도 동일합니다.
-3. 에이전트가 작업할 프로젝트 폴더를 선택한 뒤 **Agent Room 열기**를 누릅니다. 대화 화면은 **전용 앱 창(WebView2)** 또는 기본 브라우저에서 열립니다(**⚙ 설정**에서 전환 가능).
+3. **Agent Room 열기**를 누릅니다. 기존 프로젝트에서 작업하려면 방의 폴더 버튼에서 그 방의 작업 폴더를 고를 수 있고, **기본 폴더로 되돌리기**로 언제든 자동 폴더로 돌아갈 수 있습니다. 대화 화면은 **전용 앱 창(WebView2)** 또는 기본 브라우저에서 열립니다(**⚙ 설정**에서 전환 가능).
 4. 대화가 비어 있을 때 표시되는 **환경 점검**을 확인합니다. `안녕하세요. 파일은 수정하지 말고 한 줄로 인사해 주세요.`라고 입력해 첫 답변을 받아 보세요. 첫 메시지로 방을 열면 설치된 CLI가 자동으로 연결됩니다. 원하는 모델을 직접 고르려면 왼쪽에서 방을 만든 뒤 오른쪽의 **+ 추가**를 사용합니다.
 
 CLI 준비 상태는 Agent Room이 실행 파일을 찾았는지 보여 줍니다. 로그인 오류가 표시되면 에이전트 카드의 **로그인 열기**로 로그인하고 **다시 시도**를 누릅니다. 이미 설정한 방을 바탕으로 새 방을 만들려면 왼쪽의 **방 빠른 준비**를 사용합니다.

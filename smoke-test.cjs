@@ -124,6 +124,13 @@ async function main(){
   assert.equal((await fetch(url+'/?key=wrong')).status,403);
   const login=await fetch(url+'/?key='+cookie.slice('agent_room='.length),{redirect:'manual'});
   assert.equal(login.status,302);assert.match(login.headers.get('set-cookie')||'',/HttpOnly; SameSite=Strict/);
+  const oldMobileView=await fetch(url+'/?view=mobile',{headers:{Cookie:cookie+'; agent_room_view=mobile','User-Agent':'Windows desktop'}});
+  assert.equal(oldMobileView.status,200);
+  assert.match(oldMobileView.headers.get('set-cookie')||'',/agent_room_view=;.*Max-Age=0/);
+  assert.doesNotMatch(await oldMobileView.text(),/window\.__agentRoomMobile=true|id="view-mode-seg"/);
+  const phoneView=await fetch(url+'/?view=desktop',{headers:{Cookie:cookie,'User-Agent':'iPhone'}});
+  assert.equal(phoneView.status,200);
+  assert.match(await phoneView.text(),/window\.__agentRoomMobile=true/);
   assert.equal((await fetch(url+'/control',{method:'POST',headers:{'Content-Type':'application/json',Origin:url},body:'{"action":"create","name":"x"}'})).status,403);
   assert.equal((await fetch(url+'/state',{headers:{Authorization:'Bearer '+token}})).ok&&!!(await (await fetch(url+'/state',{headers:{Authorization:'Bearer '+token}})).json()).messages,true);
   const {rooms:[room]}=await rpc('/control',{action:'create',name:'Test room'});

@@ -50,6 +50,8 @@ function initDb(rootDir) {
   if (!hasCol('rooms', 'folder')) db.exec("ALTER TABLE rooms ADD COLUMN folder TEXT NOT NULL DEFAULT ''");
   if (!hasCol('rooms', 'work_mode')) db.exec("ALTER TABLE rooms ADD COLUMN work_mode TEXT NOT NULL DEFAULT 'dev'");
   if (!hasCol('rooms', 'project')) db.exec("ALTER TABLE rooms ADD COLUMN project TEXT NOT NULL DEFAULT ''");
+  // arch_docs: NULL = follow the app-wide setting, 0/1 = per-room override.
+  if (!hasCol('rooms', 'arch_docs')) db.exec('ALTER TABLE rooms ADD COLUMN arch_docs INTEGER');
   if (!hasCol('members', 'parent')) db.exec('ALTER TABLE members ADD COLUMN parent TEXT');
   if (!hasCol('members', 'paused')) db.exec('ALTER TABLE members ADD COLUMN paused INTEGER NOT NULL DEFAULT 0');
   if (!hasCol('members', 'role')) db.exec("ALTER TABLE members ADD COLUMN role TEXT NOT NULL DEFAULT ''");

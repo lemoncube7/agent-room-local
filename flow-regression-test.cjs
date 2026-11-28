@@ -241,7 +241,58 @@ async function startsFromKoreanSpacedPath(){
   hub.kill();
 }
 
+// Rooms without their own folder get <workspaces>/<date>_<name>; "reset" returns to it after a custom folder.
+async function defaultRoomFolders(){
+  const root=makeRoot();
+  const ws=path.join(root,'workspaces');
+  const hub=startHub(root,{AGENT_ROOM_PROJECT:'',AGENT_ROOM_WORKSPACES:ws});
+  const cfg=await waitHubJson(root);
+  const tool=async body=>{
+    const cookie='agent_room='+fs.readFileSync(path.join(root,'local/browser-key'),'utf8').trim();
+    const r=await fetch(cfg.url+'/control',{method:'POST',headers:{Origin:cfg.url,Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const j=await r.json();if(!r.ok)throw Error('tool '+body.action+' '+r.status+' '+JSON.stringify(j));return j;
+  };
+  const created=await tool({action:'create',name:'테스트: 방/1'});
+  const room=created.createdRoom||created.rooms?.find(r=>r.name==='테스트: 방/1')?.id;
+  assert.ok(room,'room id');
+  const custom=fs.mkdtempSync(path.join(os.tmpdir(),'agent-room-custom-'));cleanup.push(custom);
+  await tool({action:'set_project',room,roomOnly:true,project:custom});
+  let st=await (await fetch(cfg.url+'/state',{headers:{Authorization:'Bearer '+cfg.token}})).json();
+  assert.equal(path.resolve(st.rooms.find(r=>r.id===room).project),path.resolve(custom));
+  await tool({action:'set_project',room,roomOnly:true,reset:true,project:''});
+  st=await (await fetch(cfg.url+'/state',{headers:{Authorization:'Bearer '+cfg.token}})).json();
+  const dir=st.rooms.find(r=>r.id===room).project;
+  assert.equal(path.dirname(dir),ws,'default folder lives under workspaces');
+  assert.match(path.basename(dir),/^\d{4}-\d{2}-\d{2}_테스트 방1$/);
+  assert.ok(fs.statSync(dir).isDirectory());
+  await tool({action:'set_room_arch_docs',room,value:false});
+  st=await (await fetch(cfg.url+'/state',{headers:{Authorization:'Bearer '+cfg.token}})).json();
+  assert.equal(st.rooms.find(r=>r.id===room).arch_docs,0);
+  hub.kill();
+}
+
+// Subagent replies wake the parent by default; a line with only [[NOT_CALL_PARENT]] (outside code fences) opts out.
+function subagentParentCallRules(){
+  const src=fs.readFileSync(path.join(__dirname,'hub.cjs'),'utf8');
+  const start=src.indexOf('function stripParentTags');
+  assert.ok(start>=0,'stripParentTags missing from hub.cjs');
+  const end=src.indexOf('\nconst leadingEndTag',start);
+  const strip=new Function(src.slice(start,end)+'\nreturn stripParentTags;')();
+  assert.deepEqual(strip('[[NOT_CALL_PARENT]]\nnote for the room'),{text:'note for the room',notCall:true});
+  assert.deepEqual(strip('progress\n  [[not_call_parent]]  \n'),{text:'progress\n',notCall:true});
+  assert.equal(strip('plain reply').notCall,false,'no tag means the parent is woken');
+  assert.equal(strip('mention [[NOT_CALL_PARENT]] mid-sentence').notCall,false,'a mid-sentence mention does not opt out');
+  assert.equal(strip('```\n[[NOT_CALL_PARENT]]\n```').notCall,false,'a tag inside a code fence does not opt out');
+  // The older mark must not leak into the room and must not change anything.
+  assert.deepEqual(strip('[[CALL_PARENT]]\nresult'),{text:'result',notCall:false});
+  // The wake-up depends only on the opt-out.
+  assert.match(src,/const reportsToParent=Boolean\(row\.parent\)&&!notCallParent;/,'default wake-up with opt-out');
+  const gates=(src.match(/reportsToParent/g)||[]).length;
+  assert.ok(gates>=4,'parent wake-ups must all depend on reportsToParent (found '+gates+' references)');
+}
+
 async function main(){
+  subagentParentCallRules();
   const corruptRoot=makeRoot();
   const local=path.join(corruptRoot,'local');
   const dbFile=path.join(local,'rooms.db');
@@ -252,12 +303,13 @@ async function main(){
   assert.match(fs.readFileSync(path.join(local,'startup-db-error.txt'),'utf8'),/rooms\.db/);
   assert.equal(fs.readFileSync(dbFile,'utf8'),'invalid SQLite database');
   await startsFromKoreanSpacedPath();
+  await defaultRoomFolders();
   await portConflictRules();
   await relayHubAddressRules();
   await restoresFromBackup();
   await ignoresUnsafeBackup();
   await leavesRunningUpdaterAlone();
-  console.log('Passed: assistant allow-list parity, corrupt database notice, Korean/space path start, port-conflict fallback, relay hub-address rules, interrupted-update restore, unsafe-backup rejection, live-updater guard.');
+  console.log('Passed: assistant allow-list parity, subagent opt-out tag (NOT_CALL_PARENT), corrupt database notice, Korean/space path start, default room folders and reset, port-conflict fallback, relay hub-address rules, interrupted-update restore, unsafe-backup rejection, live-updater guard.');
 }
 main().catch(err=>{console.error(err);process.exitCode=1;}).finally(()=>{
   for(const p of procs)try{p.kill();}catch{}

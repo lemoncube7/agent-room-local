@@ -1,6 +1,8 @@
 # SQLite 데이터베이스 (`db.cjs`, `local/rooms.db`)
 
-- `rooms(id, name, memo, folder, work_mode, project)`: 방 목록. `work_mode`는 `'chat'` 또는 `'dev'`.
+- `rooms(id, name, memo, folder, work_mode, project, arch_docs)`: 방 목록. `work_mode`는 `'chat'` 또는 `'dev'`. `arch_docs`는 NULL이면 앱 설정을 따르고 0/1이면 방별 값이다.
+- **방 작업 폴더 (`resolveRoomProject`, `defaultRoomFolder`):** `project`가 비어 있으면 처음 필요할 때 `<설치 위치>/workspaces/<YYYY-MM-DD>_<방이름>`을 만들어 저장한다. 날짜는 방의 첫 메시지 기준이다. 같은 이름이 있으면 `_2`, `_3`을 붙이고, 폴더 안의 `.agent-room-<id앞8자리>` 표시로 자기 폴더를 알아본다. 테스트용으로 `AGENT_ROOM_WORKSPACES`가 기본 위치를 바꾼다. 폴더 창의 **기본 폴더로 되돌리기**(`set_project`, `reset:true`)는 `project`를 비운 뒤 이 폴더로 돌아간다.
+  - 의도: 비개발자가 첫 답변 전에 폴더를 고르지 않아도 되고, 방마다 파일이 섞이지 않게 한다. 예전의 앱 전역 폴더(`local/project.txt`)는 업데이트 후 처음 시작할 때 폴더가 비어 있던 기존 방에 한 번 복사한다(`migrateGlobalProjectToRooms`, `local/project-migrated.json`). 기존 방의 작업 위치가 조용히 바뀌지 않게 하려는 것이다. 업데이트는 배포 파일 목록만 바꾸므로 `workspaces/`는 지워지지 않는다.
 - `members(id, room, name, state, parent, paused, role, sub_kind, position)`: 참여자.
   - `state`: `'human' | 'pending' | 'starting' | 'start_failed' | 'approved' | 'disconnected'`
   - `parent`: 서브에이전트의 부모 ID. `sub_kind`: `'resident'`(상주형) 또는 `'task'`(일회성).
