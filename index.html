@@ -1061,7 +1061,7 @@ function renderActivity(members,messages,mainMember){
    const step=el('div',stepText);step.className='act-step';step.title=stepText;
    const parent=snapshot.members.find(p=>p.id===m.parent);
    row.append(head);
-   if(parent){row.classList.add('subagent');const sub=el('div','↳ '+parent.name+'의 서브에이전트');sub.className='act-parent';row.append(sub);}
+   if(parent){row.classList.add('subagent');const sub=el('div','↳ '+parent.name+'의 '+(m.sub_kind==='task'?'임시 작업자':'상주 서브에이전트'));sub.className='act-parent';row.append(sub);}
    row.append(step);
    // One-click recovery right next to the error, no menu digging.
    if(m.cliError&&!m.busy){
@@ -1364,7 +1364,14 @@ function renderHistory(view,messages,roomChanged){
   const flow=(!m.retracted&&(sorted.some(d=>d.priority>0)||handoffs.length))
    ?requestFlow(sorted,replies,handoffs,status)
    :null;
-  card.append(m.retracted?el('p','철회한 메시지입니다.'):markdown(isOwn||m.author.startsWith("system:")?m.body:hideSavedDoneTag(m.body)));
+  const bodyNode=m.retracted?el('p','철회한 메시지입니다.'):markdown(isOwn||m.author.startsWith("system:")?m.body:hideSavedDoneTag(m.body));
+  if(m.authorKind==='task'&&!m.retracted){
+   // Temporary worker reports go to the parent only; keep them folded in the room view.
+   const fold=document.createElement('details');fold.className='task-report';
+   const parentName=snapshot.members.find(x=>x.id===m.authorParent)?.name||'부모';
+   fold.append(el('summary','임시 작업자 보고 → '+parentName+' (펼쳐 보기)'),bodyNode);
+   card.append(fold);
+  }else card.append(bodyNode);
   if(!m.retracted&&m.request?.startsWith('remote:')){
    const trace=el('details','');trace.append(el('summary','전달 이력'),el('div',timeStr+' · PC 대화에 저장'));
    for(const step of snapshot.deliveryHistory||[])if(step.seq===m.seq)trace.append(el('div',new Date(step.at).toLocaleTimeString('ko-KR')+' · '+step.name+' · '+(status[step.state]||step.state)));

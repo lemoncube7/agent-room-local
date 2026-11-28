@@ -105,6 +105,10 @@ try {
         }
     }
     Write-Output '새 버전 파일을 설치하는 중...'
+    # Crash marker: if the PC loses power mid-install, the hub restores from this backup on its next start.
+    $markerFile = Join-Path $PSScriptRoot 'local/update-in-progress.json'
+    [void][IO.Directory]::CreateDirectory((Split-Path -Parent $markerFile))
+    ([ordered]@{ backup = $backup; files = @($files); updaterPid = $PID; from = $oldVersion; to = $Tag } | ConvertTo-Json -Compress) | Set-Content -LiteralPath $markerFile -Encoding utf8
     foreach ($file in $files) {
         $applied.Add($file)
         $dest = Join-Path $PSScriptRoot $file
@@ -137,6 +141,7 @@ try {
     if (-not (Wait-RoomHub $newHub ($Tag.Substring(1)))) {
         throw "Agent Room $Tag 응답을 확인하지 못했습니다."
     }
+    Remove-Item -LiteralPath $markerFile -Force -ErrorAction SilentlyContinue
     Write-Output "Agent Room $Tag 실행 중입니다."
 } catch {
     $failed = $true
@@ -159,6 +164,7 @@ try {
             }
             $oldHub = Start-RoomHub
             if (-not (Wait-RoomHub $oldHub $oldVersion)) { throw "Previous version $oldVersion did not become healthy." }
+            if ($markerFile) { Remove-Item -LiteralPath $markerFile -Force -ErrorAction SilentlyContinue }
             Write-Output "Previous Agent Room version $oldVersion is running."
         } catch {
             $keepBackup = $true

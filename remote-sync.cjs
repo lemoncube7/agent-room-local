@@ -49,9 +49,11 @@ async function main(){
   };
   let initialRoom,initialSince=0;
   const cursorPath=path.join(localDir,'remote-cursor.json');
-  const cursor=fs.existsSync(cursorPath)?JSON.parse(fs.readFileSync(cursorPath,'utf8')):{};
+  // A cursor file damaged by a sudden power-off must not keep the relay from starting; falling back to the room floor is safe.
+  let cursor={};
+  try{const parsed=JSON.parse(fs.readFileSync(cursorPath,'utf8'));if(parsed&&typeof parsed==='object'&&!Array.isArray(parsed))cursor=parsed;}catch{}
   const key=room=>site.origin+' '+room;
-  function save(){const temp=cursorPath+'.tmp';fs.writeFileSync(temp,JSON.stringify(cursor));fs.renameSync(temp,cursorPath);}
+  function save(){try{const temp=cursorPath+'.tmp';fs.writeFileSync(temp,JSON.stringify(cursor));fs.renameSync(temp,cursorPath);}catch(error){console.error('Remote cursor save failed: '+error.message);}}
   let acknowledged=[],lastError='',lastSyncKey='',lastHeartbeat=0;
   let consecutiveFailures=0;
   const controlResults=new Map();

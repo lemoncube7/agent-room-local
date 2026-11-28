@@ -53,6 +53,8 @@ function initDb(rootDir) {
   if (!hasCol('members', 'parent')) db.exec('ALTER TABLE members ADD COLUMN parent TEXT');
   if (!hasCol('members', 'paused')) db.exec('ALTER TABLE members ADD COLUMN paused INTEGER NOT NULL DEFAULT 0');
   if (!hasCol('members', 'role')) db.exec("ALTER TABLE members ADD COLUMN role TEXT NOT NULL DEFAULT ''");
+  // Subagent kind: 'resident' (stays under its parent) or 'task' (one delegated job, removed when done).
+  if (!hasCol('members', 'sub_kind')) db.exec("ALTER TABLE members ADD COLUMN sub_kind TEXT NOT NULL DEFAULT 'resident'");
   if (!hasCol('messages', 'recipient')) db.exec('ALTER TABLE messages ADD COLUMN recipient TEXT');
   if (!hasCol('messages', 'relay_root')) db.exec('ALTER TABLE messages ADD COLUMN relay_root INTEGER');
   if (!hasCol('messages', 'retracted')) db.exec('ALTER TABLE messages ADD COLUMN retracted INTEGER NOT NULL DEFAULT 0');
