@@ -41,8 +41,9 @@ button[aria-pressed=true]{border-color:var(--accent);color:var(--accent)}
 .act-head-actions{display:inline-flex;align-items:center;gap:4px;flex:none}
 .act-head-actions .act-retry{margin:0}
 .act-name{display:inline-flex;align-items:center;gap:6px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.act-quota{flex:none;font-size:11px;font-weight:500;color:var(--muted);font-variant-numeric:tabular-nums}
-.act-quota.low{color:#f5c451}.act-quota.critical{color:#ff7b72}
+.chat-quota{display:none;font-size:11px;font-weight:500;margin-left:6px;color:var(--muted);font-variant-numeric:tabular-nums}
+.chat-quota.low{color:#f5c451}.chat-quota.critical{color:#ff7b72}
+@media(max-width:850px){.chat-quota{display:inline}}
 .act-dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--muted)}
 .act-dot.busy{background:#4fd1a5;animation:act-pulse 1.4s ease-in-out infinite}.act-dot.approval{background:#f5c451}.act-dot.error{background:#ff7b72}
 @keyframes act-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.82)}}
@@ -450,12 +451,6 @@ function renderPanel(){
    const rem=expired?100:Math.max(0,Math.min(100,Math.round(100-(Number(w.utilization)||0)*100)));
    return {k,w,raw,ms,expired,rem};
   });
-  if(parsedLimits.length){
-   const minRem=Math.min(...parsedLimits.map(x=>x.rem));
-   const qEl=el('span',parsedLimits.map(x=>(winNames[x.k]||x.k)+' '+x.rem+'%').join(' · '));
-   qEl.className='act-quota'+(minRem<=10?' critical':minRem<=25?' low':'');
-   name.append(qEl);
-  }
   const head=document.createElement('div');head.className='act-head';head.append(name);
   const actions=document.createElement('div');actions.className='act-head-actions';
   if(m.provider&&m.state==='approved'){
@@ -616,7 +611,23 @@ function renderEventsView(events,busy,preserveScroll=false){
   const isOwn=cls==='own';
   const nb=m?.provider==='agy'&&m?.model?(/claude|sonnet|opus|haiku/i.test(m.model)?'name-claude':/gpt|codex|o[134]/i.test(m.model)?'name-codex':''):'';
   if(cls)a.className=cls+(nb?' '+nb:'');
-  if(!isOwn)a.append(el('strong',event.name));
+  if(!isOwn){
+   const st=el('strong',event.name);
+   if(m?.provider&&lastSnap?.limits?.[m.provider]?.windows){
+    const allE=Object.entries(lastSnap.limits[m.provider].windows).filter(([,w])=>w&&w.utilization!=null);
+    const is3p=m.provider==='agy'&&m.model&&!/gemini/i.test(m.model);
+    const es=m.provider==='agy'?allE.filter(([k])=>is3p?k.startsWith('3p'):k.startsWith('gemini')):allE;
+    if(es.length){
+     const wl={five_hour:'5h',seven_day:'7d','gemini-5h':'5h','gemini-weekly':'7d','3p-5h':'5h','3p-weekly':'7d'};
+     const rems=es.map(([k,w])=>{const raw=w.resets_at??w.resetsAt,ms=typeof raw==='number'?(raw<1e12?raw*1000:raw):Date.parse(raw);return {k,rem:Number.isFinite(ms)&&ms<=Date.now()?100:Math.max(0,Math.min(100,Math.round(100-(Number(w.utilization)||0)*100)))};});
+     const minRem=Math.min(...rems.map(x=>x.rem));
+     const qb=el('span',rems.map(x=>(wl[x.k]||x.k)+' '+x.rem+'%').join(' · '));
+     qb.className='chat-quota'+(minRem<=10?' critical':minRem<=25?' low':'');
+     st.append(qb);
+    }
+   }
+   a.append(st);
+  }
   a.append(renderMd(!isOwn&&m?hideSavedDoneTag(event.text):event.text));
   const dels=(delMap.get(event.seq)||[]).slice().sort((x,y)=>(x.priority??999)-(y.priority??999));
   let flowTxt='';
