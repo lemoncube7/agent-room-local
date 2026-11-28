@@ -95,7 +95,7 @@ try {
                 break
             } catch {
                 if ($_.Exception.Response -eq $null -or [int]$_.Exception.Response.StatusCode -ne 409 -or (Get-Date) -gt $shutdownDeadline) { throw }
-                if (-not $announced) { Write-Output '에이전트 답변이 마무리되는 대로 자동 설치됩니다. 새 메시지는 보존됩니다.'; $announced = $true }
+                if (-not $announced) { Write-Output '허브가 재시작 준비 중입니다. 진행 중인 답변은 재시작 후 이어서 처리됩니다.'; $announced = $true }
                 Start-Sleep -Seconds 2
             }
         }

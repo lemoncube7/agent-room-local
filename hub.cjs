@@ -2767,7 +2767,9 @@ const server=http.createServer(async(req,res)=>{
     for await(const chunk of req){size+=chunk.length;if(size>limit)return res.writeHead(413).end();chunks.push(chunk);}
     const args=JSON.parse(Buffer.concat(chunks).toString('utf8'));
     if(req.url==='/shutdown_for_update'){
-      if(draining||desktopBusy.size||cliBusy.size||rankingRooms.size)return res.writeHead(409,{'Content-Type':'application/json'}).end(JSON.stringify({error:'Agent Room is busy. Wait for the active reply before updating.'}));
+      if(draining)return res.writeHead(409,{'Content-Type':'application/json'}).end(JSON.stringify({error:'Agent Room is already restarting.'}));
+      // Update right away even while agents work: in-flight turns are recovered and re-queued after the restart
+      // (recoverWarmTurns / recoverDetachedTurns), pending rankings re-run, and new messages wait in the outbox.
       draining=true;
       stopRemoteSync();
       closeAllWarm();

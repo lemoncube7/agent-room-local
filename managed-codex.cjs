@@ -290,7 +290,9 @@ function describeStreamProgress(event){
     const step=t==='command_execution'?'명령 실행 중…':t==='file_change'?'파일 수정 중…':t==='reasoning'?'생각 중…':t==='agent_message'?'답변 작성 중…':'';
     return step||text?{step,text}:null;
   }
-  if(event.type==='init'||event.event==='init'||event.type==='system')return {step:'세션 연결 중…',text:''};
+  // Claude also emits mid-turn system events (status, hooks, compaction); only the real init means "connecting".
+  if(event.type==='init'||event.event==='init'||(event.type==='system'&&(!event.subtype||event.subtype==='init')))return {step:'세션 연결 중…',text:''};
+  if(event.type==='system')return null;
   return null;
 }
 function buildStreamArgs(provider,session,model,effort,options={}){
