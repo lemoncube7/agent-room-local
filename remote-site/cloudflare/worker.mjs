@@ -1,5 +1,7 @@
 import {handleRoom} from '../handler.mjs';
 import pageHtml from '../page.html';
+import {manifest,serviceWorker} from '../pwa.mjs';
+import {icons} from '../icons.mjs';
 
 const COOKIE_NAME='ar_owner';
 
@@ -125,6 +127,12 @@ export default {
       const res=await handleRoom(proxied,{...env,BEARER_VERIFIED:bearerVerified});
       return request.headers.get('authorization')?.startsWith('Bearer ')?withCors(request,res):res;
     }
+
+    // PWA files are public (no secrets) so the browser can install the app before/after sign-in.
+    if(route==='/manifest.webmanifest')return new Response(JSON.stringify(manifest),{headers:{'Content-Type':'application/manifest+json','Cache-Control':'public, max-age=3600'}});
+    if(route==='/sw.js')return new Response(serviceWorker,{headers:{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-cache','Service-Worker-Allowed':'/'}});
+    const iconMatch=route.match(/^\/icons\/(192|512)\.png$/);
+    if(iconMatch){const bin=Uint8Array.from(atob(icons[iconMatch[1]]),c=>c.charCodeAt(0));return new Response(bin,{headers:{'Content-Type':'image/png','Cache-Control':'public, max-age=86400'}});}
 
     if(route==='/'||route==='/index.html'){
       if(!signedIn)return loginPage();

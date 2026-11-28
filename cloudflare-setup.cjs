@@ -26,8 +26,8 @@ function workerUpload(root,state){
     {type:'secret_text',name:'REMOTE_ACCESS_PASSWORD',text:state.password}]};
   parts.append('metadata',new Blob([JSON.stringify(metadata)],{type:'application/json'}),'metadata.json');
   const read=file=>fs.readFileSync(path.join(root,'remote-site',file),'utf8');
-  const main=read('cloudflare/worker.mjs').replace("'../handler.mjs'","'./handler.mjs'").replace("'../page.html'","'./page.html'");
-  for(const [name,type,body] of [['worker.mjs','application/javascript+module',main],['handler.mjs','application/javascript+module',read('handler.mjs')],['page.html','text/plain',read('page.html')]]){
+  const main=read('cloudflare/worker.mjs').replace("'../handler.mjs'","'./handler.mjs'").replace("'../page.html'","'./page.html'").replace("'../pwa.mjs'","'./pwa.mjs'").replace("'../icons.mjs'","'./icons.mjs'");
+  for(const [name,type,body] of [['worker.mjs','application/javascript+module',main],['handler.mjs','application/javascript+module',read('handler.mjs')],['page.html','text/plain',read('page.html')],['pwa.mjs','application/javascript+module',read('pwa.mjs')],['icons.mjs','application/javascript+module',read('icons.mjs')]]){
     parts.append(name,new Blob([body],{type}),name);
   }
   return parts;
