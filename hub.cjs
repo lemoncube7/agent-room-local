@@ -900,12 +900,13 @@ const managedTags=new Set([...mirrorTags,'FORWARD','AFTER','HANDOFF_OFFER','HAND
 const interimTags=new Set(['DELEGATE','DONE','CONTINUE','WAIT']);
 const leadingEndTag=/^[ \t]*\[\[(DONE|CONTINUE|WAIT)(?::([^\]\r\n]+))?\]\][ \t]*(?:\r?\n|$)/i;
 function parseEndTag(text,initialTag=null){
-  let body=String(text||'').trim();
-  const leading=body.match(leadingEndTag);
-  if(leading)body=body.slice(leading[0].length).trim();
-  const trailing=body.match(/(?:^|\r?\n)[ \t]*\[\[(DONE|CONTINUE|WAIT)(?::([^\]\r\n]+))?\]\][ \t]*$/i);
-  if(trailing)body=body.slice(0,trailing.index).trim();
-  const tag=trailing||leading||initialTag;
+  let tag=initialTag;
+  let body=splitAgentTagLines(text,line=>{
+    const match=line.match(leadingEndTag);
+    if(!match)return false;
+    tag=match;
+    return true;
+  }).trim();
   const endTag=tag?.[1].toUpperCase()||null;
   if(endTag==='WAIT'&&tag[2]?.trim())body+=(body?'\n':'')+'(대기: '+tag[2].trim()+')';
   return {endTag,body};
@@ -954,6 +955,7 @@ function mirrorSessionReplies(){
       }
       const toMatch=body.match(/^\[\[TO:([^\]\r\n]+)\]\]\s*\r?\n([\s\S]*)$/);
       const recipient=toMatch&&roomPeers.some(p=>p.id===toMatch[1])?toMatch[1]:null;
+      if(toMatch&&!recipient){storeMessage(room,memberId,'지정한 수신자를 찾지 못해 답변 전달을 보류했어요.');continue;}
       if(recipient)body=toMatch[2].trim();
       ({body}=parseEndTag(body));
       if(!body||body==='[[AGENT_ROOM_NO_REPLY]]')continue;
@@ -961,8 +963,8 @@ function mirrorSessionReplies(){
       if(one('SELECT 1 FROM messages WHERE room=? AND author=? AND body=? AND created>=?',room,memberId,body,recentCutoff))continue;
       const postedSeq=storeMessage(room,memberId,body,null,recipient);
       run("UPDATE deliveries SET state='answered' WHERE member=? AND state IN ('accepted','uncertain') AND seq IN (SELECT seq FROM messages WHERE room=?)",memberId,room);
-      if(called.size){
-        for(const targetId of called)queueForRoom(room,memberId,postedSeq,targetId,postedSeq);
+      if(recipient||called.size){
+        for(const targetId of recipient?[recipient]:called)queueForRoom(room,memberId,postedSeq,targetId,postedSeq);
         setImmediate(dispatchQueuedTurns);
       }else maybeRankAgentFollowup(room,memberId,postedSeq,null,called,recipient);
     }
@@ -1515,7 +1517,7 @@ async function cliTurn(participant, prompt, inputSeq){
     const match=replyText.match(/^\[\[TO:([^\]\r\n]+)\]\]\s*\r?\n([\s\S]*)$/);
     const explicitTo=match&&peers.some(peer=>peer.id===match[1])?match[1]:null;
     const recipient=explicitTo||(row.parent&&row.sub_kind==='task'?row.parent:null);
-    const parsed=parseEndTag(explicitTo?match[2].trim():replyText.trim(),initialEndTag);
+    const parsed=parseEndTag(match&&!explicitTo?'지정한 수신자를 찾지 못해 답변 전달을 보류했어요.':explicitTo?match[2].trim():replyText.trim(),initialEndTag);
     const endTag=parsed.endTag;
     const body=parsed.body;
     const silent=!body||body==='[[AGENT_ROOM_NO_REPLY]]';

@@ -38,7 +38,7 @@ function createHandoff({db,all,one,run,member,notify,checkEditor=()=>{},nodesFor
     if(!one('SELECT id FROM handoff_tasks WHERE id=? AND room=?',id,room))fail('Task is not in this room.');
     return all('SELECT action,actor,note,created FROM handoff_history WHERE task=? ORDER BY id DESC LIMIT 100',id);
   }
-  function change(input,actor,room){
+  function change(input,actor,room,onCreate){
     const {action}=input;
     checkEditor(room,action);
     const human=actor==='human:'+room;
