@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.37
+- Codex CLI 대화 열기에서 내장 CLI의 백그라운드 서버 오류를 피하도록 수정했습니다.
+- 화면 렌더링 시 `isOwn` 초기화 전 참조 오류를 수정했습니다.
+- 조율 최대 라운드를 6회로 늘리고 중복 작업 카드 생성을 방지했습니다.
+
 ## v1.0.36
 - **자동 `cloudflared` HTTPS 터널 & `directUrls` 동기화 (`hub.cjs`):** 직접 서버 사용 시 `local/cloudflared.exe`를 자동 실행·재시작하고 생성된 HTTPS 터널 주소를 `directUrls` 최우선(`priority: -1`)으로 자동 동기화해 폰 웹앱이 별도 복사 없이 즉시 직결되도록 개선했습니다.
 - **모바일 채팅 한도 표시 (`index.html`, `remote-site/page.html`):** 에이전트 창의 `.act-quota`를 제거하고, 모바일 채팅 말풍선 작성자 이름 옆에 해당 모델의 남은 한도(`.chat-quota`)를 텍스트로 표시하도록 옮겼습니다.

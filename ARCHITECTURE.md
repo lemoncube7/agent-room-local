@@ -36,6 +36,7 @@
   - `state`: `'human' | 'pending' | 'starting' | 'start_failed' | 'approved' | 'disconnected'`
   - `parent`: 서브에이전트의 부모 ID. `sub_kind`: `'resident'`(상주형) 또는 `'task'`(일회성).
 - `cli_sessions(member, project, thread, provider, model, effort, permission_profile, last_cli_error, policy_version, ...)`: CLI 세션 정보, 마지막 오류(`usage_limit`, `auth_expired` 등), 적용된 `policy_version`.
+- Windows에서 에이전트의 Codex CLI 대화를 열 때 `--no-daemon resume <thread>`를 사용한다. 데스크톱 앱에 포함된 CLI에서도 별도 백그라운드 서버 패키지 없이 기존 대화를 열기 위함이다.
 - `messages(seq, room, author, request, body, created, recipient, remote_source, relay_root, retracted)`:
   - `recipient`: 1인 지정(`[[TO:이름]]`) 대상.
   - `remote_source`: `'direct'`(PC 직접 연결) 또는 `'site'`(Site 경유).

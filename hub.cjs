@@ -3187,7 +3187,7 @@ const server=http.createServer(async(req,res)=>{
         if(!agent?.thread)throw Error('열 수 있는 CLI 세션이 아직 없어요.');
         if(!agent.project||!fs.existsSync(agent.project))throw Error('프로젝트 폴더를 찾을 수 없어요.');
         const [file,...prefix]=cliCommand(agent.provider);
-        const resume=agent.provider==='claude'?['--resume',agent.thread]:agent.provider==='agy'?['--conversation',agent.thread]:['resume',agent.thread];
+        const resume=agent.provider==='claude'?['--resume',agent.thread]:agent.provider==='agy'?['--conversation',agent.thread]:['--no-daemon','resume',agent.thread];
         openPowerShellCommand(agent.project,file,[...prefix,...resume]);
       }
       else if(args.action==='login_cli'){
