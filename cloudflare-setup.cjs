@@ -125,16 +125,20 @@ function createSetup({root,local,connect,fetcher=fetch,cli=wrangler}){
     await api(script,{method:'PUT',body:workerUpload(root,saved)});
     await api(script+'/subdomain',json('POST',{enabled:true}));
     const site='https://'+saved.name+'.'+sub+'.workers.dev';
-    set('working','실제 주소에서 비밀번호·PC 연결 키·DB 확인 중');
-    let verified=false;
-    for(let n=0;n<8&&!verified;n++){
+    saved.pendingSite=site;save(saved);
+    // A newly registered workers.dev subdomain or script can take a few minutes to resolve, so wait up to ~3 minutes.
+    let verified=false,last='';
+    const started=Date.now();
+    while(!verified&&Date.now()-started<180000){
+      set('working','실제 주소에서 비밀번호·PC 연결 키·DB 확인 중 ('+Math.round((Date.now()-started)/1000)+'초, 새 주소는 몇 분 걸릴 수 있어요)');
       try{
-        const check=await fetcher(site+'/api/room/setup-check',{headers:{'x-agent-room-key':saved.key,Authorization:'Bearer '+saved.password},redirect:'error',signal:AbortSignal.timeout(5000)});
-        verified=check.ok&&(await check.json()).ready===true;
-      }catch{}
-      if(!verified&&n<7)await new Promise(r=>setTimeout(r,1500));
+        const check=await fetcher(site+'/api/room/setup-check',{headers:{'x-agent-room-key':saved.key,Authorization:'Bearer '+saved.password},redirect:'error',signal:AbortSignal.timeout(8000)});
+        verified=check.ok&&(await check.json().catch(()=>({}))).ready===true;
+        if(!verified)last='HTTP '+check.status+(check.status===403?' (키 또는 비밀번호 불일치)':check.status===404?' (Worker가 아직 배포되지 않음)':check.status>=500?' (Worker 또는 DB 오류)':'');
+      }catch(error){last=/ENOTFOUND|getaddrinfo/i.test(String(error?.cause?.code||error?.message))?'주소를 아직 찾을 수 없음 (DNS 전파 대기)':String(error?.cause?.code||error?.message||error);}
+      if(!verified)await new Promise(r=>setTimeout(r,5000));
     }
-    if(!verified)throw Error('Worker 배포 후 연결 확인을 마치지 못했습니다. 잠시 뒤 다시 시도하세요.');
+    if(!verified)throw Error('Worker 배포 후 연결 확인을 마치지 못했습니다 ('+last+'). 설정은 저장돼 있으니 다시 시도하면 이어서 확인합니다. 주소: '+site);
     const mode=connect(site,saved.key);
     saved.site=site;save(saved);set('done','원격 연결을 확인했습니다.',{site,mode});
   }
