@@ -2524,6 +2524,7 @@ syncPhoneHeight();
 .ar-asst-card{align-self:stretch;border:1px solid var(--accent);border-radius:10px;padding:8px 10px;display:grid;gap:6px;font-size:13px}
 .ar-asst-card .row{display:flex;gap:6px}.ar-asst-card button{font-size:12px;padding:3px 12px}
 .ar-asst-card button.go{background:var(--accent);border-color:var(--accent);color:#0f1117;font-weight:600}
+#ar-asst-cfg{display:none;gap:6px;padding:6px 8px;border-bottom:1px solid var(--line);font-size:12px;flex-wrap:wrap;align-items:center}#ar-asst-cfg.open{display:flex}#ar-asst-cfg select,#ar-asst-cfg input{font-size:12px;padding:2px 4px}#ar-asst-cfg input{width:130px}
 #ar-asst-form{display:flex;gap:6px;padding:8px;border-top:1px solid var(--line)}
 #ar-asst-input{flex:1;min-width:0}
 body.ar-asst-pick *{cursor:help!important}
@@ -2538,7 +2539,19 @@ body.ar-asst-pick *{cursor:help!important}
  const clear=el('button',{type:'button',textContent:'지우기',title:'대화 기록 지우기'});
  const close=el('button',{type:'button',textContent:'✕',title:'닫기'});
  const form=el('form',{id:'ar-asst-form'},input,send);
- const panel=el('div',{id:'ar-asst'},el('div',{id:'ar-asst-head'},el('span',{textContent:'설정 도우미'}),clear,close),log,form);
+ const gear=el('button',{type:'button',textContent:'⚙',title:'도우미 모델 설정'});
+ const issue=el('button',{type:'button',textContent:'🐞',title:'이슈 제보'});
+ const mkSel=(opts)=>{const s=el('select');for(const [v,l] of opts)s.append(el('option',{value:v,textContent:l}));return s;};
+ const cfgProv=mkSel([['auto','자동'],['claude','Claude'],['codex','Codex'],['agy','Antigravity']]);
+ const cfgModel=el('input',{type:'text',placeholder:'모델 (비우면 기본)',maxLength:80});
+ const cfgEffort=mkSel([['low','노력 낮음'],['medium','보통'],['high','높음']]);
+ const cfgBox=el('div',{id:'ar-asst-cfg'},cfgProv,cfgModel,cfgEffort);
+ const cfgCall=async body=>{try{const r=await fetch('/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'assistant_config',...body})});const d=await r.json();const c=d.assistantConfig||{};cfgProv.value=c.provider||'auto';cfgModel.value=c.model||'';cfgEffort.value=c.effort||'low';}catch{}};
+ const cfgSave=()=>cfgCall({set:true,provider:cfgProv.value,model:cfgModel.value,effort:cfgEffort.value});
+ cfgProv.onchange=cfgSave;cfgEffort.onchange=cfgSave;cfgModel.onchange=cfgSave;
+ gear.onclick=()=>{const o=cfgBox.classList.toggle('open');if(o)void cfgCall({});};
+ issue.onclick=()=>{void ask('이슈를 제보하고 싶어. 지금 상태와 로그를 보고 제보 초안(report_issue)을 만들어줘. 내가 겪은 문제: '+(input.value.trim()||'(아래 대화 내용 참고)'));input.value='';};
+ const panel=el('div',{id:'ar-asst'},el('div',{id:'ar-asst-head'},el('span',{textContent:'설정 도우미'}),issue,gear,clear,close),cfgBox,log,form);
  panel.setAttribute('role','dialog');panel.setAttribute('aria-label','설정 도우미');
  document.body.append(panel,fab);
  let history=[];
@@ -2554,12 +2567,20 @@ body.ar-asst-pick *{cursor:help!important}
   const card=el('div',{className:'ar-asst-card'},el('div',{textContent:String(p.summary||p.action)}),el('div',{className:'row'},go,no));
   const finish=text=>{card.replaceChildren(el('div',{textContent:text,className:'ar-asst-msg note'}));};
   no.onclick=()=>{finish('취소했어요: '+String(p.summary||p.action));};
+  if(p.action==='report_issue'){
+   go.textContent='GitHub에서 열기';
+   go.onclick=()=>{if(typeof p.url==='string'&&p.url.startsWith('https://github.com/'))window.open(p.url,'_blank','noopener');finish('GitHub 이슈 작성 화면을 열었어요. 내용을 확인하고 제출해 주세요.');};
+   log.append(card);scroll();return;
+  }
   go.onclick=async()=>{
    go.disabled=no.disabled=true;go.textContent='실행 중…';
    const ok=await control({action:p.action,...(p.args&&typeof p.args==='object'?p.args:{})});
    const reason=ok?'':(byId('error')?.textContent||'');
    finish(ok?'✓ 실행했어요: '+String(p.summary||p.action):'✗ 실행하지 못했어요: '+(reason||'알 수 없는 오류'));
    history.push({role:'assistant',text:(ok?'(실행함) ':'(실패) ')+String(p.summary||p.action)});save();
+   // Let the assistant read the fresh state and explain the actual outcome instead of a bare checkmark.
+   if(p.action==='cloudflare_setup_start')await new Promise(r=>setTimeout(r,4000));
+   void ask('[실행 결과] '+String(p.summary||p.action)+(ok?' 실행함':' 실패: '+(reason||'알 수 없는 오류'))+'. 지금 상태를 확인해서 결과와 다음 할 일을 알려줘.');
   };
   log.append(card);scroll();
  }
@@ -2575,6 +2596,7 @@ body.ar-asst-pick *{cursor:help!important}
    if(!res.ok)throw Error(data.error||'도우미 요청이 실패했어요 (HTTP '+res.status+').');
    const a=data.assistant||{};
    wait.remove();
+   if(Array.isArray(a.read)&&a.read.length)note('읽은 파일: '+a.read.join(', '));
    if(a.reply){history.push({role:'assistant',text:String(a.reply)});bubble('assistant',String(a.reply));}
    for(const p of Array.isArray(a.proposals)?a.proposals:[])if(p&&typeof p.action==='string')proposalCard(p);
    if(!a.reply&&!(a.proposals||[]).length)note('도우미가 답을 주지 못했어요. 다시 물어봐 주세요.');
