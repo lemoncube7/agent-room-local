@@ -27,7 +27,7 @@ async function runWatch(){
         const claim=await hub('/delivery',{room:roomId,participant:participantId,action:'claim',seq:m.seq,watch:true});
         if(!claim.claimed)continue;
         await hub('/delivery',{room:roomId,participant:participantId,action:'settle',seq:m.seq,state:'accepted'});
-        out.push('[Agent Room #'+m.seq+' · '+m.author+']\n'+m.body);
+        out.push('[Agent Room #'+m.seq+' · '+m.author+connectionLabel(m)+']\n'+m.body);
       }
       if(out.length){
         console.log(out.join('\n\n')+'\n\n(답변 후 감시자를 다시 실행하세요: node "'+__filename+'" watch "'+roomId+'" "'+participantId+'")');
@@ -94,8 +94,11 @@ async function sendDurably(data){
     return {queued:true,instructions:'Saved to disk. Agent Room will deliver it when the hub is available.'};
   }
 }
+function connectionLabel(message){
+  return message.remote_source==='direct'?' · PC 직접 연결':message.remote_source==='site'?' · Site 경유':'';
+}
 async function push(message){
-  const prompt='[Agent Room] '+message.author+' 님의 메시지:\n'+message.body+'\n\nReply via send_message only when a useful room reply is needed.';
+  const prompt='[Agent Room] '+message.author+' 님의 메시지'+connectionLabel(message)+':\n'+message.body+'\n\nReply via send_message only when a useful room reply is needed.';
   if(claude){
     emit({method:'notifications/claude/channel',params:{content:prompt,meta:{message_id:String(message.seq)}}});
     return 'accepted';

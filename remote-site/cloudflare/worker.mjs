@@ -1,7 +1,8 @@
-import {handleRoom} from '../handler.mjs';
+import {handleRoom,readBody} from '../handler.mjs';
 import pageHtml from '../page.html';
 import {manifest,serviceWorker} from '../pwa.mjs';
 import {icons} from '../icons.mjs';
+import {pushSettings,sendReplyPush} from './push.mjs';
 
 const COOKIE_NAME='ar_owner';
 
@@ -65,13 +66,16 @@ function loginPage(error=''){
 }
 
 export default {
-  async fetch(request,env){
+  async fetch(request,env,ctx){
     const url=new URL(request.url);
     const route=url.pathname;
 
     // Device sync endpoint uses REMOTE_DEVICE_KEY inside handleRoom.
     if(route==='/api/room/device'){
-      return handleRoom(request,env);
+      return handleRoom(request,{...env,onNewReply:event=>ctx.waitUntil((async()=>{
+        const owner=await expectedCookieValue(env);
+        if(owner)await sendReplyPush(env.DB,await sha256Hex('push:'+owner),url.origin,event);
+      })().catch(()=>console.warn('Agent Room background push failed')))});
     }
 
     if(route==='/api/room/setup-check'&&request.method==='GET'){
@@ -113,6 +117,10 @@ export default {
     }
 
     const signedIn=await isOwnerSignedIn(request,env);
+    if(route==='/api/room/push'){
+      if(!signedIn)return new Response(null,{status:403});
+      return pushSettings(request,env.DB,await sha256Hex('push:'+await expectedCookieValue(env)),readBody);
+    }
 
     if(route.startsWith('/api/room/')){
       if(request.method==='OPTIONS'){

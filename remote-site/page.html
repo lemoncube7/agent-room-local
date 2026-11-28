@@ -38,7 +38,11 @@ button[aria-pressed=true]{border-color:var(--accent);color:var(--accent)}
 .act-card.codex .act-name{color:var(--brand-codex)}.act-card.claude .act-name{color:var(--brand-claude)}.act-card.agy .act-name{color:var(--brand-agy)}
 .act-card .act-name.name-claude{color:var(--brand-claude)}.act-card .act-name.name-codex{color:var(--brand-codex)}
 .act-head{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:12px}
+.act-head-actions{display:inline-flex;align-items:center;gap:4px;flex:none}
+.act-head-actions .act-retry{margin:0}
 .act-name{display:inline-flex;align-items:center;gap:6px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.act-quota{flex:none;font-size:11px;font-weight:500;color:var(--muted);font-variant-numeric:tabular-nums}
+.act-quota.low{color:#f5c451}.act-quota.critical{color:#ff7b72}
 .act-dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--muted)}
 .act-dot.busy{background:#4fd1a5;animation:act-pulse 1.4s ease-in-out infinite}.act-dot.approval{background:#f5c451}.act-dot.error{background:#ff7b72}
 @keyframes act-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.82)}}
@@ -129,7 +133,8 @@ body:not(.agents-hidden){grid-template-columns:clamp(170px,18vw,230px) minmax(0,
 }
 .room-heading{display:grid;flex:1;min-width:0;gap:3px}
 .room-heading h2{font-size:clamp(17px,2vw,22px);letter-spacing:-.035em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.room-heading .pill{justify-self:start;padding:0;border:0;background:transparent}
+.room-heading .pill{justify-self:start;padding:0;border:0;background:transparent;white-space:normal}
+.room-heading .pill i{flex:none}
 .brand h1{letter-spacing:-.04em;font-size:19px}
 #rooms button[aria-current=true]{background:var(--own-bg);color:var(--own-name);border-color:var(--own-line)}
 #history{background:radial-gradient(ellipse at 90% 0%,color-mix(in srgb,var(--accent) 6%,transparent),transparent 65%),var(--bg)}
@@ -181,6 +186,7 @@ body:not(.agents-hidden){grid-template-columns:clamp(170px,18vw,230px) minmax(0,
 #reply-suggestions[hidden]{display:none}
 #reply-suggestions button{flex:none;white-space:nowrap;padding:5px 10px;border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--text);font-size:12px}
 #reply-suggestions button:hover{border-color:var(--accent)}
+.remote-delivery{font-size:11px;color:var(--muted);overflow-wrap:anywhere}.remote-delivery>summary{cursor:pointer}.remote-delivery.own>summary{text-align:right}.remote-delivery-log{display:grid;gap:2px;margin-top:4px;text-align:left}
 </style>
 <aside>
  <button id="close-rooms" type="button">방 목록 닫기</button>
@@ -438,18 +444,32 @@ function renderPanel(){
   const lim=m.provider?lastSnap?.limits?.[m.provider]:null;
   const rawW=lim?.windows&&typeof lim.windows==='object'?lim.windows:null;
   const entries=!rawW?[]:m.provider==='agy'?((!m.model||/gemini/i.test(m.model))?['gemini-5h','gemini-weekly']:['3p-5h','3p-weekly']).filter(k=>rawW[k]&&typeof rawW[k]==='object').map(k=>[k,rawW[k]]):Object.entries(rawW).filter(([,w])=>w&&typeof w==='object');
+  const parsedLimits=entries.map(([k,w])=>{
+   const raw=w.resets_at??w.resetsAt, ms=typeof raw==='number'?(raw<1e12?raw*1000:raw):Date.parse(raw);
+   const expired=Number.isFinite(ms)&&ms<=Date.now();
+   const rem=expired?100:Math.max(0,Math.min(100,Math.round(100-(Number(w.utilization)||0)*100)));
+   return {k,w,raw,ms,expired,rem};
+  });
+  if(parsedLimits.length){
+   const minRem=Math.min(...parsedLimits.map(x=>x.rem));
+   const qEl=el('span',parsedLimits.map(x=>(winNames[x.k]||x.k)+' '+x.rem+'%').join(' · '));
+   qEl.className='act-quota'+(minRem<=10?' critical':minRem<=25?' low':'');
+   name.append(qEl);
+  }
   const head=document.createElement('div');head.className='act-head';head.append(name);
+  const actions=document.createElement('div');actions.className='act-head-actions';
   if(m.provider&&m.state==='approved'){
    const settings=el('button','설정');settings.type='button';settings.className='act-retry';
    settings.onclick=()=>openRemoteAgentSettings(m);
-   head.append(settings);
+   actions.append(settings);
   }
   if(m.provider&&(m.state==='approved'||m.state==='start_failed')){
-   const pause=el('button',m.paused?'재개':'일시정지');pause.type='button';pause.className='act-retry';pause.style.margin='0';
+   const pause=el('button',m.paused?'재개':'일시정지');pause.type='button';pause.className='act-retry';
    pause.disabled=[...controlRequests.values()].some(item=>item.target===m.id);
    pause.onclick=async()=>{pause.disabled=true;if(!await sendControl({control:'pause_agent',participant:m.id,paused:!m.paused}))pause.disabled=false;};
-   head.append(pause);
+   actions.append(pause);
   }
+  if(actions.childElementCount)head.append(actions);
   const elapsed=m.busy&&m.progress?.updatedAt?Math.max(0,Math.floor((Date.now()-m.progress.updatedAt)/1000)):0;
   const stepText=pa?'허용 요청 대기: '+pa.tool:m.conflict?'⚠ 동시 수정 주의: '+m.conflict:m.paused?'일시정지됨':m.busy?(m.progress?.task||m.progress?.step||'작업 진행 중…')+(elapsed>=2?' ('+elapsed+'초)':''):m.cliError?m.cliError.message:labels[m.state]||'대기 중';
   const step=el('div',stepText);step.className='act-step';step.title=stepText;
@@ -460,12 +480,9 @@ function renderPanel(){
    retry.onclick=async()=>{retry.disabled=true;if(!await sendControl({control:'retry_agent',participant:m.id}))retry.disabled=false;};
    card.append(retry);
   }
-  if(entries.length){
+  if(parsedLimits.length){
    const lb=document.createElement('div');lb.className='act-limits';
-   for(const [k,w] of entries){
-    const raw=w.resets_at??w.resetsAt, ms=typeof raw==='number'?(raw<1e12?raw*1000:raw):Date.parse(raw);
-    const expired=Number.isFinite(ms)&&ms<=Date.now();
-    const rem=expired?100:Math.max(0,Math.min(100,Math.round(100-(Number(w.utilization)||0)*100)));
+   for(const {k,w,raw,ms,expired,rem} of parsedLimits){
     const reset=expired?'초기화됨':fmtReset(raw).replace(/\s*초기화$/,'').replace(/^(\d+)\.\s*(\d+)\.\s*/,'$1/$2 ');
     const hoursLeft=!expired&&Number.isFinite(ms)?(ms-Date.now())/3600000:0;
     const isWeekly=/seven_day|secondary|weekly/i.test(k);
@@ -529,11 +546,12 @@ function mergeEvents(cached,fresh){
  for(const e of fresh)bySeq.set(e.seq,e);
  return [...bySeq.values()].sort((a,b)=>a.seq-b.seq).slice(-200);
 }
+let remotePush=false;
 let remoteNotify=false,seenApprovals=new Set(),approvalsInitialized=false,seenQuotaNotices=new Set(),quotaNoticesInit=false,seenMaxSeq=new Map(),pollTimer=null,idleStreak=0;
 try{remoteNotify=localStorage.getItem('agentRoomRemoteNotify')==='1';}catch{}
 function syncRemoteNotifyBtn(){
  const btn=document.querySelector('#remote-notify-toggle');
- if(btn)btn.textContent='알림: '+(remoteNotify?'켜짐':'꺼짐');
+ if(btn)btn.textContent=remoteNotify?(remotePush?'알림: 백그라운드 켜짐':'알림: 앱을 열었을 때'):'알림: 꺼짐';
 }
 function playRemoteChime(){
  try{
@@ -548,7 +566,12 @@ function notifyRemote(title,body){
  if(!remoteNotify)return;
  playRemoteChime();
  try{navigator.vibrate?.([120,60,120]);}catch{}
- try{if(typeof Notification!=='undefined'&&Notification.permission==='granted')new Notification(title,{body:String(body||'').slice(0,120)});}catch{}
+ if(typeof Notification==='undefined'||Notification.permission!=='granted')return;
+ const opts={body:String(body||'').slice(0,120),icon:'/icons/192.png',badge:'/icons/192.png',tag:'agent-room-'+Date.now(),renotify:true};
+ // Android Chrome and installed iOS apps reject `new Notification()`; they only allow service-worker notifications.
+ const viaSw=()=>navigator.serviceWorker?.ready?.then(r=>r.showNotification(title,opts));
+ if(navigator.serviceWorker?.controller){viaSw()?.catch(()=>{try{new Notification(title,opts);}catch{}});return;}
+ try{new Notification(title,opts);}catch{viaSw()?.catch(()=>{});}
 }
 function schedulePoll(ms){
  clearTimeout(pollTimer);
@@ -572,6 +595,8 @@ function hideSavedDoneTag(text){
  return String(text??'').replace(/^[ \t]*\[\[DONE\]\][ \t]*(?:\r?\n|$)[ \t]*(?:\r?\n[ \t]*)*/i,'');
 }
 function renderEventsView(events,busy,preserveScroll=false){
+ const newMessage=!document.hidden&&historyRoom===selected&&Boolean(renderedHistory?.events.length)&&events.at(-1)?.seq>renderedHistory.events.at(-1).seq;
+ const expandedDeliveries=new Set(historyRoom===selected?Array.from(historyView.querySelectorAll('.remote-delivery[open]'),item=>item.dataset.command):[]);
  if(historyRoom!==selected){historyRoom=selected;historyLimit=historyPageSize;}
  renderedHistory={events,busy};
  const lastReply=events.at(-1);
@@ -581,11 +606,11 @@ function renderEventsView(events,busy,preserveScroll=false){
  const delMap=new Map();
  for(const d of lastSnap?.deliveries||[]){if(!delMap.has(d.seq))delMap.set(d.seq,[]);delMap.get(d.seq).push(d);}
  const delSig=visibleEvents.map(e=>(delMap.get(e.seq)||[]).map(d=>[d.member,d.state,d.priority]));
- const key=JSON.stringify([selected,hiddenCount,visibleEvents.map(e=>[e.seq,e.siteAcceptedAt]),lastSnap?.deliveryHistory,delSig,busy.map(b=>[b.id,b.progress?.updatedAt,b.progress?.step])]);
+ const key=JSON.stringify([selected,hiddenCount,visibleEvents.map(e=>[e.seq,e.siteAcceptedAt,e.remoteSource]),lastSnap?.deliveryHistory,delSig,busy.map(b=>[b.id,b.progress?.updatedAt,b.progress?.step])]);
  if(key===cursor)return false;
  const nearBottom=historyView.scrollHeight-historyView.scrollTop-historyView.clientHeight<110||!cursor;
  cursor=key;
- const delStatus={queued:'대기 중',working:'작업 중',submitting:'전달 중',accepted:'전달 접수',answered:'답변 완료',ranking:'순위 판정 중',coordination_wait:'조율 대기',coordination_speaking:'조율 중',coordination_done:'조율 완료',no_reply:'응답 생략',failed:'전송 실패',uncertain:'응답 확인 중'};
+ const delStatus={queued:'대기 중',working:'작업 중',submitting:'전달 중',accepted:'전달 접수',answered:'답변 완료',ranking:'순위 판정 중',coordination_wait:'조율 대기',coordination_speaking:'조율 중',coordination_done:'조율 완료',no_reply:'응답 생략',context_only:'문맥 전달 · 응답 생략',context_seen:'문맥 확인 · 응답 생략',coordination_blocked:'조율 응답 실패',failed:'전송 실패',uncertain:'응답 확인 중'};
  const nodes=visibleEvents.map(event=>{
   const a=document.createElement('article'),m=lastSnap?.members?.find(x=>x.room===selected&&x.name===event.name),cls=agentCls(event.name,m?.provider);
   const isOwn=cls==='own';
@@ -593,17 +618,6 @@ function renderEventsView(events,busy,preserveScroll=false){
   if(cls)a.className=cls+(nb?' '+nb:'');
   if(!isOwn)a.append(el('strong',event.name));
   a.append(renderMd(!isOwn&&m?hideSavedDoneTag(event.text):event.text));
-  if(event.commandId){
-   const history=document.createElement('details');
-   history.append(el('summary','전달 이력'));
-   const stamp=value=>new Date(value).toLocaleTimeString('ko-KR');
-   if(event.siteAcceptedAt)history.append(el('div',stamp(event.siteAcceptedAt)+' · Site 접수'));
-   history.append(el('div',stamp(event.created)+' · PC 대화에 저장'));
-   for(const step of lastSnap?.deliveryHistory||[]){
-    if(step.seq===event.seq)history.append(el('div',stamp(step.at)+' · '+step.name+' · '+(delStatus[step.state]||step.state)));
-   }
-   a.append(history);
-  }
   const dels=(delMap.get(event.seq)||[]).slice().sort((x,y)=>(x.priority??999)-(y.priority??999));
   let flowTxt='';
   if(dels.length){
@@ -615,10 +629,39 @@ function renderEventsView(events,busy,preserveScroll=false){
    }
    flowTxt=[...stages].map(([p,items])=>(p?p+'순위 · ':'')+items.join(', ')).join(' / ');
   }
-  if(event.created||flowTxt||event.commandId){
-   const remoteTag=event.commandId?'원격':'';
+  const remoteLabel=event.remoteSource==='direct'?'PC 직접 연결':event.remoteSource==='site'?'Site 경유':event.commandId?'원격':'';
+  if(remoteLabel){
+   const history=document.createElement('details');
+   history.className='remote-delivery'+(isOwn?' own':'');
+   history.dataset.command=String(event.commandId||event.seq);
+   history.open=expandedDeliveries.has(history.dataset.command);
+   const primary=dels.filter(step=>step.priority===1);
+   const current=primary[0];
+   const count=current&&primary.length>1&&primary.every(step=>step.state===current.state)?' 외 '+(primary.length-1)+'명':'';
+   const currentText=current?current.name+count+' · '+(delStatus[current.state]||current.state):'PC에 저장됨';
+   history.append(el('summary',remoteLabel+' · '+currentText));
+   const log=el('div');log.className='remote-delivery-log';
+   const stamp=value=>new Date(value).toLocaleTimeString('ko-KR');
+   if(event.siteAcceptedAt)log.append(el('div',stamp(event.siteAcceptedAt)+' · Site 접수'));
+   log.append(el('div',stamp(event.created)+' · PC 대화에 저장'));
+   const steps=(lastSnap?.deliveryHistory||[]).filter(step=>step.seq===event.seq);
+   let group;
+   for(const step of steps){
+    const stamp=new Date(step.at).toLocaleTimeString('ko-KR');
+    if(!group||group.stamp!==stamp||group.state!==step.state){
+     group={stamp,state:step.state,names:[],line:el('div')};
+     log.append(group.line);
+    }
+    if(!group.names.includes(step.name))group.names.push(step.name);
+    group.line.textContent=stamp+' · '+(delStatus[step.state]||step.state)+' · '+group.names.join(', ');
+   }
+   if(flowTxt)log.append(el('div','현재 상태 · '+flowTxt));
+   history.append(log);
+   a.append(history);
+  }
+  if(event.created||(!remoteLabel&&flowTxt)){
    const timePart=event.created?new Date(event.created).toLocaleTimeString('ko-KR'):'';
-   const t=el('small',[remoteTag,timePart,flowTxt].filter(Boolean).join(' · '));
+   const t=el('small',[timePart,remoteLabel?'':flowTxt].filter(Boolean).join(' · '));
    t.className='msg-time'+(isOwn?' own':'');
    a.append(t);
   }
@@ -655,7 +698,7 @@ function renderEventsView(events,busy,preserveScroll=false){
  const previousTop=historyView.scrollTop;
  historyView.replaceChildren(...nodes);
  if(preserveScroll)historyView.scrollTop=previousTop+historyView.scrollHeight-previousHeight;
- else if(nearBottom)historyView.scrollTop=historyView.scrollHeight;
+ else if(nearBottom||newMessage)historyView.scrollTop=historyView.scrollHeight;
  historyScrollTop=historyView.scrollTop;
  return true;
 }
@@ -670,7 +713,8 @@ async function refresh(){
   const since=cached.length?cached[cached.length-1].seq:0;
   const qs=selected?('?room='+encodeURIComponent(selected)+(since>0?'&since='+since:'')):'';
   const options={cache:'no-store',signal:AbortSignal.timeout(12000)};
-  const r=controlRequests.size?await fetch('/api/room/browser'+qs,options):await roomRequest(qs,options);
+  const siteForControl=controlRequests.size>0;
+  const r=siteForControl?await fetch('/api/room/browser'+qs,options):await roomRequest(qs,options);
   if(turn!==request)return;
   if(r.status===404&&selected){selected='';cursor='';historyView.replaceChildren();void refresh();return;}
   if(r.status===401||r.status===403)throw Error('이 사이트를 배포한 ChatGPT 계정으로 로그인해 주세요.');
@@ -680,9 +724,16 @@ async function refresh(){
   if(turn!==request)return;
   if(statusLine.textContent===offlineErrText||statusLine.textContent===netErrText||statusLine.textContent===timeoutErrText||statusLine.textContent==='원격 상태를 불러오지 못했어요. 잠시 후 다시 시도합니다.')statusLine.textContent='';
   const fresh=Number.isFinite(snapshot?.syncedAt)&&Date.now()-snapshot.syncedAt<75000; // relay heartbeats every 60s while a phone is on the direct path
-  conn.className=fresh?'pill':'pill err';conn.lastChild.textContent=fresh?'Site 경유 · PC 연결됨':snapshot?'Site 경유 · PC 오프라인/동기화 대기':'Site 경유 · PC 미연결';
-  if(direct){conn.className='pill';conn.lastChild.textContent='PC 직접 연결';}
+  const attemptReason=directFallbackReason;
   if(snapshot&&Array.isArray(snapshot.directLinks))adoptAutoLinks(snapshot.directLinks);
+  if(siteForControl){
+   conn.title='Site에서 설정 변경 결과를 확인 중이에요.';
+  }else{
+   const reason=!currentDirect()?'직결 주소 없음':attemptReason||'PC 직결 확인 중';
+   conn.className=direct||fresh?'pill':'pill err';
+   conn.lastChild.textContent=direct?'PC 직접 연결':'Site 경유 · '+reason+(fresh?'':snapshot?' · PC 동기화 대기':' · PC 중계 미연결');
+   conn.title=direct?'':reason+(fresh?' · PC 중계 연결됨':snapshot?' · PC 동기화 대기':' · PC 중계 미연결');
+  }
   lastRooms=rooms;lastSnap=snapshot||null;
   // Messages stored on the Site but never picked up by the PC are surfaced instead of waiting silently.
   for(const e of delta||[])if(e.commandId)sentWatch.delete(e.commandId);
@@ -707,7 +758,7 @@ async function refresh(){
     const quotaEvents=incoming.filter(e=>String(e.text||'').startsWith('🔔'));
     if(quotaEvents.length){const q=quotaEvents[quotaEvents.length-1];notifyRemote('Agent Room · 한도 복구',String(q.text||'').replace(/^🔔\s*/,''));}
     const normal=incoming.filter(e=>!String(e.text||'').startsWith('🔔'));
-    if(normal.length){const last=normal[normal.length-1];notifyRemote(last.name,last.text);}
+    if(!remotePush&&normal.length){const last=normal[normal.length-1];notifyRemote(last.name,last.text);}
    }
    seenMaxSeq.set(selected,maxSeq);
   }
@@ -795,45 +846,91 @@ function adoptAutoLinks(list){
  const next=[];for(const item of Array.isArray(list)?list:[]){try{next.push(parseDirectLink(item.url));}catch{}}
  if(next.map(String).join()!==autoLinks.map(String).join()){autoLinks=next;autoIdx=0;resetDirectRetry();}
 }
-const currentDirect=()=>directLink||autoLinks[autoIdx%Math.max(1,autoLinks.length)]||null;
+const allDirectCandidates=()=>{
+ const seen=new Set(),out=[];
+ for(const item of [directLink,...autoLinks]){
+  if(!item)continue;
+  const key=item.href;
+  if(!seen.has(key)){seen.add(key);out.push(item);}
+ }
+ return out;
+};
+const currentDirect=()=>{
+ const list=allDirectCandidates();
+ return list.length?list[autoIdx%list.length]:null;
+};
 let directFailures=0;
 let directRetryAt=0;
+let directFallbackReason='';
 function resetDirectRetry(){
  directFailures=0;
  directRetryAt=0;
+ directFallbackReason='';
+}
+async function tryDirectLink(link,qs,options,signal){
+ const directUrl=new URL('/api/room/direct'+qs,link.origin);
+ const probe=AbortSignal.timeout(options.method==='POST'?5000:2200);
+ try{
+  const response=await fetch(directUrl,{
+   ...options,headers:{...options.headers,Authorization:'Bearer '+link.searchParams.get('key')},
+   credentials:'omit',redirect:'error',targetAddressSpace:'local',signal:AbortSignal.any([signal,probe])
+  });
+  if(response.ok){
+   resetDirectRetry();
+   directResponses.add(response);
+   return {ok:true,response};
+  }
+  if(response.status<500&&![401,403,408,429].includes(response.status)&&!(response.status===404&&!response.headers.get('content-type')?.includes('application/json')))return {ok:true,response};
+  const reasons={401:'PC 직결 인증 거부',403:'PC 직결 인증 거부',404:'PC 직결 API 없음',408:'PC 직결 응답 지연',429:'PC 직결 요청 제한'};
+  directFallbackReason=reasons[response.status]||'PC 직결 서버 오류';
+ }catch(error){
+  if(signal.aborted)throw signal.reason;
+  directFallbackReason=probe.aborted?'PC 직결 응답 지연':'PC 직결에 닿지 않음';
+ }
+ return {ok:false};
 }
 async function roomRequest(qs,options={}){
- const link=currentDirect();
  const signal=options.signal||AbortSignal.timeout(15000);
  signal.throwIfAborted();
- if(link&&Date.now()>=directRetryAt){
-  const directUrl=new URL('/api/room/direct'+qs,link.origin);
-  const probe=AbortSignal.timeout(options.method==='POST'?5000:1800);
-  try{
-   const response=await fetch(directUrl,{
-    ...options,headers:{...options.headers,Authorization:'Bearer '+link.searchParams.get('key')},
-    credentials:'omit',redirect:'error',targetAddressSpace:'local',signal:AbortSignal.any([signal,probe])
-   });
-   if(response.ok){
-    if(link===currentDirect())resetDirectRetry();
-    directResponses.add(response);
-    return response;
-   }
-   // A definitive room or payload rejection applies on either transport.
-   if(response.status<500&&![401,403,408,429].includes(response.status)&&!(response.status===404&&!response.headers.get('content-type')?.includes('application/json')))return response;
-  }catch(error){
-   if(signal.aborted)throw signal.reason;
+ const candidates=allDirectCandidates();
+ if(candidates.length&&Date.now()>=directRetryAt){
+  const tried=new Set();
+  for(let i=0;i<candidates.length;i++){
+   const idx=(autoIdx+i)%candidates.length;
+   const link=candidates[idx];
+   tried.add(link.href);
+   const res=await tryDirectLink(link,qs,options,signal);
+   if(res.ok){autoIdx=idx;return res.response;}
   }
-  if(!directLink&&autoLinks.length>1&&link===currentDirect()){autoIdx++;if(autoIdx%autoLinks.length!==0)return roomRequest(qs,options);}
-  if(link===currentDirect()||(!directLink&&autoLinks.includes(link))){
-   directFailures=Math.min(directFailures+1,5);
-   directRetryAt=Date.now()+Math.min(30000,2000*2**(directFailures-1));
+  // All known direct links failed: fetch latest PC directLinks from Site once and immediately probe any newly published address before falling back.
+  if(options.method!=='POST'){
+   try{
+    const siteRes=await fetch('/api/room/browser'+qs,{...options,signal,redirect:'error'});
+    if(siteRes.ok){
+     const peek=await siteRes.clone().json().catch(()=>null);
+     if(peek?.snapshot&&Array.isArray(peek.snapshot.directLinks)){
+      adoptAutoLinks(peek.snapshot.directLinks);
+      const freshList=allDirectCandidates();
+      for(let i=0;i<freshList.length;i++){
+       if(tried.has(freshList[i].href))continue;
+       const res=await tryDirectLink(freshList[i],qs,options,signal);
+       if(res.ok){autoIdx=i;return res.response;}
+      }
+     }
+    }
+    directFailures=Math.min(directFailures+1,5);
+    directRetryAt=Date.now()+Math.min(20000,1500*2**(directFailures-1));
+    return siteRes;
+   }catch(error){if(signal.aborted)throw signal.reason;}
   }
+  directFailures=Math.min(directFailures+1,5);
+  directRetryAt=Date.now()+Math.min(20000,1500*2**(directFailures-1));
  }
  // Reuse the exact serialized message, including its original id.
  return fetch('/api/room/browser'+qs,{...options,signal,redirect:'error'});
 }
 window.addEventListener('online',()=>{resetDirectRetry();if(!document.hidden)void refresh();});
+navigator.connection?.addEventListener?.('change',()=>{resetDirectRetry();if(!document.hidden)void refresh();});
 const directForm=document.querySelector('#direct-form');
 const directInput=document.querySelector('#direct-url');
 const directFeedback=document.querySelector('#direct-feedback');
@@ -1109,15 +1206,52 @@ draft.onkeydown=event=>{
  if(draft.value.trim()&&!button.disabled)form.requestSubmit(button);
 };
 document.addEventListener('visibilitychange',()=>{if(document.hidden)clearTimeout(pollTimer);else{idleStreak=0;void refresh();}});
-syncRemoteNotifyBtn();
-document.querySelector('#remote-notify-toggle')?.addEventListener('click',async()=>{
- remoteNotify=!remoteNotify;
- try{localStorage.setItem('agentRoomRemoteNotify',remoteNotify?'1':'0');}catch{}
- syncRemoteNotifyBtn();
- if(remoteNotify){
-  playRemoteChime();
-  if(typeof Notification!=='undefined'&&Notification.permission==='default'){try{await Notification.requestPermission();}catch{}}
+async function updateRemotePush(enable,allowNew=false){
+ const registration=await navigator.serviceWorker?.getRegistration();
+ if(!registration?.pushManager)return false;
+ const manager=registration.pushManager;
+ let subscription=await manager.getSubscription();
+ const api='/api/room/push';
+ if(!enable){
+  if(subscription){
+   try{await fetch(api,{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({endpoint:subscription.endpoint}),signal:AbortSignal.timeout(5000)});}
+   finally{await subscription.unsubscribe();}
+  }
+  return false;
  }
+ if(typeof Notification==='undefined'||Notification.permission!=='granted'||(!subscription&&!allowNew))return false;
+ const config=await fetch(api,{signal:AbortSignal.timeout(5000)});
+ if(!config.ok)return false;
+ const {publicKey}=await config.json();
+ if(!/^[A-Za-z0-9_-]{87}$/.test(publicKey||''))return false;
+ const bytes=Uint8Array.from(atob(publicKey.replace(/-/g,'+').replace(/_/g,'/')+'='),char=>char.charCodeAt(0));
+ const previous=subscription?.options?.applicationServerKey;
+ if(previous&&!new Uint8Array(previous).every((byte,i)=>byte===bytes[i])&&allowNew){
+  await subscription.unsubscribe();subscription=null;
+ }
+ if(!subscription)subscription=await manager.subscribe({userVisibleOnly:true,applicationServerKey:bytes});
+ const response=await fetch(api,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(subscription.toJSON()),signal:AbortSignal.timeout(5000)});
+ return response.ok;
+}
+syncRemoteNotifyBtn();
+const remoteNotifyButton=document.querySelector('#remote-notify-toggle');
+const restoreRemotePush=remoteNotify?updateRemotePush(true).then(active=>{remotePush=active;syncRemoteNotifyBtn();}).catch(()=>{}):Promise.resolve();
+remoteNotifyButton?.addEventListener('click',async()=>{
+ // A pre-existing page-only preference can be upgraded with one tap.
+ const enable=!remoteNotify||(!remotePush&&!remoteNotifyButton.dataset.pushAttempted);
+ remoteNotifyButton.dataset.pushAttempted='1';
+ remoteNotifyButton.disabled=true;
+ try{
+  if(enable){
+   playRemoteChime();
+   if(typeof Notification!=='undefined'&&Notification.permission==='default')await Notification.requestPermission();
+  }
+  await restoreRemotePush;
+  remoteNotify=enable;
+  try{localStorage.setItem('agentRoomRemoteNotify',enable?'1':'0');}catch{}
+  remotePush=await updateRemotePush(enable,true);
+ }catch{remotePush=false;}
+ finally{remoteNotifyButton.disabled=false;syncRemoteNotifyBtn();}
 });
 const rThemes=[['dark','다크','#0f1117'],['midnight','블랙','#07090e'],['light','라이트','#f4f6fb']];
 function applyRemoteTheme(next){
@@ -1139,11 +1273,18 @@ document.querySelector('#remote-theme-toggle')?.addEventListener('click',()=>{
 void refresh();
 
 const phoneViewport=window.visualViewport;
+let prevPhoneH=phoneViewport?Math.round(phoneViewport.height):window.innerHeight;
 function syncPhoneHeight(){
  if(phoneViewport&&phoneViewport.scale===1){
-  document.body.style.setProperty('--phone-height',Math.round(phoneViewport.height)+'px');
+  const nextH=Math.round(phoneViewport.height);
+  const delta=prevPhoneH-nextH;
+  prevPhoneH=nextH;
+  document.body.style.setProperty('--phone-height',nextH+'px');
   document.body.style.setProperty('--phone-top',Math.max(0,Math.round(phoneViewport.offsetTop))+'px');
   if(mobileView()&&window.scrollY)window.scrollTo(0,0);
+  if(delta>0&&document.activeElement===draft&&mobileView()){
+   requestAnimationFrame(()=>{historyView.scrollTop+=delta;});
+  }
  }else{
   document.body.style.removeProperty('--phone-height');
   document.body.style.removeProperty('--phone-top');

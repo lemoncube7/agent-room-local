@@ -27,7 +27,7 @@ function workerUpload(root,state){
   parts.append('metadata',new Blob([JSON.stringify(metadata)],{type:'application/json'}),'metadata.json');
   const read=file=>fs.readFileSync(path.join(root,'remote-site',file),'utf8');
   const main=read('cloudflare/worker.mjs').replace("'../handler.mjs'","'./handler.mjs'").replace("'../page.html'","'./page.html'").replace("'../pwa.mjs'","'./pwa.mjs'").replace("'../icons.mjs'","'./icons.mjs'");
-  for(const [name,type,body] of [['worker.mjs','application/javascript+module',main],['handler.mjs','application/javascript+module',read('handler.mjs')],['page.html','text/plain',read('page.html')],['pwa.mjs','application/javascript+module',read('pwa.mjs')],['icons.mjs','application/javascript+module',read('icons.mjs')]]){
+  for(const [name,type,body] of [['worker.mjs','application/javascript+module',main],['push.mjs','application/javascript+module',read('cloudflare/push.mjs')],['push-payload.mjs','application/javascript+module',read('cloudflare/push-payload.mjs')],['handler.mjs','application/javascript+module',read('handler.mjs')],['page.html','text/plain',read('page.html')],['pwa.mjs','application/javascript+module',read('pwa.mjs')],['icons.mjs','application/javascript+module',read('icons.mjs')]]){
     parts.append(name,new Blob([body],{type}),name);
   }
   return parts;
@@ -111,7 +111,7 @@ function createSetup({root,local,connect,fetcher=fetch,cli=wrangler}){
       if(!Array.isArray(rows)||rows.some(r=>r.success===false))throw Error('D1 스키마 적용 실패');
       return rows[0]?.results||[];
     };
-    for(const filename of ['schema.sql','0001_multiple_rooms.sql','0002_remote_state.sql','0003_remote_command_id.sql','0004_multi_node.sql']){
+    for(const filename of ['schema.sql','0001_multiple_rooms.sql','0002_remote_state.sql','0003_remote_command_id.sql','0004_multi_node.sql','0005_web_push.sql','0006_remote_source.sql','0007_web_push_payload.sql']){
       const content=fs.readFileSync(path.join(root,'remote-site',filename),'utf8').replaceAll('--> statement-breakpoint','');
       for(let statement of content.split(';').map(s=>s.trim()).filter(Boolean)){
         const add=/^ALTER TABLE (\w+) ADD COLUMN (\w+)/i.exec(statement);

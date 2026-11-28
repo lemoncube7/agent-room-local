@@ -82,7 +82,9 @@ async function main(){
   await rpc('/control',{action:'remote_share',room:room.id,shared:true});
   const remote={action:'remote_user_message',room:room.id,request:'22ff9911-9429-404b-afaf-1ba5f73497ba',text:'Remote test'};
   assert.deepEqual(await rpc('/tool',remote),await rpc('/tool',remote));
-  assert.equal((await sync()).messages.filter(m=>m.body==='Remote test').length,1);
+  const remoteMessages=(await sync()).messages.filter(m=>m.body==='Remote test');
+  assert.equal(remoteMessages.length,1);
+  assert.equal(remoteMessages[0].remote_source,'site');
   const writes={action:'send_message',room:room.id,participant:sender.participant};
   await rpc('/tool',{...writes,request:'history',text:'Previous history'});
   const client=start('bridge.cjs',['claude']);

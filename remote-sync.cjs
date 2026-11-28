@@ -24,6 +24,8 @@ function buildRelayBatch(messages,body){
     if(!message.recipient){
       const event={room:message.room,seq:message.seq,name:message.name,text:message.body.slice(0,30000),created:message.created};
       if(message.request?.startsWith("remote:"))event.commandId=message.request.slice(7);
+      if(message.remote_source)event.remoteSource=message.remote_source;
+      if(message.author&&!/^(human|system):/.test(message.author)&&!/^(interim|receipt):/.test(message.request||''))event.notifyReply=true;
       const next=Buffer.byteLength(JSON.stringify(event))+(events.length?1:0);
       if(bytes+next>MAX_RELAY_BYTES)break;
       bytes+=next;

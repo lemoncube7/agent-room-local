@@ -72,6 +72,7 @@ function createHandoff({db,all,one,run,member,notify,checkEditor=()=>{},nodesFor
         const files=field(input.files??'',1000);
         id=Number(run("INSERT INTO handoff_tasks(room,title,summary,next,owner,verifier,done_when,files,status,revision,updated) VALUES(?,?,?,?,?,?,?,?,'open',1,?)",room,
           field(input.title,120,true),field(input.summary??'',8000),field(input.next,2000,true),owner,verifier,doneWhen,files,now()).lastInsertRowid);
+        onCreate?.(id,owner);
       }else{
         const row=one('SELECT * FROM handoff_tasks WHERE id=? AND room=?',id,room);
         if(!row)fail('Task is not in this room.');

@@ -19,6 +19,14 @@ export const manifest = {
 export const serviceWorker = `
 self.addEventListener('install', event => event.waitUntil(self.skipWaiting()));
 self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
+self.addEventListener('push', event => {
+  let data;
+  try { data=event.data?.json(); } catch {}
+  event.waitUntil(self.registration.showNotification(data?.title || 'Agent Room · 새 답변', {
+    body: data?.body || '원격 대화에 새 답변이 도착했어요.',
+    icon: '/icons/192.png', badge: '/icons/192.png', tag: 'agent-room-reply'
+  }));
+});
 self.addEventListener('notificationclick', event => {
   event.notification.close();
   event.waitUntil(self.clients.matchAll({type: 'window', includeUncontrolled: true}).then(list => {
