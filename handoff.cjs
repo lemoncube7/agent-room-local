@@ -70,6 +70,9 @@ function createHandoff({db,all,one,run,member,notify,checkEditor=()=>{},nodesFor
         const verifier=input.verifier?resolveMemberId(input.verifier):null;
         const doneWhen=field(input.doneWhen??'',1000);
         const files=field(input.files??'',1000);
+        // Retried tool calls or repeated tags must not create the same open card twice.
+        const dup=one("SELECT id FROM handoff_tasks WHERE room=? AND status<>'done' AND title=? AND next=? AND COALESCE(owner,'')=? AND COALESCE(files,'')=? AND COALESCE(done_when,'')=?",room,field(input.title,120,true),field(input.next,2000,true),owner||'',files,doneWhen);
+        if(dup){db.exec('ROLLBACK');return {task:one('SELECT * FROM handoff_tasks WHERE id=?',dup.id),duplicate:true};}
         id=Number(run("INSERT INTO handoff_tasks(room,title,summary,next,owner,verifier,done_when,files,status,revision,updated) VALUES(?,?,?,?,?,?,?,?,'open',1,?)",room,
           field(input.title,120,true),field(input.summary??'',8000),field(input.next,2000,true),owner,verifier,doneWhen,files,now()).lastInsertRowid);
         onCreate?.(id,owner);
