@@ -477,17 +477,18 @@ function queueAgentProjectSwitch(roomId,newProject){
 async function planReplies(plan){
   rankingRooms.add(plan.room);
   try{
-    const allPeople=all("SELECT members.id,name,members.role,members.parent,provider,model,effort,project FROM deliveries JOIN members ON members.id=deliveries.member JOIN cli_sessions ON cli_sessions.member=deliveries.member WHERE seq=? AND deliveries.state='ranking' AND members.state='approved' ORDER BY members.rowid",plan.seq);
+    const allPeople=all("SELECT members.id,name,members.role,members.parent,COALESCE(members.sub_kind,'resident') AS sub_kind,provider,model,effort,project FROM deliveries JOIN members ON members.id=deliveries.member JOIN cli_sessions ON cli_sessions.member=deliveries.member WHERE seq=? AND deliveries.state='ranking' AND members.state='approved' ORDER BY members.rowid",plan.seq);
     const input=one('SELECT m.body,m.author,m.recipient,m.relay_root,m.created,mem.name AS authorName FROM messages m LEFT JOIN members mem ON mem.id=m.author WHERE m.seq=?',plan.seq);
     const named=p=>String(input?.body||'').includes(p.name);
-    // Subagents work for their parent: they join automatic ranking only when named in the message.
-    const usable=allPeople.filter(p=>(!p.parent||named(p))&&(!quotaExhausted(p.id)||named(p)));
+    // Only temporary task workers stay out of automatic ranking unless named; resident subagents remain eligible.
+    const usable=allPeople.filter(p=>(p.sub_kind!=='task'||named(p))&&(!quotaExhausted(p.id)||named(p)));
     const people=usable.length?usable:allPeople;
     const isAgent=Boolean(input?.author&&!input.author.startsWith('human:')&&!input.author.startsWith('system:')&&!input.author.startsWith('external:'));
     const explicitNoReply=!isAgent&&/답장\s*(?:안|하지)\s*해도|답장\s*(?:필요|없)|참고만\s*해|no\s*reply/i.test(String(input?.body||''));
     let ranks,status='ready',coordinate=false,coordinateMode='work',opinionsFirst=false,wrapUp=true,direct=new Set(),lastRoster=null;
     try{
       if(!people.length)ranks=new Map();
+      else if(!isAgent&&flowBySeq.get(plan.seq))ranks=new Map(people.map(p=>[p.id,1])); // explicit /조율 or /회의: no judge needed
       else{
         if((judgeCooldown.get(plan.room)||0)>Date.now())throw Error('Ranking judge is cooling down.');
         const message=input.body.slice(0,3500);
@@ -558,6 +559,12 @@ async function planReplies(plan){
       const best=lastRoster?[...lastRoster].sort((a,b)=>((a.status==='idle'?1:0)-(b.status==='idle'?1:0))||((b.recentReplies||0)-(a.recentReplies||0))||((a.quotaPct??50)-(b.quotaPct??50))).pop():null;
       const bestId=(best&&people.find(p=>p.name===best.name)?.id)||people[0].id;
       ranks.set(bestId,1);
+    }
+    const forcedFlow=!isAgent&&flowBySeq.get(plan.seq);
+    if(forcedFlow){
+      // User explicitly asked for opinions first, then coordination (and parallel work): every available agent gives an opinion.
+      for(const person of people)if(!direct.has(person.id))ranks.set(person.id,1);
+      coordinate=true;opinionsFirst=true;coordinateMode=forcedFlow;wrapUp=true;
     }
     if(one('SELECT retracted FROM messages WHERE seq=?',plan.seq)?.retracted)return;
     db.exec('BEGIN');
@@ -1825,7 +1832,25 @@ function saveAttachments(items){
     return {name:safeName,stored,fullPath};
   });
 }
+// Explicit flow commands: "/조율 ..." = opinions -> coordination -> parallel work, "/회의 ..." = opinions -> agreement only.
+const flowBySeq=new Map();
+let pendingFlowCommand=null;
+function parseFlowCommand(text){
+  const m=String(text||'').match(/^\s*\/(조율|회의)(?:\s+|$)([\s\S]*)$/);
+  return m?{flow:m[1]==='조율'?'work':'discuss',text:m[2].trim()}:null;
+}
 function recordUserMessage(room,text,request=randomUUID(),attachments=[]){
+  const flowCmd=parseFlowCommand(text);
+  if(flowCmd){
+    if(!flowCmd.text)throw Error('/'+(flowCmd.flow==='work'?'조율':'회의')+' 뒤에 요청 내용을 적어 주세요.');
+    let seq;pendingFlowCommand=flowCmd.flow;
+    try{seq=recordUserMessageInner(room,(flowCmd.flow==='work'?'[의견 → 조율 → 동시 작업] ':'[의견 → 조율(회의)] ')+flowCmd.text,request,attachments);}finally{pendingFlowCommand=null;}
+    flowBySeq.set(seq,flowCmd.flow);if(flowBySeq.size>200)flowBySeq.delete(flowBySeq.keys().next().value);
+    return seq;
+  }
+  return recordUserMessageInner(room,text,request,attachments);
+}
+function recordUserMessageInner(room,text,request=randomUUID(),attachments=[]){
   if(!one('SELECT id FROM rooms WHERE id=?',room))throw Error('Room not found.');
   if(draining)throw Error('Hub is restarting.');
   const saved=saveAttachments(attachments);
@@ -1857,7 +1882,7 @@ function recordUserMessage(room,text,request=randomUUID(),attachments=[]){
         if(solo.length===1&&!/답장\s*(?:안|하지)\s*해도|답장\s*(?:필요|없)|참고만\s*해|no\s*reply/i.test(body)){
           run("UPDATE deliveries SET state='queued',priority=1 WHERE seq=? AND member=?",seq,solo[0].id);
         }
-      }else if(roomMode==='ranking'&&activeCount>1){
+      }else if((roomMode==='ranking'||pendingFlowCommand)&&activeCount>1){
         run("UPDATE deliveries SET state='ranking' WHERE seq=? AND state='queued'",seq);
         run("INSERT INTO reply_plans(seq,room,state) VALUES(?,?,'pending')",seq,room);
       }

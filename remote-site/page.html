@@ -158,9 +158,9 @@ body:not(.agents-hidden){grid-template-columns:clamp(170px,18vw,230px) minmax(0,
 #remote-agent-form label{display:grid;gap:4px}
 #remote-agent-form input,#remote-agent-form select{width:100%;min-width:0}
 @media(max-width:720px) and (prefers-reduced-motion:no-preference){
- body.rooms-open>aside{animation:rooms-enter 220ms cubic-bezier(.2,.75,.25,1)}
- body:not(.agents-hidden) #agent-panel{animation:agents-enter 220ms cubic-bezier(.2,.75,.25,1)}
- #panel-scrim:not([hidden]){animation:scrim-enter 200ms ease-out}
+ body.rooms-open:not(.drawer-gesture)>aside{animation:rooms-enter 220ms cubic-bezier(.2,.75,.25,1)}
+ body:not(.agents-hidden,.drawer-gesture) #agent-panel{animation:agents-enter 220ms cubic-bezier(.2,.75,.25,1)}
+ body:not(.drawer-gesture) #panel-scrim:not([hidden]){animation:scrim-enter 200ms ease-out}
  @keyframes rooms-enter{from{transform:translateX(-100%)}}
  @keyframes agents-enter{from{transform:translateX(100%)}}
  @keyframes scrim-enter{from{opacity:0}}
@@ -747,7 +747,8 @@ showAgentPanel(showAct);
 toggleAct.onclick=()=>showAgentPanel(!showAct);
 const mobileBreakpoint=matchMedia('(max-width:720px)');
 function mobileView(){return mobileBreakpoint.matches;}
-function openMobilePane(pane){
+function openMobilePane(pane,{gesture=false}={}){
+ document.body.classList.toggle('drawer-gesture',gesture);
  document.body.classList.toggle('rooms-open',pane==='rooms');
  showAgentPanel(pane==='agents');
  document.querySelector('#panel-scrim').hidden=pane==='chat';
@@ -894,7 +895,7 @@ document.querySelector('#remote-settings-close')?.addEventListener('click',()=>r
 document.querySelector('#fab-agents')?.addEventListener('click',()=>openMobilePane('agents'));
 // 1:1 interactive finger-tracking swipe with strict direction lock
 {
- let sx=0,sy=0,st=0,lock=null,drag=null,panel=null,w=280,lastDx=0;
+ let sx=0,sy=0,st=0,lock=null,drag=null,panel=null,w=280,lastDx=0,tracking=false,settling=false;
  const scrim=document.querySelector('#panel-scrim');
  const clearDrag=()=>{
   if(panel){panel.style.transition='';panel.style.transform='';panel.style.animation='';}
@@ -902,12 +903,16 @@ document.querySelector('#fab-agents')?.addEventListener('click',()=>openMobilePa
   lock=null;drag=null;panel=null;lastDx=0;
  };
  document.addEventListener('touchstart',e=>{
+  if(settling)return;
+  if(tracking&&e.touches.length!==1){finishDrag(true);return;}
+  tracking=false;
   if(!mobileView()||e.touches.length!==1)return;
   if(e.target instanceof Element&&e.target.closest('pre,code,table,input,textarea,select,dialog,#reply-suggestions'))return;
+  tracking=true;
   sx=e.touches[0].clientX;sy=e.touches[0].clientY;st=Date.now();lock=null;drag=null;panel=null;lastDx=0;
  },{passive:true});
  document.addEventListener('touchmove',e=>{
-  if(!mobileView()||e.touches.length!==1||lock==='v')return;
+  if(!tracking||!mobileView()||e.touches.length!==1||lock==='v')return;
   const dx=e.touches[0].clientX-sx, dy=e.touches[0].clientY-sy;
   if(!lock){
    if(Math.hypot(dx,dy)<12)return;
@@ -917,12 +922,13 @@ document.querySelector('#fab-agents')?.addEventListener('click',()=>openMobilePa
    const agentsOpen=!document.body.classList.contains('agents-hidden');
    if(dx>0){
     if(agentsOpen){drag='close-agents';panel=document.querySelector('#agent-panel');}
-    else if(!roomsOpen){drag='open-rooms';openMobilePane('rooms');panel=document.querySelector('body>aside');}
+    else if(!roomsOpen){drag='open-rooms';openMobilePane('rooms',{gesture:true});panel=document.querySelector('body>aside');}
    }else{
     if(roomsOpen){drag='close-rooms';panel=document.querySelector('body>aside');}
-    else if(!agentsOpen){drag='open-agents';openMobilePane('agents');panel=document.querySelector('#agent-panel');}
+    else if(!agentsOpen){drag='open-agents';openMobilePane('agents',{gesture:true});panel=document.querySelector('#agent-panel');}
    }
    if(!drag||!panel){lock='v';return;}
+   document.body.classList.add('drawer-gesture');
    w=Math.max(200,panel.getBoundingClientRect().width||280);
    panel.style.transition='none';panel.style.animation='none';
    if(scrim){scrim.style.transition='none';scrim.style.animation='none';}
@@ -947,32 +953,34 @@ document.querySelector('#fab-agents')?.addEventListener('click',()=>openMobilePa
    if(scrim)scrim.style.opacity=String(Math.max(0,Math.min(1,1-x/w)));
   }
  },{passive:true});
- const finishDrag=()=>{
+ const finishDrag=(cancelled=false)=>{
+  if(!tracking)return;
+  tracking=false;
   if(!drag||!panel){clearDrag();return;}
-  const vel=Math.abs(lastDx)/Math.max(1,Date.now()-st);
-  const ratio=Math.abs(lastDx)/w;
-  const commit=ratio>0.28||vel>0.45;
-  const p=panel,d=drag;
-  p.style.transition='transform 180ms cubic-bezier(.2,.75,.25,1)';
-  if(scrim)scrim.style.transition='opacity 180ms ease';
-  const keepOpen=(d==='open-rooms'||d==='open-agents')?commit:!commit;
-  if(d==='open-rooms'||d==='close-rooms'){
-   p.style.transform=keepOpen?'translateX(0)':'translateX(-100%)';
-   if(scrim)scrim.style.opacity=keepOpen?'1':'0';
-   setTimeout(()=>{if(!keepOpen)openMobilePane('chat');clearDrag();},185);
-  }else{
-   p.style.transform=keepOpen?'translateX(0)':'translateX(100%)';
-   if(scrim)scrim.style.opacity=keepOpen?'1':'0';
-   setTimeout(()=>{if(!keepOpen)openMobilePane('chat');clearDrag();},185);
-  }
+  const rooms=drag.endsWith('-rooms'), opening=drag.startsWith('open-');
+  const distance=lastDx*(rooms===opening?1:-1);
+  const commit=!cancelled&&(distance/w>0.28||distance/Math.max(1,Date.now()-st)>0.45);
+  const keepOpen=opening?commit:!commit;
+  const finish=()=>{
+   if(!keepOpen)openMobilePane('chat',{gesture:true});
+   clearDrag();settling=false;
+  };
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches){finish();return;}
+  settling=true;
+  panel.style.transition='transform 180ms cubic-bezier(.2,.75,.25,1)';
+  panel.style.transform=keepOpen?'translateX(0)':rooms?'translateX(-100%)':'translateX(100%)';
+  if(scrim){scrim.style.transition='opacity 180ms ease';scrim.style.opacity=keepOpen?'1':'0';}
+  setTimeout(finish,185);
  };
- document.addEventListener('touchend',finishDrag,{passive:true});
- document.addEventListener('touchcancel',clearDrag,{passive:true});
+ document.addEventListener('touchend',()=>finishDrag(),{passive:true});
+ document.addEventListener('touchcancel',()=>finishDrag(true),{passive:true});
 }
 const remoteSlashCommands=[
  {cmd:'/방목록',desc:'방 목록 열기',run:()=>{if(mobileView())openMobilePane('rooms');}},
  {cmd:'/에이전트',desc:'에이전트 패널 열기',run:()=>{if(mobileView())openMobilePane('agents');else showAgentPanel(true);}},
  {cmd:'/테마',desc:'다크/블랙/라이트 전환',run:()=>document.querySelector('#remote-theme-toggle')?.click()},
+ {cmd:'/조율',desc:'각자 의견 → 조율 → 동시 작업',run:()=>{draft.value='/조율 ';draft.focus();}},
+ {cmd:'/회의',desc:'각자 의견 → 합의안만',run:()=>{draft.value='/회의 ';draft.focus();}},
  {cmd:'/새로고침',desc:'지금 동기화',run:()=>{void refresh();}},
  {cmd:'/도움말',desc:'원격 1분 사용법',run:()=>remoteHelpDialog?.showModal()}
 ];
@@ -1144,4 +1152,12 @@ function syncPhoneHeight(){
 phoneViewport?.addEventListener('resize',syncPhoneHeight);
 phoneViewport?.addEventListener('scroll',syncPhoneHeight);
 syncPhoneHeight();
+// Close any modal <dialog> when clicking its backdrop (outside the dialog box).
+for(const dlg of document.querySelectorAll('dialog')){
+ dlg.addEventListener('click',e=>{
+  if(e.target!==dlg)return;
+  const r=dlg.getBoundingClientRect();
+  if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dlg.close();
+ });
+}
 </script></html>

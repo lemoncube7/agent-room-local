@@ -108,8 +108,8 @@ body.mobile-ui #close-rooms-mob,body.mobile-ui #close-agents-mob{display:inline-
 body.mobile-ui #close-rooms-mob{align-self:flex-end;margin-bottom:4px}
 body.mobile-ui>aside,body.mobile-ui #agent-panel{padding-top:max(12px,env(safe-area-inset-top));padding-bottom:max(12px,env(safe-area-inset-bottom))}
 @media(prefers-reduced-motion:no-preference){
- body.mobile-ui:not(.rooms-collapsed)>aside{animation:mob-rooms-in 200ms cubic-bezier(.2,.75,.25,1)}
- body.mobile-ui:not(.agents-collapsed) #agent-panel{animation:mob-agents-in 200ms cubic-bezier(.2,.75,.25,1)}
+ body.mobile-ui:not(.rooms-collapsed,.drawer-gesture)>aside{animation:mob-rooms-in 200ms cubic-bezier(.2,.75,.25,1)}
+ body.mobile-ui:not(.agents-collapsed,.drawer-gesture) #agent-panel{animation:mob-agents-in 200ms cubic-bezier(.2,.75,.25,1)}
  @keyframes mob-rooms-in{from{transform:translateX(-100%)}}
  @keyframes mob-agents-in{from{transform:translateX(100%)}}
 }
@@ -192,9 +192,44 @@ mark.chat-mark{background:#665218;color:#fff2b2;border-radius:3px;padding:0 1px}
 <dialog id="agent-usage-dialog"><form method="dialog"><h2 id="agent-usage-title">사용량</h2><dl><dt>최근 턴</dt><dd id="agent-usage-last"></dd><dt>Agent Room 수집 누적</dt><dd id="agent-usage-total"></dd><dt>현재 컨텍스트 점유율</dt><dd id="agent-usage-context"></dd></dl><p>입력에는 CLI에 따라 캐시가 포함될 수 있습니다. 계정 잔여 한도는 에이전트 목록에서 확인할 수 있습니다.</p><footer><button>닫기</button></footer></form></dialog><dialog id="project-dialog"><form id="project-form" autocomplete="off"><h2>작업 프로젝트 변경</h2><p>새로 추가하는 CLI 에이전트가 사용할 프로젝트 폴더입니다.</p><label>프로젝트 경로<input name="project" required maxlength="500" placeholder="예: E:\my-project"></label><label id="project-room-only-label" class="check"><input type="checkbox" name="roomOnly"> 현재 방에만 이 프로젝트 폴더 적용</label><label class="check"><input type="checkbox" name="applyMcp" checked> 선택한 폴더에 MCP 설정 적용</label><div id="project-recent"></div><p id="project-error" role="status"></p><footer><button id="project-cancel" type="button">취소</button><button type="submit">적용</button></footer></form></dialog><dialog id="remote-dialog"><form id="remote-form" autocomplete="off" style="display:grid;gap:10px"><div class="dlg-head"><h2>원격 연결 설정</h2><button id="remote-cancel" class="dlg-close" type="button" aria-label="닫기">✕</button></div><section id="cf-setup" hidden><button type="button" id="cf-start">Cloudflare 자동 설정</button><p>내 계정에 전용 Worker와 DB를 만들고, 확인이 끝나면 이 PC의 원격 호스팅을 연결합니다.</p><p id="cf-status" role="status"></p><select id="cf-account" aria-label="Cloudflare 계정" hidden></select> <a id="cf-dashboard" target="_blank" rel="noopener noreferrer" hidden>Cloudflare에서 등록</a> <button type="button" id="cf-copy" hidden>비밀번호 포함 원격 접속 링크 복사</button></section><input type="hidden" name="remoteMode" value="off"><div id="remote-mode-seg" class="seg" role="group" aria-label="원격 방식" style="width:100%;justify-content:space-between"><button type="button" data-rmode="off" style="flex:1">원격 안함</button><button type="button" data-rmode="direct" style="flex:1">직접 서버</button><button type="button" data-rmode="hosted" style="flex:1">원격 호스팅</button><button type="button" data-rmode="both" style="flex:1">둘 다</button></div><div id="direct-server-box" hidden style="display:grid;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--raised)"><b style="font-size:13px">직접 서버 (PC 허브 · PWA 웹앱)</b><small style="color:var(--muted)">Tailscale 또는 같은 네트워크에서 폰·외부 기기로 바로 접속해 “홈 화면에 추가 / 앱 설치”로 웹앱처럼 쓸 수 있습니다.</small><div id="direct-urls" style="display:grid;gap:6px"></div><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><button id="rotate-direct-key" type="button">접속 키 재발급</button><small id="direct-restart-note" style="color:#ffd08a"></small></div></div><div id="hosted-server-box" hidden style="display:grid;gap:10px"><p style="margin:0">Cloudflare Workers + D1 원격 서버와 이 PC를 자동 연결합니다. 키는 이 PC의 <code>local/remote-config.json</code>에만 저장됩니다.</p><label style="display:grid;gap:4px">Cloudflare Worker 주소<input name="site" maxlength="300" placeholder="https://agent-room-remote.your-subdomain.workers.dev"></label><label style="display:grid;gap:4px">REMOTE_DEVICE_KEY<input name="deviceKey" type="password" maxlength="300" placeholder="32바이트 이상 비밀 키"></label><input type="hidden" name="siteAccess"><label style="display:grid;gap:4px">Cloudflare 접속 비밀번호 (PWA 자동 전환용)<input id="fallback-pw" type="password" maxlength="300" placeholder="REMOTE_ACCESS_PASSWORD"></label><label class="check"><input type="checkbox" id="remote-share-all"> 모든 방 항상 공유 (새 방 포함)</label><small id="remote-share-count"></small><label class="check"><input type="checkbox" name="autoSiteUpdate"> 새 릴리스 감지 시 원격 업데이트 전용 세션 자동 기동</label><label style="display:grid;gap:4px">업데이트 전용 CLI<select name="siteUpdaterProvider"><option value="codex">Codex</option><option value="claude">Claude Code</option><option value="agy">Antigravity</option></select></label><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><button id="trigger-site-update" type="button">지금 원격 서버 업데이트 실행</button><small id="site-update-job-status"></small></div></div><p id="remote-error" role="status" style="color:#ffb9ad;margin:0;font-size:12px"></p><footer style="display:flex;gap:8px;justify-content:flex-end"><button id="remote-save" type="submit" style="background:var(--accent);border-color:var(--accent);color:#0f1117;font-weight:600">저장</button></footer></form></dialog>
 <dialog id="handoff-dialog"><h2>작업 인계</h2><div id="task-list"></div><form id="task-form" autocomplete="off"><input type="hidden" name="id"><input type="hidden" name="revision"><label>작업 제목<input name="title" required maxlength="120"></label><label>작업 내용·검증 결과<textarea name="summary" rows="3" maxlength="8000"></textarea></label><label>다음 행동<textarea name="next" rows="2" required maxlength="2000"></textarea></label><label>담당 PC<select name="ownerNode"><option value="">미지정</option></select></label><label id="task-owner-label">첫 담당자<select name="target"></select></label><label>검증자 (선택)<select name="verifier"></select></label><label>완료 기준 (선택)<input name="doneWhen" maxlength="1000" placeholder="예: smoke-test.cjs 통과 및 UI 확인"></label><label>담당 파일 (선택, 쉼표 구분)<input name="files" maxlength="1000" placeholder="예: hub.cjs, index.html"></label><button type="submit" id="save-task">작업 만들기</button><button id="reset-task" type="button" hidden>새 작업 쓰기</button></form><p id="handoff-error" role="status"></p><button id="close-handoff">닫기</button></dialog><dialog id="approval-log-dialog" style="width:min(740px,94vw)"><h2>권한 승인 로그</h2><p>이 방의 권한 허용 요청 기록입니다. (<code>local/approvals.log</code>에도 저장됩니다)</p><div id="approval-log-list" style="display:grid;gap:8px;margin:12px 0"></div><button id="close-approval-log" type="button">닫기</button></dialog>
 <script>
+// Independent crash safety net: if the main UI script fails during startup, show a recovery banner
+// and auto-reload as soon as the server's uiStamp or version changes (hotfix/update).
+(function(){
+ let shown=false,baseStamp=null,baseVer=null,poll=null;
+ function showCrash(msg){
+  if(shown)return;shown=true;
+  const bar=document.createElement('div');
+  bar.style.cssText='position:fixed;top:0;left:0;right:0;z-index:99999;background:#5b1d1d;color:#fff;padding:10px 14px;font:13px/1.4 system-ui,sans-serif;display:flex;align-items:center;gap:10px;flex-wrap:wrap;box-shadow:0 4px 16px #0008';
+  const txt=document.createElement('span');
+  txt.textContent='화면 로딩 오류: '+String(msg||'스크립트 초기화 실패')+' (수정 반영 시 자동 새로고침됩니다)';
+  const btn=document.createElement('button');
+  btn.type='button';btn.textContent='지금 새로고침';
+  btn.style.cssText='margin-left:auto;background:#fff;color:#3a1111;border:0;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer';
+  btn.onclick=()=>location.reload();
+  bar.append(txt,btn);
+  (document.body||document.documentElement).append(bar);
+  if(!poll){
+   poll=setInterval(async()=>{
+    try{
+     const r=await fetch('/state',{cache:'no-store'});
+     if(!r.ok)return;
+     const d=await r.json();
+     if(baseStamp===null){baseStamp=d.uiStamp||'';baseVer=d.version||'';return;}
+     if((d.uiStamp&&d.uiStamp!==baseStamp)||(d.version&&d.version!==baseVer))location.reload();
+    }catch{}
+   },3000);
+  }
+ }
+ window.addEventListener('error',e=>showCrash(e?.message||e?.error?.message));
+ window.addEventListener('unhandledrejection',e=>showCrash(e?.reason?.message||e?.reason));
+})();
+</script>
+<script>
 const byId=id=>document.getElementById(id);
 if(window.__agentRoomMobile)document.body.classList.add('mobile-ui');
 let composeRoom,selected,previous='',snapshot,refreshing=false,lastRendered,pairRoom;
+const ASSISTANT_ROOM_MARK='[설정 도우미 방]';
+function isAssistantRoom(roomId){return Boolean(snapshot?.rooms?.find(r=>r.id===roomId)?.memo?.startsWith(ASSISTANT_ROOM_MARK));}
 const roomSeenKey='agentRoomSeen';
 function readRoomSeen(){
  try{const value=JSON.parse(localStorage.getItem(roomSeenKey));return value&&typeof value==='object'&&!Array.isArray(value)?value:{};}catch{return {};}
@@ -701,11 +736,12 @@ function closeMobileDrawers(){
 function setupPane(button,cls,key){
  const stored=localStorage.getItem(key);
  document.body.classList.toggle(cls,document.body.classList.contains('mobile-ui')?true:(stored===null?narrowView():stored==='1'));
- button.onclick=()=>{localStorage.setItem(key,document.body.classList.toggle(cls)?'1':'0');syncMobileScrim();};
+ button.onclick=()=>{document.body.classList.remove('drawer-gesture');localStorage.setItem(key,document.body.classList.toggle(cls)?'1':'0');syncMobileScrim();};
 }
 setupPane(byId('rooms-toggle'),'rooms-collapsed','agentRoomRoomsCollapsed');
 setupPane(byId('agents-toggle'),'agents-collapsed','agentRoomAgentsCollapsed');
 byId('mob-agents-pill').onclick=()=>{
+ document.body.classList.remove('drawer-gesture');
  document.body.classList.add('rooms-collapsed');localStorage.setItem('agentRoomRoomsCollapsed','1');
  localStorage.setItem('agentRoomAgentsCollapsed',document.body.classList.toggle('agents-collapsed')?'1':'0');
  syncMobileScrim();
@@ -713,33 +749,6 @@ byId('mob-agents-pill').onclick=()=>{
 byId('close-rooms-mob').onclick=closeMobileDrawers;
 byId('close-agents-mob').onclick=closeMobileDrawers;
 byId('panel-scrim').onclick=closeMobileDrawers;
-let drawerTouch=null;
-document.addEventListener('touchstart',event=>{
- if(!document.body.classList.contains('mobile-ui')||event.touches.length!==1||event.target.closest?.('textarea,input,select,dialog,pre,table,#reply-suggestions')){drawerTouch=null;return;}
- const {clientX,clientY}=event.touches[0];
- drawerTouch={clientX,clientY};
-},{passive:true});
-document.addEventListener('touchcancel',()=>{drawerTouch=null;},{passive:true});
-document.addEventListener('touchend',event=>{
- const start=drawerTouch;drawerTouch=null;
- if(!start||!document.body.classList.contains('mobile-ui')||!event.changedTouches.length)return;
- const {clientX,clientY}=event.changedTouches[0];
- const dx=clientX-start.clientX,dy=clientY-start.clientY;
- if(Math.abs(dx)<55||Math.abs(dx)<Math.abs(dy)*1.4)return;
- const roomsOpen=!document.body.classList.contains('rooms-collapsed');
- const agentsOpen=!document.body.classList.contains('agents-collapsed');
- if(roomsOpen||agentsOpen){
-  if(roomsOpen?dx>0:dx<0)return;
-  const panel=roomsOpen?document.querySelector('body>aside'):byId('agent-panel');
-  if(!panel?.animate||matchMedia('(prefers-reduced-motion: reduce)').matches){closeMobileDrawers();return;}
-  if(panel.getAnimations().some(animation=>animation.id==='drawer-swipe-close'))return;
-  const motion=panel.animate([{transform:'translateX(0)'},{transform:roomsOpen?'translateX(-100%)':'translateX(100%)'}],{duration:180,easing:'ease-in'});
-  motion.id='drawer-swipe-close';
-  motion.onfinish=closeMobileDrawers;
-  return;
- }
- byId(dx>0?'rooms-toggle':'mob-agents-pill').click();
-},{passive:true});
 for(const input of document.querySelectorAll('input[name="project"]')){
  const browse=el('button','찾아보기…');browse.type='button';browse.className='browse-btn';
  browse.title='탐색기 창에서 폴더 선택';
@@ -2008,6 +2017,8 @@ const slashCommands=[
  {cmd:'/대화모드',desc:'읽기 전용 대화 모드',run:()=>{if(selected)void control({action:'set_work_mode',room:selected,workMode:'chat'});}},
  {cmd:'/개발모드',desc:'파일 수정·실행 개발 모드',run:()=>{if(selected)void control({action:'set_work_mode',room:selected,workMode:'dev'});}},
  {cmd:'/폴더',desc:'작업 폴더 변경',run:()=>byId('project-btn').click()},
+ {cmd:'/조율',desc:'각자 의견 → 조율 → 동시 작업 (뒤에 요청 입력)',run:()=>{const d=byId('draft');d.value='/조율 ';d.focus();}},
+ {cmd:'/회의',desc:'각자 의견 → 조율해 합의안만 (뒤에 요청 입력)',run:()=>{const d=byId('draft');d.value='/회의 ';d.focus();}},
  {cmd:'/검색',desc:'방 전체 검색',run:()=>{if(selected)openChatSearch();}},
  {cmd:'/설정',desc:'앱 설정 열기',run:()=>byId('app-settings-dialog').showModal()},
  {cmd:'/문제해결',desc:'자가 진단 실행',run:()=>{byId('app-settings-dialog').showModal();byId('diagnose-btn').click();}}
@@ -2447,18 +2458,6 @@ function connectWs(){
   ws.onerror=()=>{wsConnected=false;};
  }catch{connectEvents();}
 }
-{
- const cached=readSnapCache();
- if(cached){
-  const savedSel=sessionStorage.getItem('agentRoomSelected')||localStorage.getItem('agentRoomSelected');
-  selected=savedSel&&cached.rooms.some(r=>r.id===savedSel)?savedSel:cached.rooms[0]?.id;
-  snapshot=cached;
-  if(cached.version)byId('current-version').textContent='v'+cached.version;
-  render();
- }
-}
-connectWs();
-refresh();
 document.addEventListener('visibilitychange',()=>{
  if(!document.hidden){
   if(!wsConnected&&!wsSocket)connectWs();
@@ -2487,9 +2486,17 @@ function syncPhoneHeight(){
 phoneViewport?.addEventListener('resize',syncPhoneHeight);
 phoneViewport?.addEventListener('scroll',syncPhoneHeight);
 syncPhoneHeight();
+// Close any modal <dialog> when clicking its backdrop (outside the dialog box).
+for(const dlg of document.querySelectorAll('dialog')){
+ dlg.addEventListener('click',e=>{
+  if(e.target!==dlg)return;
+  const r=dlg.getBoundingClientRect();
+  if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dlg.close();
+ });
+}
 // 1:1 interactive finger-tracking swipe with strict direction lock
 {
- let sx=0,sy=0,st=0,lock=null,drag=null,panel=null,w=280,lastDx=0;
+ let sx=0,sy=0,st=0,lock=null,drag=null,panel=null,w=280,lastDx=0,tracking=false,settling=false;
  const scrim=byId('panel-scrim');
  const clearDrag=()=>{
   if(panel){panel.style.transition='';panel.style.transform='';panel.style.animation='';panel.style.display='';}
@@ -2497,12 +2504,16 @@ syncPhoneHeight();
   lock=null;drag=null;panel=null;lastDx=0;
  };
  document.addEventListener('touchstart',e=>{
+  if(settling)return;
+  if(tracking&&e.touches.length!==1){finishDrag(true);return;}
+  tracking=false;
   if(!document.body.classList.contains('mobile-ui')||e.touches.length!==1)return;
   if(e.target instanceof Element&&e.target.closest('pre,code,table,input,textarea,select,dialog,#reply-suggestions'))return;
+  tracking=true;
   sx=e.touches[0].clientX;sy=e.touches[0].clientY;st=Date.now();lock=null;drag=null;panel=null;lastDx=0;
  },{passive:true});
  document.addEventListener('touchmove',e=>{
-  if(!document.body.classList.contains('mobile-ui')||e.touches.length!==1||lock==='v')return;
+  if(!tracking||!document.body.classList.contains('mobile-ui')||e.touches.length!==1||lock==='v')return;
   const dx=e.touches[0].clientX-sx, dy=e.touches[0].clientY-sy;
   if(!lock){
    if(Math.hypot(dx,dy)<12)return;
@@ -2518,6 +2529,7 @@ syncPhoneHeight();
     else if(!agentsOpen){drag='open-agents';panel=byId('agent-panel');document.body.classList.remove('agents-collapsed');if(scrim)scrim.hidden=false;}
    }
    if(!drag||!panel){lock='v';return;}
+   document.body.classList.add('drawer-gesture');
    w=Math.max(200,panel.getBoundingClientRect().width||280);
    panel.style.transition='none';panel.style.animation='none';
    if(scrim){scrim.style.transition='none';scrim.style.animation='none';}
@@ -2542,39 +2554,30 @@ syncPhoneHeight();
    if(scrim)scrim.style.opacity=String(Math.max(0,Math.min(1,1-x/w)));
   }
  },{passive:true});
- const finishDrag=()=>{
+ const finishDrag=(cancelled=false)=>{
+  if(!tracking)return;
+  tracking=false;
   if(!drag||!panel){clearDrag();return;}
-  const vel=Math.abs(lastDx)/Math.max(1,Date.now()-st);
-  const ratio=Math.abs(lastDx)/w;
-  const commit=ratio>0.28||vel>0.45;
-  const p=panel,d=drag;
-  p.style.transition='transform 180ms cubic-bezier(.2,.75,.25,1)';
-  if(scrim)scrim.style.transition='opacity 180ms ease';
-  const keepOpen=(d==='open-rooms'||d==='open-agents')?commit:!commit;
-  if(d==='open-rooms'||d==='close-rooms'){
-   p.style.transform=keepOpen?'translateX(0)':'translateX(-100%)';
-   if(scrim)scrim.style.opacity=keepOpen?'1':'0';
-   setTimeout(()=>{
-    document.body.classList.toggle('rooms-collapsed',!keepOpen);
-    if(scrim)scrim.hidden=!keepOpen&&document.body.classList.contains('agents-collapsed');
-    clearDrag();
-   },185);
-  }else{
-   p.style.transform=keepOpen?'translateX(0)':'translateX(100%)';
-   if(scrim)scrim.style.opacity=keepOpen?'1':'0';
-   setTimeout(()=>{
-    document.body.classList.toggle('agents-collapsed',!keepOpen);
-    if(scrim)scrim.hidden=!keepOpen&&document.body.classList.contains('rooms-collapsed');
-    clearDrag();
-   },185);
-  }
+  const rooms=drag.endsWith('-rooms'), opening=drag.startsWith('open-');
+  const distance=lastDx*(rooms===opening?1:-1);
+  const commit=!cancelled&&(distance/w>0.28||distance/Math.max(1,Date.now()-st)>0.45);
+  const keepOpen=opening?commit:!commit;
+  const finish=()=>{
+   document.body.classList.toggle(rooms?'rooms-collapsed':'agents-collapsed',!keepOpen);
+   syncMobileScrim();
+   clearDrag();settling=false;
+  };
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches){finish();return;}
+  settling=true;
+  panel.style.transition='transform 180ms cubic-bezier(.2,.75,.25,1)';
+  panel.style.transform=keepOpen?'translateX(0)':rooms?'translateX(-100%)':'translateX(100%)';
+  if(scrim){scrim.style.transition='opacity 180ms ease';scrim.style.opacity=keepOpen?'1':'0';}
+  setTimeout(finish,185);
  };
- document.addEventListener('touchend',finishDrag,{passive:true});
- document.addEventListener('touchcancel',clearDrag,{passive:true});
+ document.addEventListener('touchend',()=>finishDrag(),{passive:true});
+ document.addEventListener('touchcancel',()=>finishDrag(true),{passive:true});
 }
 // 설정 도우미 방: 💬 버튼은 전용 "설정 도우미" 방을 열고(없으면 만들고), 그 방의 에이전트가 제안한 동작은 확인 카드로만 실행한다.
-const ASSISTANT_ROOM_MARK='[설정 도우미 방]';
-function isAssistantRoom(roomId){return Boolean(snapshot?.rooms?.find(r=>r.id===roomId)?.memo?.startsWith(ASSISTANT_ROOM_MARK));}
 // 메시지 본문에서 ```agent-room-action {...}``` 블록을 떼어 내고 제안 목록을 돌려준다. 허용된 동작만 남긴다.
 function splitAssistantActions(body){
  const allowed=new Set(['create','rename_room','set_work_mode','room_memo','room_ranking','new_agent','edit_agent','pause_agent','disconnect','login_cli','retry_agent','refresh_limits','remote_share','check_update','apply_update','cloudflare_setup_start','report_issue']);
@@ -2669,4 +2672,17 @@ function assistantProposalCards(seq,proposals){
  for(const t of ['pointerup','pointercancel'])document.addEventListener(t,()=>clearTimeout(pressTimer),true);
  document.addEventListener('pointermove',e=>{if(Math.abs(e.clientX-pressX)+Math.abs(e.clientY-pressY)>10)clearTimeout(pressTimer);},true);
 })();
+// First render runs after all room and message renderers are initialized.
+{
+ const cached=readSnapCache();
+ if(cached){
+  const savedSel=sessionStorage.getItem('agentRoomSelected')||localStorage.getItem('agentRoomSelected');
+  selected=savedSel&&cached.rooms.some(r=>r.id===savedSel)?savedSel:cached.rooms[0]?.id;
+  snapshot=cached;
+  if(cached.version)byId('current-version').textContent='v'+cached.version;
+  render();
+ }
+}
+connectWs();
+refresh();
 </script></html>
