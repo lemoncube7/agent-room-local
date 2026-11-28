@@ -1265,7 +1265,8 @@ function requestFlow(rows,replies,handoffs,status){
   group.append(step);
  }
  for(const {source,target} of handoffs){
-  const link=el('button',source.name+' → '+target.name+' 호출');link.type='button';
+  const delegated=String(source.request||'').startsWith('delegation:');
+  const link=el('button',source.name+' → '+target.name+(delegated?' · 위임 '+(status[target.state]||'접수'):' 호출'));link.type='button';
   link.onclick=()=>focusMessage(source.seq);flow.append(link);
  }
  return flow;
@@ -1339,7 +1340,7 @@ function renderHistory(view,messages,roomChanged){
    .map(target=>({source,target})));
   const nameBrand=modelBrand(author?.provider,author?.model);
   const isRemote=String(m.request||'').startsWith('remote:');
-  const sig=JSON.stringify([m.retracted?1:0,delivery,target?.name||'',author?.provider||'',nameBrand,m.relay_root||0,coordLabel,progressMsg?1:0,isRemote?1:0,replies.map(reply=>[reply.seq,reply.retracted]),handoffs.map(({source,target})=>[source.seq,target.member,target.name])]);
+  const sig=JSON.stringify([m.retracted?1:0,delivery,target?.name||'',author?.provider||'',nameBrand,m.relay_root||0,coordLabel,progressMsg?1:0,isRemote?1:0,replies.map(reply=>[reply.seq,reply.retracted]),handoffs.map(({source,target})=>[source.seq,target.member,target.name,target.state])]);
   const key='message:'+m.seq, prev=existing.get(key);
   if(prev&&prev.dataset.sig===sig)return prev;
   const isOwn=m.author==='human:'+selected;
@@ -2536,19 +2537,32 @@ body.ar-asst-pick *{cursor:help!important}
  const log=el('div',{id:'ar-asst-log'});log.setAttribute('aria-live','polite');
  const input=el('input',{id:'ar-asst-input',type:'text',placeholder:'무엇을 도와드릴까요?',autocomplete:'off',maxLength:2000});
  const send=el('button',{type:'submit',textContent:'보내기'});
- const clear=el('button',{type:'button',textContent:'지우기',title:'대화 기록 지우기'});
+ const clear=el('button',{type:'button',textContent:'새 대화',title:'대화 기록과 도우미 세션을 초기화'});
  const close=el('button',{type:'button',textContent:'✕',title:'닫기'});
  const form=el('form',{id:'ar-asst-form'},input,send);
  const gear=el('button',{type:'button',textContent:'⚙',title:'도우미 모델 설정'});
  const issue=el('button',{type:'button',textContent:'🐞',title:'이슈 제보'});
  const mkSel=(opts)=>{const s=el('select');for(const [v,l] of opts)s.append(el('option',{value:v,textContent:l}));return s;};
  const cfgProv=mkSel([['auto','자동'],['claude','Claude'],['codex','Codex'],['agy','Antigravity']]);
- const cfgModel=el('input',{type:'text',placeholder:'모델 (비우면 기본)',maxLength:80});
- const cfgEffort=mkSel([['low','노력 낮음'],['medium','보통'],['high','높음']]);
- const cfgBox=el('div',{id:'ar-asst-cfg'},cfgProv,cfgModel,cfgEffort);
- const cfgCall=async body=>{try{const r=await fetch('/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'assistant_config',...body})});const d=await r.json();const c=d.assistantConfig||{};cfgProv.value=c.provider||'auto';cfgModel.value=c.model||'';cfgEffort.value=c.effort||'low';}catch{}};
- const cfgSave=()=>cfgCall({set:true,provider:cfgProv.value,model:cfgModel.value,effort:cfgEffort.value});
- cfgProv.onchange=cfgSave;cfgEffort.onchange=cfgSave;cfgModel.onchange=cfgSave;
+ const cfgModel=mkSel([['','기본 모델']]);
+ const cfgEffort=mkSel([['low','노력 낮음'],['medium','노력 보통'],['high','노력 높음']]);
+ const cfgApply=el('button',{type:'button',textContent:'적용'});
+ const cfgNow=el('div',{style:'width:100%;color:var(--muted)'});
+ const cfgBox=el('div',{id:'ar-asst-cfg'},cfgProv,cfgModel,cfgEffort,cfgApply,cfgNow);
+ const provName={auto:'자동',claude:'Claude',codex:'Codex',agy:'Antigravity'};
+ const showNow=c=>{cfgNow.textContent='현재 적용: '+provName[c.provider||'auto']+' · '+(c.model||'기본 모델')+' · 노력 '+({low:'낮음',medium:'보통',high:'높음'}[c.effort]||'낮음')+(c.provider==='auto'?' (한도가 남은 Claude→Codex→Antigravity 순)':'');};
+ async function loadModels(pick){
+  cfgModel.replaceChildren(el('option',{value:'',textContent:'기본 모델'}));
+  if(cfgProv.value==='auto'){cfgModel.disabled=true;return;}
+  cfgModel.disabled=false;
+  try{const r=await fetch('/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'list_models',provider:cfgProv.value,room:typeof selected!=='undefined'?selected:null})});const d=await r.json();
+   for(const m of Array.isArray(d.models)?d.models:[]){const id=typeof m==='string'?m:(m.id||m.model||m.name);if(id)cfgModel.append(el('option',{value:id,textContent:typeof m==='string'?m:(m.label||m.name||id)}));}}catch{}
+  if(pick&&![...cfgModel.options].some(o=>o.value===pick))cfgModel.append(el("option",{value:pick,textContent:pick}));
+  cfgModel.value=pick||'';
+ }
+ const cfgCall=async body=>{try{const r=await fetch('/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'assistant_config',...body})});const d=await r.json();const c=d.assistantConfig||{};cfgProv.value=c.provider||'auto';cfgEffort.value=c.effort||'low';await loadModels(c.model||'');showNow(c);return c;}catch{cfgNow.textContent='설정을 불러오지 못했어요.';}};
+ cfgProv.onchange=()=>void loadModels('');
+ cfgApply.onclick=async()=>{cfgApply.disabled=true;const c=await cfgCall({set:true,provider:cfgProv.value,model:cfgProv.value==='auto'?'':cfgModel.value,effort:cfgEffort.value});cfgApply.disabled=false;if(c){await fetch('/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'assistant_reset'})}).catch(()=>{});note('모델 설정을 적용했어요: '+cfgNow.textContent.replace('현재 적용: ',''));}};
  gear.onclick=()=>{const o=cfgBox.classList.toggle('open');if(o)void cfgCall({});};
  issue.onclick=()=>{void ask('이슈를 제보하고 싶어. 지금 상태와 로그를 보고 제보 초안(report_issue)을 만들어줘. 내가 겪은 문제: '+(input.value.trim()||'(아래 대화 내용 참고)'));input.value='';};
  const panel=el('div',{id:'ar-asst'},el('div',{id:'ar-asst-head'},el('span',{textContent:'설정 도우미'}),issue,gear,clear,close),cfgBox,log,form);
@@ -2597,7 +2611,7 @@ body.ar-asst-pick *{cursor:help!important}
    const a=data.assistant||{};
    wait.remove();
    if(Array.isArray(a.read)&&a.read.length)note('읽은 파일: '+a.read.join(', '));
-   if(a.reply){history.push({role:'assistant',text:String(a.reply)});bubble('assistant',String(a.reply));}
+   if(a.reply){history.push({role:'assistant',text:String(a.reply)});bubble('assistant',String(a.reply));if(a.provider)note('답변: '+(provName[a.provider]||a.provider)+' · '+(a.model||'기본 모델'));}
    for(const p of Array.isArray(a.proposals)?a.proposals:[])if(p&&typeof p.action==='string')proposalCard(p);
    if(!a.reply&&!(a.proposals||[]).length)note('도우미가 답을 주지 못했어요. 다시 물어봐 주세요.');
    save();
@@ -2609,7 +2623,7 @@ body.ar-asst-pick *{cursor:help!important}
  const toggle=open=>{panel.classList.toggle('open',open);fab.setAttribute('aria-expanded',String(open));if(open){scroll();input.focus();}};
  fab.onclick=()=>toggle(!panel.classList.contains('open'));
  close.onclick=()=>toggle(false);
- clear.onclick=()=>{history=[];save();renderHistory();};
+ clear.onclick=()=>{history=[];save();renderHistory();void fetch('/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'assistant_reset'})}).catch(()=>{});note('새 대화를 시작했어요.');};
  form.onsubmit=e=>{e.preventDefault();const text=input.value.trim();if(!text)return;input.value='';void ask(text);};
  panel.addEventListener('keydown',e=>{if(e.key==='Escape')toggle(false);});
  // 화면 요소 바로 묻기: Alt+클릭 또는 길게 누르기
