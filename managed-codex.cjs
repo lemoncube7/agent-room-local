@@ -793,6 +793,8 @@ async function runCodex(project, prompt, session, provider='codex',model=null,ef
   const permission=options.permission||'dev';
   // `codex exec resume` rejects --sandbox ("unexpected argument"), so resumed read-only turns use a config override.
   if(options.rank||permission==='chat'){if(session)codexArgs.unshift('-c','sandbox_mode="read-only"');else codexArgs.splice(-1,0,'--sandbox','read-only');}
+  // Resumed dev turns must restore write access explicitly; the thread otherwise keeps a prior read-only mode.
+  else if(session&&provider==='codex')codexArgs.unshift('-c','sandbox_mode='+JSON.stringify(permission==='full'?'danger-full-access':'workspace-write'));
   const claudeArgs=['--print','--output-format','json','--permission-mode',(options.rank||permission==='chat')?'plan':permission==='full'?'bypassPermissions':'acceptEdits',...(session?['--resume',session]:[])];
   if(options.rank)claudeArgs.push('--tools','','--no-session-persistence','--strict-mcp-config');
   else{
@@ -846,11 +848,11 @@ async function runCodex(project, prompt, session, provider='codex',model=null,ef
   if(provider==='codex'&&!options.rank&&options.inboxFile){
     const args=[...prefix];
     if(codexArgs[0]==='-c')args.push(...codexArgs.slice(0,2));
-    if(permission==='chat')args.push('-c','sandbox_mode="read-only"');
+    args.push('-c','sandbox_mode='+JSON.stringify(permission==='chat'?'read-only':permission==='full'?'danger-full-access':'workspace-write'));
     const interim=createCodexInterim(options.interimFile);
     try{
       const result=await require('./codex-app-server.cjs').runAppServer({
-        file,args,project,env:cliEnv(),session,prompt,model,effort,inbox:options.inboxFile,
+        file,args,project,env:cliEnv(),session,prompt,model,effort,inbox:options.inboxFile,sandbox:permission==='chat'?'read-only':permission==='full'?'danger-full-access':'workspace-write',
         onItem(method,item){
           const type=item.type.replace(/[A-Z]/g,letter=>'_'+letter.toLowerCase());
           const progress=describeStreamProgress({type:method.replace('/','.'),item:{...item,type}});

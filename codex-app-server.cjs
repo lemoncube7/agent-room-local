@@ -3,7 +3,7 @@ const {spawn}=require('node:child_process');
 const {createInterface}=require('node:readline');
 
 async function runAppServer(options){
-  const {file,args,project,env,session,prompt,model,effort,inbox,onItem}=options;
+  const {file,args,project,env,session,prompt,model,effort,inbox,onItem,sandbox}=options;
   const child=spawn(file,[...args,'app-server','--listen','stdio://'],{
     cwd:project,env,windowsHide:true,stdio:['pipe','pipe','pipe']
   });
@@ -85,7 +85,10 @@ async function runAppServer(options){
     await call('initialize',{clientInfo:{name:'agent_room',title:'Agent Room',version:'1.0.0'}});
     send({method:'initialized'});
     const thread=await call(session?'thread/resume':'thread/start',{
-      ...(session?{threadId:session}:{}),cwd:project,...(model?{model}:{})
+      ...(session?{threadId:session}:{}),cwd:project,...(model?{model}:{}),
+      // Set the sandbox on every resume: a resumed thread otherwise keeps the mode of its last turn
+      // (a read-only coordination turn left Codex agents stuck read-only).
+      ...(sandbox?{sandbox}:{})
     });
     threadId=thread.thread.id;
     started=true;
