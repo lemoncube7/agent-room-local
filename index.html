@@ -1992,6 +1992,7 @@ byId('compose').onsubmit=async event=>{
 };
 let suggestedReplies=[];
 function chooseReplySuggestions(body){
+ return []; // reply suggestions removed by user request
  const tail=String(body||'').replace(/\x60{3}[\s\S]*?\x60{3}/g,'').trim().slice(-650);
  if(!tail)return [];
  if(/원인|오류|실패|문제/.test(tail))return ['원인부터 확인해줘','고치는 방법을 알려줘'];
