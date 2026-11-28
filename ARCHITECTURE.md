@@ -44,6 +44,7 @@
 - `deliveries(seq, member, state, priority)`: 에이전트별 전달 상태(`queued`, `ranking`, `submitting`, `working`, `accepted`, `answered`, `context_only`, `context_seen`, `failed`, `coordination_wait`, `coordination_speaking`, `coordination_blocked`).
 - `room_ranking(room, enabled, mode, main_member, judge_provider, judge_model, judge_effort, judge_prompt)`: 응답 모드(`broadcast` | `ranking` | `hierarchy`) 및 판정 설정.
 - `reply_plans`, `coordination_turns`: 조율(`opinions`, `coordinating`, `ready`) 상태 및 라운드 순서. 이의(`[CHANGE]`·`[BLOCKED]`)가 있으면 최대 `COORD_MAX_ROUNDS`(6)라운드까지 다시 돈다(`hub.cjs`에서 기존 DB 기본값 3보다 우선).
+  - 조율 발언은 각 에이전트의 메인 세션이 아니라 **일회성 CLI 호출**(`runCodex(..., null, {rank:true})`)로 돈다. 그래서 프롬프트에 원 요청과 직전 방 메시지 12개(`recentRoomMessages`)를 넣고, 조율 메시지는 `storeCoordinationMessage`로 방의 다른 에이전트에게 `context_only` 전달을 만들어 다음 메인 턴에 보이게 한다. 실행을 맡지 않은 참여자의 원 요청 전달도 `context_only`로 남긴다.
 - `remote_rooms(room, since)`, `remote_options`: 원격 공유 방 및 전체 자동 공유(`share_all`).
 - `approval_rules`, `approval_logs`: 도구 실행 항상 허용 규칙 및 승인 로그.
 - `handoff_tasks`, `handoff_history`: 작업 카드(id·owner·verifier·done_when·files·revision 등)와 그 변경 이력. 원격 Site(D1)에는 푸시용 `remote_push_key`(VAPID 서명 키), `remote_push_subscriptions`(구독)가 별도로 있다.

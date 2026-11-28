@@ -367,7 +367,10 @@ async function main(){
   assert.match(meetingReplies[0].body,/consensus after 0 notes/);
   assert.match(meetingReplies[1].body,/consensus after 1 notes/);
   const meetingDeliveries=meetingDone.deliveries.filter(d=>d.seq===meetingSeq);
-  assert.equal(meetingDeliveries.filter(d=>d.state==='context_seen').length,2);
+  // Meeting participants keep the request as unseen context so their main session learns about it on the next turn.
+  assert.equal(meetingDeliveries.filter(d=>d.state==='context_only').length>=2,true);
+  const meetingNoteSeq=meetingReplies[0].seq;
+  assert.equal(meetingDone.deliveries.some(d=>d.seq===meetingNoteSeq&&d.state==='context_only'),true);
   assert.equal(meetingDeliveries.every(d=>d.state==='context_seen'||d.state==='context_only'),true);
   console.log('Passed: room approval, one channel push, reply, receipt, one-use subagent invitation, separate authorship, inherited revocation, room-wide broadcast, managed Codex and Claude creation and resume, durable outbox across hub restart, shared agent replies, room-scoped state, safe upload headers, and project switching.');
 }
