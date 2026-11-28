@@ -19,5 +19,7 @@
 - `handoff_tasks`, `handoff_history`: 작업 카드(id·owner·verifier·done_when·files·revision 등)와 그 변경 이력. 원격 Site(D1)에는 푸시용 `remote_push_key`(VAPID 서명 키), `remote_push_subscriptions`(구독)가 별도로 있다.
 - `delivery_history`: **모든 메시지**에서 에이전트별 전달 상태가 바뀔 때마다 쌓이는 기록(대기 → 순위 판정 → 작업 중 …). 원격 메시지 전용이 아니다.
 - `desktop_bindings`, `handoff_alerts`, `mesh_message_copy`: 데스크톱 바인딩, 작업 인계 알림, 다중 노드 메시지 동기화.
+- **시작 시 DB 무결성 검사 (`hub.cjs`):** 허브 시작 직후 `PRAGMA quick_check`를 실행해 이상이 있으면 `startupDbIssue`에 원인을 기록하고 `/state`의 `dbIssue` 및 `diagnose`(`diagnoseNow`) 결과로 노출한다. (깨진 DB를 임의로 복구·삭제해 데이터를 잃는 대신 이유를 먼저 사용자에게 알리기 위함.)
+- **DB를 열 수 없을 때:** SQLite가 손상 또는 잘못된 DB 형식을 보고하면 허브는 현재 실행의 오류 안내를 파일에 기록하고 종료한다. Windows 시작 화면은 그 실행에서 기록된 안내를 표시한다. 원본 DB를 보관한다.
 
 > 상위 목차: [ARCHITECTURE.md](../../ARCHITECTURE.md)

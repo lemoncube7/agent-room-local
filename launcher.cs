@@ -5,12 +5,34 @@ using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows.Forms;
 
 [assembly: AssemblyTitle("Agent Room")]
 [assembly: AssemblyProduct("Agent Room")]
 [assembly: AssemblyVersion("1.1.0.0")]
+
+// The hub writes its real address to local/hub.json (it picks another port when 4317 is taken).
+// Only a loopback http address is accepted; otherwise the default port is used.
+static class HubAddress {
+    const string Default = "http://127.0.0.1:4317";
+    public static string Url {
+        get {
+            string exeDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+            string[] dirs = { Path.Combine(exeDir, "app", "local"), Path.Combine(exeDir, "local") };
+            foreach (string dir in dirs) {
+                try {
+                    string file = Path.Combine(dir, "hub.json");
+                    if (!File.Exists(file)) continue;
+                    Match m = Regex.Match(File.ReadAllText(file), @"""url""\s*:\s*""(http://127\.0\.0\.1:\d{1,5})""");
+                    if (m.Success) return m.Groups[1].Value;
+                } catch { }
+            }
+            return Default;
+        }
+    }
+}
 
 static class Program {
     static string Dir { get { return Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location); } }
@@ -68,7 +90,7 @@ static class Program {
 // touched inside Host so the launcher still runs on machines without the SDK files.
 static class AppWindow {
     const string Title = "Agent Room";
-    const string BaseUrl = "http://127.0.0.1:4317";
+    static string BaseUrl { get { return HubAddress.Url; } }
 
     [DllImport("user32.dll")] static extern IntPtr FindWindow(string cls, string title);
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hwnd);
@@ -115,7 +137,7 @@ static class AppWindow {
 }
 
 static class Host {
-    const string BaseUrl = "http://127.0.0.1:4317";
+    static string BaseUrl { get { return HubAddress.Url; } }
 
     static string Dir { get { return Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location); } }
     static string AppDir { get { string sub = Path.Combine(Dir, "app"); return Directory.Exists(sub) ? sub : Dir; } }

@@ -42,6 +42,10 @@ foreach($item in 'Version','RoomName','AddRoom','Rooms','RoomTitle','Members','P
 }
 if($Check){'Native Windows chat window loaded';return}
 $base='http://127.0.0.1:4317'
+try {
+  $hubInfo=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'local/hub.json') -Raw | ConvertFrom-Json
+  if($hubInfo.url -match '^http://127\.0\.0\.1:\d{1,5}$'){$base=$hubInfo.url}
+} catch { }
 $script:state=$null
 $script:room=$null
 $script:renderKey=''

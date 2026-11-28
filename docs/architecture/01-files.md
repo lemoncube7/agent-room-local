@@ -2,7 +2,7 @@
 
 | 파일 | 역할 |
 |---|---|
-| `hub.cjs` | 로컬 허브 HTTP/WS 서버(`127.0.0.1:4317`), CLI 턴 실행·큐·조율·서브에이전트·한도·원격 직접 연결(`/api/room/direct`)·`cloudflared` 자동 터널 |
+| `hub.cjs` | 로컬 허브 HTTP/WS 서버(기본 `127.0.0.1:4317`, 포트가 막혀 있으면 다른 포트. 실제 주소는 `local/hub.json`), CLI 턴 실행·큐·조율·서브에이전트·한도·원격 직접 연결(`/api/room/direct`)·`cloudflared` 자동 터널 |
 | `db.cjs` | SQLite(`local/rooms.db`) 초기화 및 스키마 마이그레이션 |
 | `index.html` | PC 앱(WebView2) 및 로컬/직결 웹 UI, 설정 도우미 방 제안 카드, 모바일 UI(`.mobile-ui`) |
 | `bridge.cjs` | 분리 프로세스로 CLI 턴 실행. **`hub.cjs`의 `runDetached()`가** 작업 JSON을 만들고 `bridge.cjs turn <job>`을 분리 실행한 뒤, 스풀(`local/spool`의 `job`·`result`·`pid`·`ack`·`interim`)에서 결과와 중간 출력을 읽는다. 허브가 재시작돼도 턴은 살아 있고 시작할 때 `recoverDetachedTurns`가 이어받는다. 프로세스가 사라진 채 약 3초(폴링 12회) 지나면 "에이전트 실행이 중단되어…" 오류로 처리 |

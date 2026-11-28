@@ -36,11 +36,23 @@ function Save-LauncherConfig([bool]$autoOpen) {
     [IO.File]::WriteAllText($launcherFile, (ConvertTo-Json -InputObject @{ autoOpen = $autoOpen } -Compress), $utf8)
 }
 
-function Get-RoomHub {
+# The hub writes its real address to local/hub.json (it may pick another port when 4317 is taken).
+# Only a loopback address is accepted; anything else falls back to the default port.
+function Get-HubBase {
     try {
-        $state = Invoke-RestMethod -Uri 'http://127.0.0.1:4317/state' -TimeoutSec 1
-        if ($state.PSObject.Properties['rooms'] -and $state.PSObject.Properties['members'] -and $state.PSObject.Properties['deliveries']) { return $state }
+        $info = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'local/hub.json') -Raw | ConvertFrom-Json
+        if ($info.url -match '^http://127\.0\.0\.1:\d{1,5}$') { return $info.url }
     } catch { }
+    return 'http://127.0.0.1:4317'
+}
+
+function Get-RoomHub {
+    foreach ($base in @((Get-HubBase), 'http://127.0.0.1:4317') | Select-Object -Unique) {
+        try {
+            $state = Invoke-RestMethod -Uri ($base + '/state') -TimeoutSec 1
+            if ($state.PSObject.Properties['rooms'] -and $state.PSObject.Properties['members'] -and $state.PSObject.Properties['deliveries']) { return $state }
+        } catch { }
+    }
 }
 
 function Test-RoomHub {
@@ -64,10 +76,10 @@ function Open-WebFallback {
 }
 
 function Open-AgentRoomClient {
-    $target = 'http://127.0.0.1:4317'
+    $target = Get-HubBase
     try {
         $hubInfo = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'local/hub.json') -Raw | ConvertFrom-Json
-        if ($hubInfo.browserUrl -like 'http://127.0.0.1:4317/?key=*') { $target = $hubInfo.browserUrl }
+        if ($hubInfo.browserUrl -match '^http://127\.0\.0\.1:\d{1,5}/\?key=') { $target = $hubInfo.browserUrl }
     } catch { }
     if (Test-AppWindow) {
         try { Start-Process -FilePath (Get-LauncherExePath) -ArgumentList '--window', $target; return } catch { }
@@ -126,12 +138,20 @@ function Start-AgentRoom([string]$projectDir, [bool]$skipSetupIfConfigured = $fa
         }
     }
     if (-not (Test-RoomHub)) {
+        $dbErrorFile = Join-Path $localDir 'startup-db-error.txt'
+        $startedAt = [DateTime]::UtcNow
         $hub = Start-Process -FilePath $node.Source -ArgumentList ('"' + $hubPath + '"') -WorkingDirectory $PSScriptRoot -WindowStyle Hidden -PassThru
         for ($attempt = 0; $attempt -lt 15 -and -not (Test-RoomHub); $attempt++) {
             if ($hub.HasExited) { break }
             Start-Sleep -Milliseconds 200
         }
-        if (-not (Test-RoomHub)) { throw 'Agent Room 허브를 시작하지 못했습니다. 포트 4317 사용 여부를 확인해 주세요.' }
+        if (-not (Test-RoomHub)) {
+            if ($hub.HasExited -and (Test-Path -LiteralPath $dbErrorFile) -and
+                (Get-Item -LiteralPath $dbErrorFile).LastWriteTimeUtc -ge $startedAt) {
+                throw (Get-Content -LiteralPath $dbErrorFile -Raw -Encoding UTF8)
+            }
+            throw 'Agent Room 허브를 시작하지 못했습니다. 다른 Agent Room이 이미 실행 중인지, 보안 프로그램이 막고 있지 않은지 확인해 주세요.'
+        }
     }
     Open-AgentRoomClient
 }

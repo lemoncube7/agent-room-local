@@ -25,13 +25,31 @@ const os=require('node:os');
     'ASSISTANT_ACTIONS (hub.cjs) and splitAssistantActions (index.html) must list the same actions');
 }
 
+// ---- 1b. CLI version recording (record only; flag only on known mismatch symptoms) ----------------------
+{
+  const cv=require('./cli-versions.cjs');
+  assert.equal(cv.parseVersion('codex-cli 0.48.2'),'0.48.2');
+  assert.equal(cv.parseVersion('2.1.4 (Claude Code)'),'2.1.4');
+  assert.equal(cv.parseVersion('no version here'),null);
+  assert.ok(cv.looksLikeVersionMismatch("error: unexpected argument '--sandbox' found"));
+  assert.ok(!cv.looksLikeVersionMismatch('usage limit reached'));
+  let calls=0;
+  const run=(file,args,opts,cb)=>{calls++;cb(file.includes('bad')?Error('x'):null,'tool 1.2.3\n','');};
+  cv.clearCache();
+  cv.readVersions({codex:'C:/a/codex.exe',claude:'C:/bad/claude.exe',agy:''},{run}).then(async v=>{
+    assert.deepEqual(v,{codex:'1.2.3',claude:null,agy:null});
+    await cv.readVersion('C:/a/codex.exe',{run});
+    assert.equal(calls,2,'version lookups must be cached');
+  }).catch(e=>{console.error(e);process.exitCode=1;});
+}
+
 // ---- 2. interrupted-update recovery ---------------------------------------------------------------------
 const procs=[];
 const cleanup=[];
-function makeRoot(){
-  const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-room-flow-'));
+function makeRoot(prefix='agent-room-flow-'){
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),prefix));
   cleanup.push(root);
-  for(const name of ['hub.cjs','db.cjs','limits.cjs','updater.cjs','bridge.cjs','handoff.cjs','managed-codex.cjs','codex-app-server.cjs','codex-ipc.cjs','index.html','VERSION']){
+  for(const name of ['hub.cjs','db.cjs','limits.cjs','updater.cjs','bridge.cjs','handoff.cjs','managed-codex.cjs','codex-app-server.cjs','codex-ipc.cjs','cli-versions.cjs','index.html','VERSION']){
     const from=path.join(__dirname,name);
     if(fs.existsSync(from))fs.copyFileSync(from,path.join(root,name));
   }
@@ -118,11 +136,128 @@ async function leavesRunningUpdaterAlone(){
   hub.kill();
 }
 
+// The relay sends the hub token to the address in local/hub.json: any loopback port is fine (the hub may move
+// off 4317), but a non-loopback host must be refused before any request is made.
+async function relayHubAddressRules(){
+  const http=require('node:http');
+  const seen=[];
+  const fake=http.createServer((req,res)=>{seen.push({url:req.url,auth:req.headers.authorization||''});res.writeHead(200,{'Content-Type':'application/json'}).end('{}');});
+  await new Promise(r=>fake.listen(0,'127.0.0.1',r));
+  const port=fake.address().port;
+  const runRelay=async hubUrl=>{
+    const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-room-relay-'));
+    cleanup.push(root);
+    fs.copyFileSync(path.join(__dirname,'remote-sync.cjs'),path.join(root,'remote-sync.cjs'));
+    fs.mkdirSync(path.join(root,'local'));
+    fs.writeFileSync(path.join(root,'local','hub.json'),JSON.stringify({url:hubUrl,token:'relay-test-token'}));
+    const child=spawn(process.execPath,[path.join(root,'remote-sync.cjs'),'https://relay-test.invalid'],{
+      env:{...process.env,AGENT_ROOM_DEVICE_KEY:'k'.repeat(40)},stdio:['ignore','pipe','pipe']
+    });
+    procs.push(child);
+    let stderr='';
+    child.stderr.on('data',d=>{stderr+=String(d);});
+    return {child,stderr:()=>stderr};
+  };
+  try{
+    const ok=await runRelay('http://127.0.0.1:'+port);
+    await until(()=>seen.length>0,15000,'relay to call the fake hub on a non-default port');
+    assert.equal(seen[0].url,'/state');
+    assert.equal(seen[0].auth,'Bearer relay-test-token');
+    ok.child.kill();
+    seen.length=0;
+    const bad=await runRelay('http://localhost:'+port);
+    await until(()=>/Unexpected local hub address/.test(bad.stderr()),15000,'relay to refuse a non-127.0.0.1 hub address');
+    await sleep(500);
+    assert.equal(seen.length,0,'relay must not contact a non-loopback hub address');
+    bad.child.kill();
+  }finally{fake.close();}
+}
+
+// Port conflicts: another program on the default port -> the hub moves to a free port and publishes it in hub.json;
+// another Agent Room hub on the default port -> no second hub is started.
+async function portConflictRules(){
+  const http=require('node:http');
+  const net=require('node:net');
+  const freePort=()=>new Promise(resolve=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>resolve(p));});});
+  const spawnDefaultPort=(root,port)=>{
+    const env={...process.env,AGENT_ROOM_PROJECT:root,AGENT_ROOM_DEFAULT_PORT:String(port),AGENT_ROOM_NO_BACKGROUND:'1'};
+    delete env.ROOM_PORT;
+    const child=spawn(process.execPath,[path.join(root,'hub.cjs')],{env,stdio:['ignore','pipe','pipe']});
+    procs.push(child);
+    return child;
+  };
+  // A: a foreign program holds the default port.
+  const port=await freePort();
+  const foreign=http.createServer((req,res)=>res.writeHead(200).end('not agent room'));
+  await new Promise(r=>foreign.listen(port,'127.0.0.1',r));
+  try{
+    const rootA=makeRoot();
+    const hubA=spawnDefaultPort(rootA,port);
+    const cfg=await waitHubJson(rootA);
+    const movedPort=Number(new URL(cfg.url).port);
+    assert.notEqual(movedPort,port,'hub must not claim the occupied port');
+    const state=await (await fetch(cfg.url+'/state')).json();
+    assert.ok(state.version,'hub on the fallback port must answer');
+    // B: an Agent Room hub already holds a port -> a second hub on the same default exits without publishing an address.
+    const rootB=makeRoot();
+    const hubB=spawnDefaultPort(rootB,movedPort);
+    const [code]=await once(hubB,'exit');
+    assert.equal(code,0,'second hub should exit quietly when an Agent Room hub already owns the port');
+    assert.equal(fs.existsSync(path.join(rootB,'local/hub.json')),false,'second hub must not publish an address');
+    const [fallbackDuplicate]=await once(spawnDefaultPort(makeRoot(),port),'exit');
+    assert.equal(fallbackDuplicate,0,'a hub on an occupied fallback port also prevents duplicate startup');
+    await new Promise(resolve=>foreign.close(resolve));
+    const [sameInstallDuplicate]=await once(spawnDefaultPort(rootA,port),'exit');
+    assert.equal(sameInstallDuplicate,0,'the same installation must reuse its running hub after the default port is freed');
+    assert.equal((await waitHubJson(rootA)).url,cfg.url);
+    await stopHub(cfg);
+    await once(hubA,'exit');
+  }finally{foreign.close();}
+  // C: an explicit ROOM_PORT is never moved.
+  const taken=await freePort();
+  const holder=http.createServer((req,res)=>res.end('x'));
+  await new Promise(r=>holder.listen(taken,'127.0.0.1',r));
+  try{
+    const rootC=makeRoot();
+    const hubC=spawn(process.execPath,[path.join(rootC,'hub.cjs')],{env:{...process.env,AGENT_ROOM_PROJECT:rootC,ROOM_PORT:String(taken)},stdio:'ignore'});
+    procs.push(hubC);
+    const [code]=await once(hubC,'exit');
+    assert.equal(code,1,'explicit ROOM_PORT that is taken must fail instead of moving');
+  }finally{holder.close();}
+}
+
+// Many Windows users have Korean user names and folders with spaces. The hub must start from such a path,
+// answer requests, and keep its data inside it.
+async function startsFromKoreanSpacedPath(){
+  const root=makeRoot('OneDrive - 에이전트 룸 테스트 폴더 ');
+  assert.match(root,/에이전트 룸 테스트 폴더 /);
+  const hub=startHub(root);
+  const [line]=await Promise.race([once(hub.stdout,'data'),once(hub,'exit').then(([c])=>{throw Error('hub exited early from Korean/space path: '+c);})]);
+  const url=String(line).trim();
+  assert.match(url,/^http:\/\/127\.0\.0\.1:\d+$/);
+  const state=await (await fetch(url+'/state')).json();
+  assert.ok(state.version,'hub must answer from a Korean/space path');
+  assert.ok(fs.existsSync(path.join(root,'local','rooms.db')),'database must be created inside the install folder');
+  hub.kill();
+}
+
 async function main(){
+  const corruptRoot=makeRoot();
+  const local=path.join(corruptRoot,'local');
+  const dbFile=path.join(local,'rooms.db');
+  fs.mkdirSync(local,{recursive:true});
+  fs.writeFileSync(dbFile,'invalid SQLite database');
+  const [corruptExit]=await once(startHub(corruptRoot),'exit');
+  assert.equal(corruptExit,1);
+  assert.match(fs.readFileSync(path.join(local,'startup-db-error.txt'),'utf8'),/rooms\.db/);
+  assert.equal(fs.readFileSync(dbFile,'utf8'),'invalid SQLite database');
+  await startsFromKoreanSpacedPath();
+  await portConflictRules();
+  await relayHubAddressRules();
   await restoresFromBackup();
   await ignoresUnsafeBackup();
   await leavesRunningUpdaterAlone();
-  console.log('Passed: assistant allow-list parity, interrupted-update restore, unsafe-backup rejection, live-updater guard.');
+  console.log('Passed: assistant allow-list parity, corrupt database notice, Korean/space path start, port-conflict fallback, relay hub-address rules, interrupted-update restore, unsafe-backup rejection, live-updater guard.');
 }
 main().catch(err=>{console.error(err);process.exitCode=1;}).finally(()=>{
   for(const p of procs)try{p.kill();}catch{}

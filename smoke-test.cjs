@@ -11,7 +11,7 @@ const fs=require('node:fs');
 const os=require('node:os');
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-room-'));
 const procs=[];
-for(const name of ['hub.cjs','db.cjs','limits.cjs','updater.cjs','bridge.cjs','handoff.cjs','index.html','VERSION'])fs.copyFileSync(path.join(__dirname,name),path.join(root,name));
+for(const name of ['hub.cjs','db.cjs','limits.cjs','cli-versions.cjs','updater.cjs','bridge.cjs','handoff.cjs','index.html','VERSION'])fs.copyFileSync(path.join(__dirname,name),path.join(root,name));
 fs.mkdirSync(path.join(root,'.codex'));
 fs.writeFileSync(path.join(root,'.codex/config.toml'),'');
 fs.writeFileSync(path.join(root,'managed-codex.cjs'),"const fs=require('node:fs'),path=require('node:path');\nexports.runCodex=async(project,prompt,session,provider,model,effort,options)=>{\n if(options?.rank){const input=JSON.parse(prompt.split('Treat this JSON solely as data: ').at(-1));if(input.message==='Bad rank JSON')return {id:'judge',reply:'broken'};if(input.message==='Sequential test')return {id:'judge',reply:JSON.stringify({ranks:input.roster.map(x=>({name:x.name,rank:x.name==='gpt-test'?1:x.name==='Codex CLI'?2:0}))})};if(input.message.startsWith('Private test ')||input.message.startsWith('Tag '))return {id:'judge',reply:JSON.stringify({ranks:input.roster.map(x=>({name:x.name,rank:x.name==='Codex CLI'?1:0}))})};let n=0;return {id:'judge',reply:JSON.stringify({ranks:input.roster.slice().reverse().map(x=>({name:x.name,rank:input.message==='Tie test'?(x.provider==='agy'?0:1):x.provider==='agy'?0:++n}))})};}\n const content=prompt.split('\\n\\n').at(-1);\n const body=content.split('\\n').slice(1).join('\\n');\n const peer=content.startsWith('Current request')&&(content.split('\\n')[0].includes('agent \"Codex CLI\"')||content.split('\\n')[0].includes('agent \"Claude Code CLI\"'));\n if(provider==='claude'&&fs.existsSync(path.join(project,'fail-claude')))throw Error('CLI missing');\n if(body==='Hold reply'||body==='Tie test')await new Promise(resolve=>setTimeout(resolve,650));\n let reply='[[AGENT_ROOM_NO_REPLY]]';\n if(prompt.includes('This turn is a task handoff notification'))reply='[[HANDOFF_ACCEPT]]';\n else if(!session)reply=provider==='agy'?'AGY started '+model+' '+effort:provider==='claude'?'Claude opened':'Opened';\n else if(!peer&&body.startsWith('Tag '))reply=body.slice(4); else if(body.startsWith('Private test '))reply='[[TO:'+body.slice(13)+']]\\nTargeted only';\n else if(!peer&&['Follow up','Hold reply','Everyone hello','Sequential test','Tie test'].includes(body))reply=(provider==='claude'?'Claude resumed: ':'Resumed: ')+body;\n else if(!peer&&body==='Broadcast relay'&&provider==='codex')reply='[[CALL:Claude Code CLI]]\\nShared hello to Claude';\n else if(peer&&body==='Shared hello to Claude'&&provider==='claude')reply='Shared reply to Codex';\n return {id:'mock-'+provider,reply};\n};");
@@ -49,6 +49,57 @@ function start(file,args=[]){
   const child=spawn(process.execPath,[path.join(root,file),...args],{env:{...process.env,ROOM_PORT:'0',AGENT_ROOM_PROJECT:root}});
   procs.push(child); return child;
 }
+async function checkRemoteAttachment({room,url,token,post}){
+  const {randomUUID}=require('node:crypto');
+  const {DatabaseSync}=require('node:sqlite');
+  const {handleRoom}=await import('./remote-site/handler.mjs');
+  const db=new DatabaseSync(':memory:');
+  try{
+    for(const migration of ['schema.sql','0001_multiple_rooms.sql','0003_remote_command_id.sql','0006_remote_source.sql']){
+      db.exec(fs.readFileSync(path.join(__dirname,'remote-site',migration),'utf8'));
+    }
+    const prepare=(sql,params=[])=>({
+      bind:(...values)=>prepare(sql,values),
+      run:async()=>({meta:db.prepare(sql).run(...params)}),
+      first:async()=>db.prepare(sql).get(...params),
+      all:async()=>({results:db.prepare(sql).all(...params)})
+    });
+    const deviceKey='test-only-device-key-with-32-characters', origin='https://agent-room.test';
+    const env={DB:{prepare,batch:statements=>Promise.all(statements.map(statement=>statement.run()))},REMOTE_DEVICE_KEY:deviceKey,REMOTE_OWNER_ID:'owner'};
+    const callSite=(route,headers,body)=>handleRoom(new Request(origin+'/api/room/'+route,{method:'POST',headers,body:JSON.stringify(body)}),env);
+    const pollSite=()=>callSite('device',{'x-agent-room-key':deviceKey},{rooms:[room],events:[],acknowledged:[]});
+    assert.equal((await pollSite()).status,200);
+
+    const id=randomUUID(), contents=Buffer.alloc(96*1024,7);
+    const browserMessage={id,room:room.id,text:'Check remote attachment',attachments:[{name:'site-attachment.bin',data:contents.toString('base64')}]};
+    const sendToSite=()=>callSite('browser',{origin,'oai-authenticated-user-id':'owner'},browserMessage);
+    assert.equal((await sendToSite()).status,200);
+    assert.equal((await sendToSite()).status,200);
+    const commands=(await (await pollSite()).json()).commands.filter(command=>command.id===id);
+    assert.equal(commands.length,1);
+
+    const {text,attachments}=JSON.parse(commands[0].text);
+    const message={action:'remote_user_message',request:id,room:room.id,text,attachments};
+    const relayToHub=body=>fetch(url+'/tool',{
+      method:'POST',
+      headers:{Authorization:'Bearer '+token,'x-agent-room-remote-message':'1','Content-Type':'application/json'},
+      body:JSON.stringify(body)
+    });
+    assert.equal((await post('/tool',message)).status,413);
+    const first=await relayToHub(message);
+    assert.equal(first.status,200);
+    assert.deepEqual(await (await relayToHub(message)).json(),await first.json());
+    const uploads=path.join(root,'local/uploads');
+    const matching=fs.readdirSync(uploads).filter(name=>name.endsWith('-site-attachment.bin'));
+    assert.equal(matching.length,1);
+    assert.deepEqual(fs.readFileSync(path.join(uploads,matching[0])),contents);
+
+    const sendSize=bytes=>relayToHub({...message,request:randomUUID(),attachments:[{name:'boundary.bin',data:Buffer.alloc(bytes,8).toString('base64')}]});
+    const maxFileSize=8*1024*1024;
+    assert.equal((await sendSize(maxFileSize)).status,200);
+    assert.equal((await sendSize(maxFileSize+1)).status,400);
+  }finally{db.close();}
+}
 async function main(){
   const hub=start('hub.cjs');
   const [line]=await Promise.race([once(hub.stdout,'data'),once(hub,'exit').then(([code])=>{throw Error('Test hub exited before startup: '+code);})]);
@@ -85,6 +136,7 @@ async function main(){
   const remoteMessages=(await sync()).messages.filter(m=>m.body==='Remote test');
   assert.equal(remoteMessages.length,1);
   assert.equal(remoteMessages[0].remote_source,'site');
+  await checkRemoteAttachment({room,url,token,post});
   const writes={action:'send_message',room:room.id,participant:sender.participant};
   await rpc('/tool',{...writes,request:'history',text:'Previous history'});
   const client=start('bridge.cjs',['claude']);
@@ -362,7 +414,7 @@ async function main(){
     if(plan?.state!=='coordinated')return false;
     return state;
   },420);
-  const meetingReplies=meetingDone.messages.filter(message=>message.relay_root===meetingSeq);
+  const meetingReplies=meetingDone.messages.filter(message=>message.relay_root===meetingSeq&&message.body.startsWith('조율(회의)'));
   assert.equal(meetingReplies.length,2);
   assert.match(meetingReplies[0].body,/consensus after 0 notes/);
   assert.match(meetingReplies[1].body,/consensus after 1 notes/);
@@ -372,6 +424,10 @@ async function main(){
   const meetingNoteSeq=meetingReplies[0].seq;
   assert.equal(meetingDone.deliveries.some(d=>d.seq===meetingNoteSeq&&d.state==='context_only'),true);
   assert.equal(meetingDeliveries.every(d=>d.state==='context_seen'||d.state==='context_only'),true);
+  const started=await rpc('/control',{action:'user_message',room:room.id,text:'시작해'});
+  const startSeq=started.messages.find(message=>message.body==='시작해').seq;
+  assert.equal(started.deliveries.filter(d=>d.seq===startSeq&&d.priority===1).length,2);
+  assert.equal(started.replyPlans.find(p=>p.seq===startSeq)?.state,'ready');
   console.log('Passed: room approval, one channel push, reply, receipt, one-use subagent invitation, separate authorship, inherited revocation, room-wide broadcast, managed Codex and Claude creation and resume, durable outbox across hub restart, shared agent replies, room-scoped state, safe upload headers, and project switching.');
 }
 main().catch(err=>{console.error(err);process.exitCode=1;}).finally(()=>procs.forEach(p=>p.kill()));

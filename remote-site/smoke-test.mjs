@@ -45,6 +45,17 @@ assert.equal((await call('browser',browser,{id,room:B,text:'Message B'})).status
 assert.equal((await call('browser',browser,{id,room:B,text:'Message B'})).status,200);
 assert.equal((await call('browser',browser,{id,room:A,text:'Message B'})).status,409);
 assert.deepEqual((await exchange()).commands,[{id,text:'Message B',room:B}]);
+// Site retains attachment contents through command delivery and deduplicates retries.
+const attachmentId=crypto.randomUUID();
+const attachment={name:'capture.png',data:Buffer.from('test attachment').toString('base64')};
+const attachmentRequest={id:attachmentId,room:B,text:'Inspect',attachments:[attachment]};
+assert.equal((await call('browser',browser,attachmentRequest)).status,200);
+assert.equal((await call('browser',browser,attachmentRequest)).status,200);
+const attachmentCommands=(await exchange()).commands.filter(command=>command.id===attachmentId);
+assert.equal(attachmentCommands.length,1);
+assert.deepEqual(JSON.parse(attachmentCommands[0].text),{__msg:true,text:'Inspect',attachments:[attachment]});
+assert.equal((await call('browser',browser,{id:crypto.randomUUID(),room:B,text:'Too many',attachments:Array(6).fill(attachment)})).status,400);
+await exchange(rooms,[],[attachmentId]);
 const events=[{room:A,seq:1,name:'Codex',text:'Reply A',created:'2026-01-01',remoteSource:'direct'},{room:B,seq:2,name:'Claude',text:'Reply B',created:'2026-01-01',commandId:id}];
 assert.deepEqual((await exchange(rooms,events,[id])).commands,[]);
 const viewA=(await (await call('browser?room='+A,browser)).json()).events;

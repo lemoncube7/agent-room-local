@@ -3,7 +3,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const [roomLabel,thread,chosenParticipant]=process.argv.slice(2).filter(arg=>arg!=='--test');
 const config=JSON.parse(fs.readFileSync(path.join(__dirname,'local','hub.json'),'utf8'));
-if(config.url!=='http://127.0.0.1:4317')throw Error('Expected local Agent Room hub.');
+if(!/^http:\/\/127\.0\.0\.1:\d{1,5}$/.test(String(config.url||'')))throw Error('Expected local Agent Room hub.');
 async function post(body){
   const response=await fetch(config.url+'/tool',{
     method:'POST',headers:{Authorization:'Bearer '+config.token,'Content-Type':'application/json'},

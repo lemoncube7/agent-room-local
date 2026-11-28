@@ -160,7 +160,7 @@ if ($Connect -or $SelectProject) {
 function Get-VerifiedHub {
   try {
     $connection = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'local/hub.json') -Raw | ConvertFrom-Json
-    if ($connection.url -ne 'http://127.0.0.1:4317') { return $false }
+    if ($connection.url -notmatch '^http://127\.0\.0\.1:\d{1,5}$') { return $false }
     $null = Invoke-RestMethod -Uri ($connection.url+'/tool') -Method Post -Headers @{Authorization='Bearer '+$connection.token} -ContentType 'application/json' -Body '{"action":"list_rooms"}' -TimeoutSec 2
     return $true
   } catch { return $false }
@@ -171,7 +171,7 @@ if ($Connect -and -not (Get-VerifiedHub)) {
     if($hub.HasExited){break}
     Start-Sleep -Milliseconds 250
   }
-  if(-not (Get-VerifiedHub)){throw 'The selected installation did not start its hub on port 4317. Check for another Agent Room installation.'}
+  if(-not (Get-VerifiedHub)){throw 'The selected installation did not start its hub. Check whether another Agent Room installation is already running.'}
 }
 $results = $null
 if ($Test) {

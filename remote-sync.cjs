@@ -46,7 +46,8 @@ async function main(){
   const headers={'X-Agent-Room-Key':deviceKey,...(siteAccess?{'OAI-Sites-Authorization':'Bearer '+siteAccess}:{})};
   const readHub=()=>{
     const config=JSON.parse(fs.readFileSync(hubPath,'utf8'));
-    if(config.url!=='http://127.0.0.1:4317')throw Error('Unexpected local hub address.');
+    // The token is sent to this address, so only the loopback host is accepted. The port may vary: the hub picks another one if 4317 is taken.
+    if(!/^http:\/\/127\.0\.0\.1:\d{1,5}$/.test(String(config.url||'')))throw Error('Unexpected local hub address.');
     return config;
   };
   let initialRoom,initialSince=0;
