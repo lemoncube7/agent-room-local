@@ -42,7 +42,7 @@
   - `relay_root`: 원 요청 `seq`.
 - `deliveries(seq, member, state, priority)`: 에이전트별 전달 상태(`queued`, `ranking`, `submitting`, `working`, `accepted`, `answered`, `context_only`, `context_seen`, `failed`, `coordination_wait`, `coordination_speaking`, `coordination_blocked`).
 - `room_ranking(room, enabled, mode, main_member, judge_provider, judge_model, judge_effort, judge_prompt)`: 응답 모드(`broadcast` | `ranking` | `hierarchy`) 및 판정 설정.
-- `reply_plans`, `coordination_turns`: 조율(`opinions`, `coordinating`, `ready`) 상태 및 라운드 순서.
+- `reply_plans`, `coordination_turns`: 조율(`opinions`, `coordinating`, `ready`) 상태 및 라운드 순서. 이의(`[CHANGE]`·`[BLOCKED]`)가 있으면 최대 `COORD_MAX_ROUNDS`(6)라운드까지 다시 돈다(`hub.cjs`에서 기존 DB 기본값 3보다 우선).
 - `remote_rooms(room, since)`, `remote_options`: 원격 공유 방 및 전체 자동 공유(`share_all`).
 - `approval_rules`, `approval_logs`: 도구 실행 항상 허용 규칙 및 승인 로그.
 - `handoff_tasks`, `handoff_history`: 작업 카드(id·owner·verifier·done_when·files·revision 등)와 그 변경 이력. 원격 Site(D1)에는 푸시용 `remote_push_key`(VAPID 서명 키), `remote_push_subscriptions`(구독)가 별도로 있다.

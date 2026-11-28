@@ -307,6 +307,8 @@ function parseRanks(raw,people){
   const direct=new Set(Array.isArray(data.direct)?data.direct.map(toId).filter(id=>id&&ranks.get(id)>0):[]);
   return {ranks,coordinate,coordinateMode,opinionsFirst,wrapUp,direct};
 }
+// Coordination rounds before giving up on objections ([CHANGE]/[BLOCKED]); was 3.
+const COORD_MAX_ROUNDS=6;
 function beginCoordination(seq,ranks,direct=new Set()){
   const participants=[...ranks].filter(([id,rank])=>rank>0&&!direct.has(id)).map(([id])=>id);
   if(participants.length<2)return false;
@@ -334,7 +336,7 @@ function releaseCoordinatedWork(seq,coordinateMode='work'){
 }
 function finishCoordinationRoundIfReady(plan,lastMember){
   if(one("SELECT 1 FROM coordination_turns WHERE seq=? AND state NOT IN ('done','skipped')",plan.seq))return false;
-  const round=plan.round||1, maxRounds=plan.max_rounds||3;
+  const round=plan.round||1, maxRounds=Math.max(plan.max_rounds||0,COORD_MAX_ROUNDS);
   const discussOnly=plan.coordinate_mode==='discuss';
   const modeTag=discussOnly?'조율(회의)':'조율(작업)';
   const doneTurns=all("SELECT member,note FROM coordination_turns WHERE seq=? AND state='done' AND note IS NOT NULL ORDER BY position",plan.seq);
@@ -383,7 +385,7 @@ async function coordinateTurn(plan,turn){
   cliBusy.add(turn.member);
   try{
     const discussOnly=plan.coordinate_mode==='discuss';
-    const round=plan.round||1, maxRounds=plan.max_rounds||3;
+    const round=plan.round||1, maxRounds=Math.max(plan.max_rounds||0,COORD_MAX_ROUNDS);
     const remaining=all("SELECT 1 FROM coordination_turns WHERE seq=? AND state NOT IN ('done','skipped') AND member<>?",plan.seq,turn.member).length;
     const isFirstProposer=round===1&&prior.length===0;
     const tagRule=isFirstProposer
@@ -1083,7 +1085,7 @@ function maybeRankAgentFollowup(room,authorId,seq,root,called,recipient){
   for(const {id} of candidates){
     run("INSERT INTO deliveries(seq,member,state,priority) VALUES(?,?,'ranking',NULL) ON CONFLICT(seq,member) DO UPDATE SET state='ranking',priority=NULL WHERE state IN ('context_only','context_seen')",seq,id);
   }
-  run("INSERT OR IGNORE INTO reply_plans(seq,room,state) VALUES(?,?,'pending')",seq,room);
+  run("INSERT OR IGNORE INTO reply_plans(seq,room,state,max_rounds) VALUES(?,?,'pending',?)",seq,room,COORD_MAX_ROUNDS);
 }
 // An agent whose known quota is at 0% is skipped automatically (kept as context) unless it was called by name.
 function quotaExhausted(memberId){
@@ -1954,7 +1956,7 @@ function recordUserMessageInner(room,text,request=randomUUID(),attachments=[],re
         }
       }else if((roomMode==='ranking'||pendingFlowCommand)&&activeCount>1){
         run("UPDATE deliveries SET state='ranking' WHERE seq=? AND state='queued'",seq);
-        run("INSERT INTO reply_plans(seq,room,state) VALUES(?,?,'pending')",seq,room);
+        run("INSERT INTO reply_plans(seq,room,state,max_rounds) VALUES(?,?,'pending',?)",seq,room,COORD_MAX_ROUNDS);
       }
     }
     db.exec('COMMIT');
