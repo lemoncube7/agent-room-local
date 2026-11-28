@@ -5,7 +5,7 @@
    - `remote-sync.cjs`가 `local/hub.json`(url·token)으로 로컬 허브 `/state`를 읽어 Site `/api/room/device`에 `{rooms, acknowledged, snapshot, events}`를 POST하고, 응답의 `commands`를 `http://127.0.0.1:4317/tool`(`remote_user_message`, `remote_control`)로 전달합니다. 전달이 끝난 명령 ID는 다음 요청의 `acknowledged`로 알립니다. 허브 쪽은 요청 ID(`remote:<id>`)로 중복을 걸러 재시도해도 두 번 저장되지 않습니다.
    - **주기:** 에이전트가 일하는 중이거나 보낼 내용이 있으면 2초, 한가하면 5초. 변경이 없어도 하트비트를 15초마다(폰이 직결 중이면 60초마다) 보내고, 폰이 최근 30초 안에 직결로 붙어 있으면 상태 전용 업로드를 건너뛰는 "조용한 모드"가 된다. 실패하면 2→최대 30초로 늘려 재시도한다. 한 번에 메시지 35개·약 1.4MB까지, 메시지당 본문 30000자까지이며 **개인 메시지(`recipient`)는 올리지 않는다.**
    - **주소 고정:** 중계는 `hub.json`의 주소가 정확히 `http://127.0.0.1:4317`이 아니면 거부한다. `ROOM_PORT`를 바꾸면 원격 중계가 멈춘다.
-   - **요청 본문 제한은 경로마다 다르다:** PC 웹 UI의 `/control` 12 MiB, `/tool`·`/delivery` 64 KiB, 원격 웹의 `/api/room/direct` 1,500,000바이트. Base64로 인코딩된 크기가 기준이라, Site에는 접수된 첨부가 PC의 `/tool` 전달 단계에서 413으로 실패할 수 있다.
+   - **요청 본문 제한은 경로마다 다르다:** PC 웹 UI의 `/control` 12 MiB, 원격 직결 `/api/room/direct` 12 MiB, `/tool`은 기본 64 KiB를 유지하되 `remote-sync.cjs`가 `remote_user_message`에 붙이는 `x-agent-room-remote-message: 1` 헤더가 있을 때만 12 MiB를 허용한다(Base64 인코딩 포함 최대 8 MiB 파일 수용). 원격 UI(`remote-site/page.html`)는 전송 전 경로별 가능 크기(직결 최대 8MB, Site 경유 D1 단일 행 제한 권장 ~700KB)를 안내하고, Site에만 접수된 메시지는 `Site 접수 · PC 저장 대기` 말풍선으로 표시한 뒤 PC 저장이 확인되면 `PC 저장됨`으로 전환한다.
    - **안정성:** 중계 시작 실패(`spawn` 오류)와 비정상 종료는 허브가 간격을 늘려 가며 재시작하고, 손상된 `remote-cursor.json`은 무시하고 시작한다. 허브가 죽어 중계만 남으면 새 허브가 `remote-alive.json`/프로세스 검색으로 이전 중계를 정리한다.
    - 허브 오류는 `local/hub-errors.log`에 기록되고(`uncaughtException`·`unhandledRejection`은 기록 후 계속 실행, 포트 충돌·DB 손상은 종료), `local/hub.json`은 임시 파일 후 교체 방식으로 써서 읽는 쪽이 반쯤 쓰인 파일을 보지 않는다.
 2. **PC 직접 연결 (`/api/room/direct` + `cloudflared` 자동 터널):**

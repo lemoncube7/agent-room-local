@@ -144,7 +144,7 @@ async function main(){
           try{const parsed=JSON.parse(command.text);msgText=String(parsed.text||'');attachments=Array.isArray(parsed.attachments)?parsed.attachments:[];}catch{}
         }
         try{
-          await request(hub.url+'/tool',post({Authorization:'Bearer '+hub.token},{action:'remote_user_message',room:command.room,request:command.id,text:msgText,attachments}));
+          await request(hub.url+'/tool',post({Authorization:'Bearer '+hub.token,'x-agent-room-remote-message':'1'},{action:'remote_user_message',room:command.room,request:command.id,text:msgText,attachments}));
         }catch(error){
           // A message the hub rejects (4xx) must not block every later message: report it and move on.
           // Network/5xx errors still stop here so the same command is retried on the next cycle.

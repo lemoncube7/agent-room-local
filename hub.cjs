@@ -512,12 +512,31 @@ function editAgent(args){
   const model=args.model===undefined?agent.model:args.model?.trim()?str(args.model,120):null;
   const name=args.name===undefined?agent.name:args.name?.trim()?str(args.name,120):model||providerNames[agent.provider];
   const role=args.role===undefined?undefined:args.role?.trim()?str(args.role,120):'';
+  const roomId=one('SELECT room FROM members WHERE id=?',args.participant)?.room;
+  let nextParent;
+  if(args.parent!==undefined){
+    const want=args.parent?str(args.parent,80):null;
+    if(want){
+      if(want===args.participant)throw Error('자기 자신을 상위 에이전트로 지정할 수 없어요.');
+      const pRow=one("SELECT id,parent,state FROM members WHERE id=? AND room=?",want,roomId);
+      if(!pRow||pRow.state!=='approved')throw Error('선택한 상위 에이전트를 찾을 수 없어요.');
+      if(pRow.parent)throw Error('서브에이전트 밑에는 또 서브에이전트를 둘 수 없어요.');
+      const hasChildren=one("SELECT COUNT(*) AS c FROM members WHERE parent=? AND state IN ('starting','approved')",args.participant)?.c||0;
+      if(hasChildren>0)throw Error('하위 서브에이전트가 있는 에이전트는 다른 에이전트의 서브에이전트로 옮길 수 없어요.');
+      const subCount=one("SELECT COUNT(*) AS c FROM members WHERE parent=? AND id<>? AND state IN ('starting','approved')",want,args.participant)?.c||0;
+      if(subCount>=3)throw Error('상위 에이전트당 서브에이전트는 최대 3명까지입니다.');
+    }
+    nextParent=want;
+  }
   run('UPDATE cli_sessions SET model=?,effort=?,permission_profile=? WHERE member=?',model,args.effort===undefined?agent.effort:normalizeEffort(args.effort),args.permission===undefined?agent.permission_profile:normalizePermission(args.permission),args.participant);
   cliCooldown.delete(args.participant);limitNotified.delete(args.participant);cliRepeatErrors.delete(args.participant);
   if(args.clearRules===true)run('DELETE FROM approval_rules WHERE member=?',args.participant);
-  const uniqueName=uniqueMemberName(one('SELECT room FROM members WHERE id=?',args.participant)?.room,name,args.participant);
+  const uniqueName=uniqueMemberName(roomId,name,args.participant);
   if(role!==undefined)run('UPDATE members SET name=?, role=? WHERE id=?',uniqueName,role,args.participant);
   else run('UPDATE members SET name=? WHERE id=?',uniqueName,args.participant);
+  if(nextParent!==undefined){
+    run("UPDATE members SET parent=?, sub_kind='resident' WHERE id=?",nextParent,args.participant);
+  }
   invalidateWarm(args.participant);
   requeueRecentFailedTurn(args.participant);
 }

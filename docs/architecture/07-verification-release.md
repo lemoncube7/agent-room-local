@@ -4,6 +4,7 @@
 - JS 문법 검사: `node --check hub.cjs` (수정한 `.cjs` / `.mjs` 대상)
 - 인라인 스크립트 검사: `index.html`(스크립트 2개), `remote-site/page.html`의 **모든** `<script>`를 `matchAll`로 추출해 각각 `new Function(code)`
 - 허브 통합 테스트: `node smoke-test.cjs` (1~2분 걸린다. 짧은 제한 시간으로 돌리면 실패처럼 보일 수 있다)
+- 흐름 회귀 테스트: `node flow-regression-test.cjs` (약 10초, `release.ps1`이 `smoke-test.cjs` 다음에 자동 실행). 현재 포함: ① 설정 도우미 허용 목록이 `hub.cjs`의 `ASSISTANT_ACTIONS`(+`report_issue`)와 `index.html`의 `splitAssistantActions`에서 같은지, ② 업데이트가 끊겼을 때 표시 파일과 백업으로 복원되는지(경로 이탈 파일은 건너뜀), ③ 백업이 임시 업데이트 폴더 밖이면 복원하지 않고 표시 파일만 지우는지, ④ 업데이터가 아직 살아 있으면 복원하지 않는지. 이 파일에 새 테스트를 추가할 때는 임시 폴더에 허브를 복사해 띄우는 방식(`makeRoot`/`startHub`)을 따른다. 같은 요청 ID 재시도 시 한 번만 저장되는 검사는 `smoke-test.cjs`의 `remote_user_message` 부분에 있다.
 - 원격 릴레이/다중 노드 테스트: `node remote-site/smoke-test.mjs`
 - Cloudflare 자동 설정 테스트: `node cloudflare-setup-test.cjs`
 
