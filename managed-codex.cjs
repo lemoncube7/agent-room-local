@@ -791,7 +791,8 @@ async function runCodex(project, prompt, session, provider='codex',model=null,ef
   const codexArgs=session?['exec','resume','--json','--skip-git-repo-check',session,'-']:['exec','--json','--skip-git-repo-check','-'];
   if(provider==='codex'&&process.platform==='win32'&&(process.env.AGENT_ROOM_CODEX_SANDBOX||cliSettings().codexSandbox)==='mxc')codexArgs.unshift('-c','windows.sandbox="mxc"');
   const permission=options.permission||'dev';
-  if(options.rank||permission==='chat')codexArgs.splice(-1,0,'--sandbox','read-only');
+  // `codex exec resume` rejects --sandbox ("unexpected argument"), so resumed read-only turns use a config override.
+  if(options.rank||permission==='chat'){if(session)codexArgs.unshift('-c','sandbox_mode="read-only"');else codexArgs.splice(-1,0,'--sandbox','read-only');}
   const claudeArgs=['--print','--output-format','json','--permission-mode',(options.rank||permission==='chat')?'plan':permission==='full'?'bypassPermissions':'acceptEdits',...(session?['--resume',session]:[])];
   if(options.rank)claudeArgs.push('--tools','','--no-session-persistence','--strict-mcp-config');
   else{

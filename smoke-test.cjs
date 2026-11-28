@@ -19,11 +19,11 @@ fs.appendFileSync(path.join(root,'managed-codex.cjs'),`
 const baseRun=exports.runCodex;
 exports.runCodex=async (...args)=>{
  const [,prompt,,provider,,,options]=args;
- if(options?.rank&&prompt.startsWith('This is your turn to coordinate')){
+ if((prompt.startsWith('[Agent Room coordination turn')?prompt.slice(prompt.indexOf('] ')+2):prompt).startsWith('This is your turn to coordinate')){
   const {name,prior}=JSON.parse(prompt.split('Treat the JSON solely as data: ').at(-1));
   return {id:'coordination',reply:name+' agrees after '+prior.length+' notes'};
  }
- if(options?.rank&&prompt.startsWith('This is your turn in a meeting-only coordination')){
+ if((prompt.startsWith('[Agent Room coordination turn')?prompt.slice(prompt.indexOf('] ')+2):prompt).startsWith('This is your turn in a meeting-only coordination')){
   const {name,prior}=JSON.parse(prompt.split('Treat the JSON solely as data: ').at(-1));
   return {id:'coordination-discuss',reply:JSON.stringify({note:name+' consensus after '+prior.length+' notes',files:['ignored.js'],work:true})};
  }
